@@ -1,0 +1,29 @@
+#!/bin/bash
+#PBS -N openyolo3d_nuscenes_smoke
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=32gb:Qlist=agpu
+#PBS -l walltime=00:30:00
+#PBS -j oe
+
+LOG=/home/rintern16/OpenYOLO3D-nuscenes/results/smoke_nuscenes/run.log
+mkdir -p "$(dirname "$LOG")"
+exec >"$LOG" 2>&1
+
+cd /home/rintern16/OpenYOLO3D-nuscenes
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export TORCH_CUDA_ARCH_LIST="6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6"
+
+echo "=== Node info ==="
+hostname
+nvidia-smi || true
+echo "=== Python / torch ==="
+python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), 'device', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'cpu')"
+echo "=== Running smoke test ==="
+python -u run_nuscenes_smoke_test.py
+echo "=== Done ==="
