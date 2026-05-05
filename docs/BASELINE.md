@@ -58,7 +58,7 @@ OpenYOLO3D processes frames independently — no temporal memory, no instance tr
 
 \- `intrinsics`: `dict\[cam\_name -> (3, 3) np.ndarray]`.
 
-\- `extrinsics`: `dict\[cam\_name -> (4, 4) np.ndarray]`. Convention: transforms a point from \*\*ego frame\*\* to \*\*camera frame\*\*. Document this clearly.
+\- `cam\_to\_ego`: `dict\[cam\_name -> (4, 4) np.ndarray]`. Convention: transforms a point from \*\*camera frame\*\* to \*\*ego frame\*\* (i.e., multiplying a homogeneous point in camera coordinates by this matrix yields its position in the ego frame). This matches the raw nuScenes `calibrated\_sensor` records, which store the sensor's pose in the ego frame. To project ego-frame points into the image, invert this matrix first. Document this clearly.
 
 \- `ego\_pose`: `(4, 4) np.ndarray` — ego frame to global frame at the sample timestamp.
 
