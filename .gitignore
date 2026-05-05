@@ -41,6 +41,7 @@ pretrained/**/*.ckpt
 models/Mask3D/build/
 models/Mask3D/mask3d.egg-info/
 models/YOLO-World/data/
+models/YOLO-World/yolo_world/work_dirs/
 
 ### Project Specific ###
 # 실험 결과물 및 평가 데이터
