@@ -33,6 +33,8 @@ datasets/
 **/replica/groundtruth/
 
 # Pretrained 체크포인트 (config 파일은 유지)
+# 심볼릭 링크도 매칭되도록 슬래시 없는 패턴 함께 둠 (data 와 동일 패턴)
+pretrained/checkpoints
 pretrained/checkpoints/
 pretrained/**/*.pth
 pretrained/**/*.ckpt
