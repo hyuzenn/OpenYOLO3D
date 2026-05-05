@@ -1,0 +1,50 @@
+# 1. 파이썬 관련 캐시
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+
+# 2. 데이터셋 및 모델 체크포인트 (가장 큰 토큰 도둑)
+data/
+datasets/
+pretrained/checkpoints/
+pretrained/**/*.pth
+pretrained/**/*.ckpt
+*.zip
+*.tar.gz
+*.pth
+*.ckpt
+*.onnx
+*.bin
+*.weights
+*.pb
+
+# 3. 외부 모델 라이브러리 (직접 수정하지 않으면 무시)
+models/Mask3D/third_party/
+models/Mask3D/build/
+models/Mask3D/mask3d.egg-info/
+models/YOLO-World/third_party/
+models/YOLO-World/data/
+models/YOLO-World/docs/
+models/YOLO-World/demo/
+
+# 4. 실험 결과 및 출력물
+results/
+evaluate/outputs/
+outputs/
+
+# 5. 문서 이미지 (텍스트가 아닌 큰 파일)
+docs/*.png
+docs/*.jpg
+docs/*.jpeg
+
+# 6. 가상환경 및 IDE 설정
+.venv/
+venv/
+ENV/
+.env
+.env.local
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,54 @@
+### Python ###
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+.venv/
+venv/
+ENV/
+
+### ML/DL (가장 중요) ###
+# 모델 가중치 파일 (저장소에 절대 올리지 마세요)
+*.pth
+*.ckpt
+*.onnx
+*.bin
+*.weights
+*.pb
+
+# 데이터셋 및 압축 파일
+*.zip
+*.tar.gz
+*.rar
+data
+data/
+datasets/
+
+# Pretrained 체크포인트 (config 파일은 유지)
+pretrained/checkpoints/
+pretrained/**/*.pth
+pretrained/**/*.ckpt
+
+### 외부 모델 빌드/캐시 (코드 자체는 유지) ###
+models/Mask3D/build/
+models/Mask3D/mask3d.egg-info/
+models/YOLO-World/data/
+
+### Project Specific ###
+# 실험 결과물 및 평가 데이터
+results/*
+!results/experiment_tracker.md
+evaluate/outputs/
+output/
+
+### OS & IDE ###
+.DS_Store
+.vscode/
+.idea/
+*.swp
+.claude/
+
+### Env & Secret ###
+.env
+.env.local
