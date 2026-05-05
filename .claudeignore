@@ -11,6 +11,12 @@ datasets/
 pretrained/checkpoints/
 pretrained/**/*.pth
 pretrained/**/*.ckpt
+
+# Replica 데이터셋 (evaluate/replica/ 소스코드는 영향 없음)
+**/replica/office*/
+**/replica/room*/
+**/replica/ground_truth/
+**/replica/groundtruth/
 *.zip
 *.tar.gz
 *.pth

@@ -25,6 +25,13 @@ data
 data/
 datasets/
 
+# Replica 데이터셋 (office0~4, room0~2, ground_truth 등)
+# evaluate/replica/ 소스코드는 영향 없음
+**/replica/office*/
+**/replica/room*/
+**/replica/ground_truth/
+**/replica/groundtruth/
+
 # Pretrained 체크포인트 (config 파일은 유지)
 pretrained/checkpoints/
 pretrained/**/*.pth
