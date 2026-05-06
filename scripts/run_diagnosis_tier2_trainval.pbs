@@ -1,0 +1,41 @@
+#!/bin/bash
+#PBS -N openyolo3d_t2_trainval
+#PBS -q coss_agpu
+# Force A100 nodes (ece-agpu1~18). The coss_agpu queue can otherwise fall back
+# to tgpu (TITAN RTX) — Qlist=agpu pins the select to true A100 hosts.
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=00:30:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D-nuscenes
+cd "$PROJECT_ROOT"
+
+OUT_DIR="${PROJECT_ROOT}/results/diagnosis_tier2_trainval"
+mkdir -p "$OUT_DIR/per_sample" "$OUT_DIR/figures"
+LOG="$OUT_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Run dir: $OUT_DIR ==="
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export TORCH_CUDA_ARCH_LIST="6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6"
+
+echo "=== Node info ==="
+hostname
+nvidia-smi || true
+
+echo "=== Python / torch ==="
+python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), 'device', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'cpu')"
+
+echo "=== Tier 2 Extended: trainval n=100, seed=42, 6 cams, YOLO-World only ==="
+python -u -m diagnosis_tier2.run_diagnosis_tier2 \
+    --num-samples 100 \
+    --version v1.0-trainval \
+    --seed 42 \
+    --output "$OUT_DIR"
+echo "=== Done ==="

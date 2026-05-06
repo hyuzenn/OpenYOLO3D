@@ -1,0 +1,29 @@
+#!/bin/bash
+#PBS -N openyolo3d_smoke_regress
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=00:20:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D-nuscenes
+cd "$PROJECT_ROOT"
+
+OUT_DIR="${PROJECT_ROOT}/results/smoke_regression"
+mkdir -p "$OUT_DIR"
+LOG="$OUT_DIR/run.log"
+exec >"$LOG" 2>&1
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export TORCH_CUDA_ARCH_LIST="6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6"
+
+hostname
+echo "=== Stage 2 smoke test — backward-compat regression after adapter cameras-param edit ==="
+python -u run_nuscenes_smoke_test.py --sample-idx 0 --out-dir "$OUT_DIR/scene_dir"
+EXIT=$?
+echo "=== smoke test exit: $EXIT ==="
+exit $EXIT

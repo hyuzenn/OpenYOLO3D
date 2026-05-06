@@ -1,0 +1,32 @@
+#!/bin/bash
+#PBS -N option5_detection_guided
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=04:00:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D-nuscenes
+cd "$PROJECT_ROOT"
+
+OUT_DIR="${PROJECT_ROOT}/results/diagnosis_option5"
+mkdir -p "$OUT_DIR"
+LOG="$OUT_DIR/run.log"
+exec >"$LOG" 2>&1
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export TORCH_CUDA_ARCH_LIST="6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6"
+
+hostname
+echo "=== Run dir: $OUT_DIR ==="
+python -c "import torch, hdbscan; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+
+echo "=== Option 5: 2D-detection-guided clustering on W1.5 50-sample set ==="
+python -u -m diagnosis_option5.run_option5 \
+    --use-step-a-samples results/diagnosis_step_a/samples_used.json \
+    --output "$OUT_DIR"
+echo "=== Done ==="

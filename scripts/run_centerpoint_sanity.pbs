@@ -1,0 +1,25 @@
+#!/bin/bash
+#PBS -N gamma_b2_sanity
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=00:15:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D-nuscenes
+cd "$PROJECT_ROOT"
+
+OUT_DIR="${PROJECT_ROOT}/results/diagnosis_gamma"
+mkdir -p "$OUT_DIR"
+LOG="$OUT_DIR/sanity_run.log"
+exec >"$LOG" 2>&1
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
+hostname
+echo "=== γ Stage B.2 sanity ==="
+python -u -m diagnosis_gamma.sanity_centerpoint
+echo "=== exit $? ==="

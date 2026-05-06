@@ -1,0 +1,31 @@
+#!/bin/bash
+#PBS -N beta1_5_verticality
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=01:30:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D-nuscenes
+cd "$PROJECT_ROOT"
+
+OUT_DIR="${PROJECT_ROOT}/results/diagnosis_beta1_5"
+mkdir -p "$OUT_DIR"
+LOG="$OUT_DIR/run.log"
+exec >"$LOG" 2>&1
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
+hostname
+echo "=== Run dir: $OUT_DIR ==="
+python -c "import hdbscan, scipy.ndimage; print('hdbscan/scipy.ndimage loaded OK')"
+
+echo "=== β1.5: verticality filter sweep on β1 50-sample set ==="
+python -u -m diagnosis_beta1_5.run_beta1_5 \
+    --use-beta1-samples results/diagnosis_beta1/samples_used.json \
+    --output "$OUT_DIR"
+echo "=== Done ==="
