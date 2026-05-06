@@ -240,3 +240,8 @@ Built on top of [OpenYOLO3D](https://github.com/aminebdj/OpenYOLO3D). Uses [YOLO
 This work is conducted as a graduation research project at Soongsil university.
 
 ---
+<<<<<<< HEAD
+=======
+
+**Contact**: yuha@soongsil.ac.kr
+>>>>>>> Pre-method: ScanNet baseline reproduction infrastructure

@@ -5,7 +5,11 @@ import argparse
 from evaluate import SCENE_NAMES_REPLICA, SCENE_NAMES_SCANNET200, evaluate_scannet200, evaluate_replica
 from utils import OpenYolo3D
 import yaml
+import os
 import os.path as osp
+import json
+import math
+import numpy as np
 
 class InstSegEvaluator():
     def __init__(self, dataset_type):
@@ -58,6 +62,63 @@ def test_pipeline_full(dataset_type, path_to_3d_masks, is_gt):
             'pred_classes': predictions[scene_name][1].cpu().numpy()}
 
     inst_AP = evaluator.evaluate_full(preds, gt_dir, dataset=dataset_type)
+    _maybe_dump_metrics(dataset_type, inst_AP)
+
+def _to_py(x):
+    if isinstance(x, np.generic):
+        x = x.item()
+    if isinstance(x, float) and math.isnan(x):
+        return None
+    return x
+
+def _maybe_dump_metrics(dataset_type, inst_AP):
+    run_dir = os.environ.get("RUN_DIR")
+    if not run_dir:
+        return
+    if dataset_type == "scannet200":
+        avgs, ar_avgs, rc_avgs, pcdc_avgs = inst_AP
+        out = {
+            "dataset": "scannet200",
+            "metrics": {
+                "average": {
+                    "AP":      _to_py(avgs["all_ap"]),
+                    "AP_50":   _to_py(avgs["all_ap_50%"]),
+                    "AP_25":   _to_py(avgs["all_ap_25%"]),
+                    "AR":      _to_py(ar_avgs["all_ar"]),
+                    "RC_50":   _to_py(rc_avgs["all_rc_50%"]),
+                    "RC_25":   _to_py(rc_avgs["all_rc_25%"]),
+                    "APCDC":   _to_py(pcdc_avgs["all_pcdc"]),
+                    "PCDC_50": _to_py(pcdc_avgs["all_pcdc_50%"]),
+                    "PCDC_25": _to_py(pcdc_avgs["all_pcdc_25%"]),
+                },
+            },
+        }
+        for cat in ("head", "common", "tail"):
+            out["metrics"][cat] = {
+                "AP":    _to_py(avgs.get(f"{cat}_ap")),
+                "AP_50": _to_py(avgs.get(f"{cat}_ap50%")),
+                "AP_25": _to_py(avgs.get(f"{cat}_ap25%")),
+                "AR":    _to_py(ar_avgs.get(f"{cat}_ar")),
+                "RC_50": _to_py(rc_avgs.get(f"{cat}_rc50%")),
+                "RC_25": _to_py(rc_avgs.get(f"{cat}_rc25%")),
+            }
+    elif dataset_type == "replica":
+        out = {
+            "dataset": "replica",
+            "metrics": {
+                "average": {
+                    "AP":    _to_py(inst_AP["all_ap"]),
+                    "AP_50": _to_py(inst_AP["all_ap_50%"]),
+                    "AP_25": _to_py(inst_AP["all_ap_25%"]),
+                },
+            },
+        }
+    else:
+        return
+    path = osp.join(run_dir, "metrics.json")
+    with open(path, "w") as f:
+        json.dump(out, f, indent=2)
+    print(f"[metrics] wrote {path}")
 
 def load_yaml(path):
     with open(path) as stream:

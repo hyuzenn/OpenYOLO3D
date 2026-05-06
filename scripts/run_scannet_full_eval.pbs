@@ -1,14 +1,29 @@
 #!/bin/bash
 #PBS -N openyolo3d_scannet_eval
 #PBS -q coss_agpu
-#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb
+# Force A100 nodes (ece-agpu1~18). The coss_agpu queue can otherwise fall back
+# to tgpu (TITAN RTX) — Qlist=agpu pins the select to true A100 hosts.
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
 #PBS -l walltime=04:00:00
 #PBS -j oe
 
-LOG=/home/rintern16/OpenYOLO3D/scannet_eval.log
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+# Auto-incremented run directory per CLAUDE.md: results/<YYYY-MM-DD>_<EXP>_v<NN>/
+DATE=$(date +%F)
+EXP=scannet_eval
+CONFIG=pretrained/config_scannet200.yaml
+N=$(printf '%02d' $(($(ls -d "results/${DATE}_${EXP}_v"* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+export RUN_DIR  # picked up by run_evaluation.py to dump metrics.json
+mkdir -p "$RUN_DIR/outputs"
+[ -f "$CONFIG" ] && cp "$CONFIG" "$RUN_DIR/config.yaml"
+
+LOG="$RUN_DIR/run.log"
 exec >"$LOG" 2>&1
 
-cd /home/rintern16/OpenYOLO3D
+echo "=== Run directory: $RUN_DIR ==="
 
 source /home/rintern16/miniconda3/etc/profile.d/conda.sh
 conda activate openyolo3d
