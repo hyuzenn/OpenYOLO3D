@@ -359,3 +359,18 @@ def install_method_31_only(merger: Optional[IoUMerger] = None) -> None:
 
 def uninstall_method_31_only() -> None:
     uninstall_method_31()
+
+
+def install_method_21_only(voter: Optional[WeightedVoting] = None) -> None:
+    """Single-method ablation entry: METHOD_21 (Weighted voting) only.
+
+    METHOD_31 is **not** installed — the per-scene output passes through
+    unchanged from `OpenYolo3D.label_3d_masks_from_2d_bboxes`. The
+    WeightedVoting hook replaces the pixel-mode aggregation identically to
+    Phase 1.
+    """
+    install_method_21(voter=voter)
+
+
+def uninstall_method_21_only() -> None:
+    uninstall_method_21()
