@@ -1,247 +1,251 @@
 # SemWorld-3D
 
-**Streaming Open-Vocabulary 3D Instance Mapping for Outdoor Driving Scenes**
+**Streaming Open-Vocabulary 3D Instance Mapping — Indoor First, Outdoor Extension**
 
-A research project initially extending [OpenYOLO3D](https://github.com/aminebdj/OpenYOLO3D) from indoor RGBD scenes to outdoor autonomous driving scenarios on the nuScenes dataset. After a 7-stage diagnostic measurement campaign (May 2026), the method direction has been substantially revised; see [Diagnosis findings](#diagnosis-findings-may-2026) below.
+A research project building on [OpenYOLO3D](https://github.com/aminebdj/OpenYOLO3D) with two phases agreed with advisor:
 
-> ⚠️ **Status**: Method direction is finalized after diagnosis; hybrid proposal simulation in progress. Targeting CVPR 2027 submission (Nov 2026 deadline).
+1. **Phase 1 (current)**: validate the proposed method modules on ScanNet200 (indoor static scenes)
+2. **Phase 2**: extend to nuScenes (outdoor dynamic driving scenes)
 
----
-
-## Motivation
-
-Existing outdoor open-vocabulary 3D perception work (OV-Uni3DETR, OpenSight, OV-SCAN, FM-OV3D) targets **per-frame 3D detection** — they output bounding boxes, not a temporally consistent instance memory. POP-3D works at the **occupancy/voxel level**, not at instance granularity. Indoor real-time open-vocab instance segmentation methods (OpenYOLO3D, OpenMask3D, ConceptFusion) assume dense RGBD and a static, single-camera setup.
-
-The empty slot:
-
-> **Streaming, instance-level, open-vocabulary 3D mapping for outdoor driving scenes — with sparse LiDAR, 6-camera surround-view, dynamic objects, and ego-motion, all under a real-time constraint.**
-
-This is the problem SemWorld-3D addresses.
-
-## Why outdoor breaks indoor pipelines
-
-Moving from indoor (Replica, ScanNet) to outdoor (nuScenes) is not a dataset swap. It breaks three core assumptions of indoor open-vocab 3D pipelines:
-
-1. **Lifting assumption**: OpenYOLO3D lifts 2D detections to 3D using dense per-pixel depth from RGBD. nuScenes provides 32-beam sparse LiDAR — a 2D bounding box may contain anywhere from 0 to a few projected LiDAR points, especially at distance.
-2. **Static-scene assumption**: Indoor instance association assumes scene geometry is stable between frames. nuScenes contains moving cars, pedestrians, cyclists.
-3. **Single-view assumption**: Indoor scenes typically use a forward-facing camera. nuScenes uses 6 surround cameras with overlapping fields of view.
-
-These three failure modes drive the method design.
+> ⚠️ **Status**: ScanNet200 method validation in progress. METHOD_21 + METHOD_31 (Phase 1 of method axes) evaluated; ablations underway. Targeting CVPR 2027 submission (Nov 2026 deadline).
 
 ---
 
-## Diagnosis findings (May 2026)
+## Method overview
 
-A **7-stage hypothesis-driven measurement campaign** was conducted on nuScenes trainval keyframe data. Each stage tested a specific hypothesis with explicit pass/fail thresholds, isolating one variable at a time.
+The method extends OpenYOLO3D along three orthogonal axes, each with two phases (simple → advanced). The simple phase is intended primarily as ablation; the advanced phase carries the contribution.
 
-### Setup-level findings (Tier 1 / 2 / 2-Extended)
-
-Measured on 100 trainval samples (n=100, seed=42).
-
-| Finding | Value | Implication |
+| Axis | Phase 1 (simple) | Phase 2 (advanced) |
 |---|---|---|
-| Per-pixel depth coverage in detection box | **0.20%** | Per-pixel lifting is meaningless; per-instance aggregation only |
-| Detection-induced GT loss | **44.8%** | 2D detection recall hole is the dominant source of missing instances |
-| GT distribution beyond 30m | **52%** | Operating regime is inverted vs indoor; far-range performance matters |
-| Multi-view GT fraction (≥2 cams visible) | **8.6%** | Multi-view consistency is sparse; cannot serve as primary reliability axis |
-| Detector-geometry gap (cams that see GT but detector misses) | **0.63 cams** | Robust to sample diversity; systematic detector limitation |
-| Mask3D (indoor-trained) instances per frame | **2.9** | Severe under-segmentation; cannot serve as proposal source |
+| **Instance Registration** | METHOD_11: Frame-counting "wait and see" | METHOD_12: Bayesian probability accumulation |
+| **Label Consistency** | METHOD_21: Weighted label voting (distance + center) | METHOD_22: Visual-feature EMA fusion |
+| **Spatial Merging** | METHOD_31: 3D IoU-based merging | METHOD_32: Hungarian distance + semantic cost |
 
-### Proposal-level findings (7 stages)
+Plan agreed with advisor:
+- **ScanNet200**: validate METHOD_21/22/31/32 (label consistency + spatial merging axes). METHOD_11/12 (instance registration) is skipped on ScanNet because ScanNet is static and per-scene, not online streaming — the registration axis is meaningful only on dynamic data.
+- **nuScenes**: validate METHOD_11/12 in addition; adapt the ScanNet-validated method to outdoor.
 
-Measured on 50 samples (mini 20 + trainval 30, seed=42 fixed across all stages).
+## Why this method shape
 
-| Stage | Method | M-rate (1↔1 GT match) | Verdict |
-|---|---|---|---|
-| **W1** — HDBSCAN baseline | default config | 9.1% | over-segmentation: 31 clusters/frame |
-| **W1.5** — extended sweep | 84 combos × ground filter modes | 28.5% | grid-end optimum; structural limit |
-| **Step 1** — Mask3D vs HDBSCAN comparison | head-to-head + hybrid simulation | Mask3D 0.3% / HDBSCAN 23.2% | Mask3D replacement justified by data |
-| **β1** — pillar foreground extraction | 24-combo sweep | **36.1%** | sweet spot, +7.6pt over baseline |
-| **β1.5** — verticality filter | 27-combo sweep | 27.4% | over-engineering (−8.7pt) |
-| **Step A** — pillar resolution sweep (ceiling test) | 12 combos, resolution 0.2–0.5m | 36.1% | **plateau confirmed** at β1 sweet spot |
-| **Option 5** — 2D detection-guided clustering | 27 combos, frustum + HDBSCAN | 15.1% | wrong axis: per-frustum HDBSCAN over-segments |
-| **γ** — CenterPoint (learned 3D detector) | 8 combos, score sweep | 35.2% | **also plateaus near 36% ceiling** |
+The three axes target three failure modes of online open-vocab 3D mapping:
 
-### What the data tells us
+1. **Registration** — false positives from single-frame noise; resolved by requiring temporal consistency before committing to the map.
+2. **Label consistency** — same instance receives different class labels across viewpoints due to open-vocab text classifier instability; resolved by weighted voting (Phase 1) or feature-level fusion (Phase 2).
+3. **Spatial merging** — the same physical object gets registered as multiple instances due to label drift across frames; resolved by IoU-based merging (Phase 1) or distance + semantic cost via Hungarian assignment (Phase 2).
 
-**1. The 36% M-rate is a fundamental ceiling, not an algorithmic limit.**
+## Integration with OpenYOLO3D
 
-Seven different proposal generation strategies — unsupervised geometric clustering (HDBSCAN), pillar-based foreground extraction, verticality filtering, multi-resolution pillar sweep, 2D-detection-guided per-frustum clustering, and a fully learned 3D detector (CenterPoint) — all plateau in the same 35–36% region. This is the GT-LiDAR coverage ceiling on nuScenes: the combination of sparse 32-beam LiDAR with ~52% of GT objects beyond 30m bounds what *any* proposal source can recover from a single keyframe.
+| Method | Integration point | Strategy |
+|---|---|---|
+| METHOD_11/12 | Pipeline front-end (between Mask3D output and MVPDist) | Wait-and-see / Bayesian gate before label assignment |
+| METHOD_21/22 | MVPDist replacement via wrapper hook | Monkey-patch: replace MVPDist with WeightedVoting / FeatureFusionEMA. Original MVPDist preserved; reverted if performance drops significantly |
+| METHOD_31/32 | Output post-processing | Receive final instance map, apply 3D IoU merging or Hungarian-based merging |
 
-**2. Distance bias is opposite between learned and unsupervised proposals.**
+OpenYOLO3D core code is **not modified**. All method modules are applied via `install_*` / `uninstall_*` hooks; baseline behavior is exactly recovered when hooks are uninstalled.
 
-| Distance bin | β1 (unsupervised geometric) M-rate | γ (CenterPoint, learned) M-rate |
+---
+
+## ScanNet200 progress (May 2026)
+
+### Stage 1 — Baseline reproduction (✅ done)
+
+OpenYOLO3D ScanNet200 baseline reproduced on TITAN RTX (matches paper):
+
+| Metric | Value |
+|---|---|
+| AP | 0.247 |
+| AP_50 | 0.318 |
+| AP_25 | 0.363 |
+| AP head / common / tail | 0.278 / 0.243 / 0.216 |
+
+Re-verified on A100: Δ ≤ 0.001 across all buckets — hardware-stable.
+
+Infrastructure: `run_evaluation.py` extended with `_maybe_dump_metrics()` that writes a structured `metrics.json` to `RUN_DIR`. This is the single comparison reference for all method ablations.
+
+### Stage 2 — Phase 1 evaluation (✅ done; result: NEUTRAL)
+
+METHOD_21 + METHOD_31 with default hyperparameters (alpha=0.5, D=10m, C=300px, IoU=0.5 same-class):
+
+| Category | Metric | Baseline | Phase 1 | Δ |
+|---|---|---|---|---|
+| average | AP | 0.2473 | 0.2443 | **−0.0029** |
+| average | AP_50 | 0.3175 | 0.3157 | −0.0018 |
+| average | AP_25 | 0.3624 | 0.3629 | +0.0005 |
+| head | AP | 0.2776 | 0.2763 | −0.0013 |
+| common | AP | 0.2432 | 0.2393 | −0.0038 |
+| tail | AP | 0.2162 | 0.2125 | −0.0037 |
+| tail | AP_50 | 0.2689 | 0.2627 | −0.0063 |
+
+Decision branch fired: **NEUTRAL** ([-0.005, +0.005] for average AP). The combined effect is mildly negative on strict AP, concentrated in tail classes.
+
+### Stage 3 — Single-method ablations (🚧 in progress)
+
+The Phase 1 result mixes two methods. To isolate contributions, single-method ablations are running:
+
+- **METHOD_31 alone** (no MVPDist replacement, only IoU post-merge): in progress
+- **METHOD_21 alone** (MVPDist wrapper, no post-merge): pending
+
+These ablations (a) clarify which axis is responsible for the regression, (b) provide ablation table data for the paper.
+
+### Stage 4 — Phase 2 + Mix experiments (pending)
+
+Five-experiment matrix agreed with advisor:
+
+| Experiment | Label axis | Merge axis |
+|---|---|---|
+| Baseline | original MVPDist | (none) |
+| Phase 1 (✅) | METHOD_21 | METHOD_31 |
+| Phase 2 | METHOD_22 | METHOD_32 |
+| Mix-A | METHOD_21 | METHOD_32 |
+| Mix-B | METHOD_22 | METHOD_31 |
+
+METHOD_22 (FeatureFusionEMA) and METHOD_32 (HungarianMerger) are implemented and unit-tested. Phase 2 integration requires a CLIP image encoder for per-frame visual embedding extraction (not part of the original OpenYOLO3D pipeline) — this is the main implementation work for Stage 4.
+
+ScanNet200 prompt embeddings (200 × 512, ViT-B/32, L2-normalized) are pre-extracted and cached at `pretrained/scannet200_prompt_embeddings.pt`.
+
+---
+
+## nuScenes preliminary investigation (May 2026)
+
+> Run on a separate worktree (`OpenYOLO3D-nuscenes`, branch `feature/diagnosis`). Conducted before the ScanNet method work; preserved as preliminary outdoor-extension data and to inform the eventual transition.
+
+A 7-stage hypothesis-driven measurement campaign on nuScenes trainval keyframes characterized how the indoor pipeline fails outdoors. Each stage tested a specific hypothesis with explicit pass/fail thresholds.
+
+### Setup-level findings (Tier 1 / 2 / 2-Ext, 100 samples)
+
+| Finding | Value |
+|---|---|
+| Per-pixel depth coverage in detection box | 0.20% |
+| Detection-induced GT loss | 44.8% |
+| GT distribution beyond 30m | 52% |
+| Multi-view GT fraction (≥2 cams visible) | 8.6% |
+| Mask3D (indoor-trained) instances per frame | 2.9 |
+
+### Proposal-level findings (7 stages, 50 samples, seed=42)
+
+| Stage | Method | M-rate (1↔1 GT match) |
+|---|---|---|
+| W1 | HDBSCAN baseline | 9.1% |
+| W1.5 | extended HDBSCAN sweep | 28.5% |
+| Step 1 | Mask3D vs HDBSCAN | Mask3D 0.3% / HDBSCAN 23.2% |
+| β1 | Pillar foreground extraction | **36.1%** (geometric sweet spot) |
+| β1.5 | Verticality filter | 27.4% (over-engineering) |
+| Step A | Pillar resolution sweep | 36.1% (plateau confirmed) |
+| Option 5 | 2D detection-guided clustering | 15.1% (wrong axis) |
+| γ | CenterPoint (learned 3D detector) | 35.2% |
+
+Seven different proposal strategies all plateau in the 35–36% region. This is the GT-LiDAR coverage ceiling on nuScenes (sparse 32-beam LiDAR + 52% of GT > 30m).
+
+### Hybrid simulation (α, finding)
+
+β1 (unsupervised geometric) and γ (CenterPoint) showed **opposite distance bias**:
+
+| Distance bin | β1 M-rate | γ M-rate |
 |---|---|---|
 | 0–10m | 34.8% | **71.5%** (+36.7pt) |
-| 10–20m | 35.8% | 49.2% |
-| 20–30m | 40.2% | 39.2% |
-| 30–50m | 23.1% | 24.4% |
 | 50m+ | 15.5% | 4.7% |
 
-CenterPoint is dominant in dense near-range (training data distribution), while β1 holds up in sparse far-range (geometric clustering still works with few points). On per-sample paired comparison: γ wins 19/50, β1 wins 17/50, similar 14/50 — strong complementarity. **This is the key signal that motivates the hybrid direction.**
+Per-sample paired: γ wins 19/50, β1 wins 17/50, similar 14/50.
 
-**3. Detection recall hole is the dominant outdoor failure mode (44.8%), not sparsity per se.**
+A distance-aware union (β1 for far range, γ for near range) was simulated:
 
-Sparsity defines the *space* in which reliability is measured; detection failure defines the *target* that reliability must compensate for. The 2D detection recall by distance (74.7% at 0–10m → 9.8% at 50m+) is itself a fundamental upper bound for any method that depends on 2D detection — including the original OpenYOLO3D pipeline.
-
-**4. The central design question is "where to define instances", not "how to cluster better".**
-
-This is the same axis as POP-3D's contribution. The 7-stage diagnosis effectively rules out the geometry-only anchor (β1 ceiling), the detection-only anchor (Option 5 fails as wrong axis), and the learned-dense-detector anchor in isolation (γ plateaus). The data points to a hybrid arbitration: geometry and detection contribute to different distance regimes, and reliability scores arbitrate between them.
-
----
-
-## Method direction
-
-### Three-tier narrative
-
-- **(1) Problem**: Detection recall hole is the dominant source of outdoor open-vocab loss; the geometry-only ceiling is a fundamental GT-LiDAR coverage limit.
-- **(2) Structure**: Geometric proposal **augmented with learned detector proposals**, with reliability-aware fusion that arbitrates by distance regime.
-- **(3) Role separation**:
-  - **Coverage** = observability (sparse LiDAR-based, defines where instances *can* be observed)
-  - **Detection** = semantics (2D open-vocab, defines what instances *are*)
-  - **Reliability** = arbitration (distance-aware weighting between proposal sources)
-
-### Action principle
-
-> *In outdoor open-vocab mapping, no single proposal source breaks the 36% ceiling on nuScenes. The fix is not a better proposal generator but a reliability-aware arbitration between complementary sources.*
-
-### Pipeline (3 stages)
-
-1. **Proposal (hybrid)**: Pillar-based geometric clustering (β1, far-range strong) + learned 3D detector (CenterPoint, near-range strong). Class-agnostic use of the learned detector for proposal generation; open-vocab labels come from YOLO-World.
-2. **Reliability**: Coverage-based score (primary) + multi-view anchor bootstrap (secondary). Distance-aware weighting between the two proposal sources.
-3. **Fusion (3-case)**:
-   - **M (matched)**: Both sources agree on an instance → high reliability
-   - **L (one-source-only)**: Only β1 *or* only γ proposes → reliability weighted by distance regime
-   - **D (detection-only)**: 2D detection without 3D match → 4-step recovery (multi-cam search, projection, promotion, low-reliability hold)
-
-### What the diagnosis ruled out
-
-- ❌ Mask3D as proposal source (M=0.3% confirmed)
-- ❌ Range as a primary reliability component (Tier 1: weak predictor)
-- ❌ Multi-view as a primary reliability component (8.6% multi-view ratio)
-- ❌ Per-pixel lifting (0.2% pixel coverage)
-- ❌ Pure HDBSCAN as proposal source (W1.5 ceiling)
-- ❌ Verticality filter on pillar foreground (β1.5 over-engineering)
-- ❌ Pure detection-guided clustering (Option 5 wrong axis)
-- ❌ Single-source proposal at all (7-stage 36% ceiling)
-
-### What is preserved
-
-- ✅ OpenYOLO3D's real-time philosophy (no CLIP recomputation, projection-only reliability, EMA per-instance accumulation)
-- ✅ Open-vocabulary capability via YOLO-World labeling (CenterPoint used class-agnostically for proposals only)
-- ✅ Coverage as primary reliability component (single strong-signal axis from diagnosis)
-- ✅ 3-case fusion targeting the 44.8% detection-induced loss directly
-- ✅ All 7 stages of geometric experiments preserved as ablation reference
-
----
-
-## Expected contributions
-
-> Contributions are being finalized as the hybrid simulation completes.
-
-- **Diagnosis**: First systematic 7-stage measurement of how indoor open-vocab 3D pipelines fail on outdoor driving data, quantifying a fundamental 36% M-rate ceiling under single-source proposals on nuScenes.
-- **Hybrid proposal**: Geometric-clustering and learned-3D-detector proposals are shown to be complementary across distance regimes; the method arbitrates between them via a reliability score grounded in sparse LiDAR coverage.
-- **Real-time on outdoor open-vocab**: A working pipeline that maintains real-time inference on nuScenes, contrasting with existing outdoor open-vocab methods that prioritize accuracy without explicit real-time guarantees.
-
-Method module details will be added to [`docs/METHOD.md`](docs/METHOD.md) after the hybrid simulation finalizes the proposal-level architecture.
-
-## Tech stack
-
-- **Base**: OpenYOLO3D's real-time philosophy (core not modified; original Mask3D + indoor lifting replaced)
-- **2D open-vocabulary detector**: YOLO-World (semantic labeling)
-- **3D proposal — geometric branch**: Pillar foreground extraction + HDBSCAN (β1 best config, locked)
-- **3D proposal — learned branch**: CenterPoint pretrained on nuScenes (mmdet3d 1.4.0; class-agnostic use)
-- **Visual-language embeddings**: CLIP-family encoder for instance-level features
-- **Dataset**: nuScenes (`v1.0-mini` for development, `v1.0-trainval` for full experiments)
-- **Framework**: PyTorch 1.12, mmdet3d 1.4.0
-- **Hardware**: NVIDIA A100
-
-## Evaluation plan
-
-| Aspect | Metric |
+| Configuration | M-rate |
 |---|---|
-| Detection accuracy | mAP, NDS at the instance level on nuScenes |
-| Open-vocab capability | Performance on novel categories (following OV-SCAN / OpenSight protocols) |
-| Distance-stratified | Per-bin mAP (0–10, 10–20, 20–30, 30–50, 50m+) — required given the 52% >30m GT distribution |
-| Source ablation | β1-only / γ-only / hybrid comparison (built into diagnosis) |
-| Temporal consistency | ID switches (IDS), label stability across frames, association accuracy |
-| Real-time | FPS, end-to-end latency per frame, peak GPU memory |
+| β1 alone | 0.361 |
+| γ alone | 0.352 |
+| **Hybrid (distance-aware, threshold=35m)** | **0.467** |
 
-Comparison targets: OpenSight, OV-SCAN, FM-OV3D (outdoor open-vocab); OpenYOLO3D (indoor real-time reference); ablations of our own modules (β1-only, γ-only, hybrid w/o reliability).
+Ceiling break: +10.6pt absolute, +29.4% relative. Complementarity (β1-only ∪ γ-only coverage) = 27%.
 
-## Roadmap
+### Implications for the outdoor phase
 
-| Stage | Period | Status | Deliverable |
-|---|---|---|---|
-| 1. nuScenes dataloader | May 2026 | ✅ Done | `dataloaders/nuscenes_loader.py`, calibration verified |
-| 2. OpenYOLO3D integration smoke test | May 2026 | ✅ Done | Adapter, end-to-end run on nuScenes frames |
-| 3. Diagnosis (Tier 1 / 2 / 2-Ext) | May 2026 | ✅ Done | Setup-level failure quantified |
-| 3.5. Proposal diagnosis (W1 → γ, 7 stages) | May 2026 | ✅ Done | 36% ceiling and complementary distance bias confirmed |
-| 4. Hybrid simulation | May 2026 | 🚧 In progress | β1 ∪ γ union measurement to confirm ceiling break |
-| 5. Method implementation (Coverage reliability + 3-case fusion) | Jun–Jul 2026 | Pending | Working pipeline on nuScenes |
-| 6. Full experiments + ablation | Aug 2026 | Pending | Results on nuScenes trainval |
-| 7. Graduation thesis presentation | Sep 2026 | Pending | Demo + thesis writeup |
-| 8. Paper writing + revision | Oct 2026 | Pending | CVPR 2027 draft |
-| 9. CVPR 2027 submission | Nov 1, 2026 | Pending | Final submission |
+The nuScenes preliminary data motivates two design choices for the outdoor extension (Phase 2 of the project):
+
+- **Hybrid proposal** (geometric + learned 3D detector with distance-aware arbitration) is required to break the single-source ceiling.
+- **METHOD_11/12 (instance registration)** becomes essential on nuScenes because the dataset is dynamic and online — the registration gate is meaningful only here.
+
+These results are preserved on the `feature/diagnosis` branch. The outdoor extension work resumes after the ScanNet method validation completes.
+
+---
 
 ## Repository structure
 
 ```
 .
-├── dataloaders/
-│   ├── nuscenes_loader.py          # 8-key dict interface for nuScenes
-│   └── sanity_check.py             # LiDAR→camera projection visual check
-├── adapters/
-│   ├── nuscenes_to_openyolo3d.py   # nuScenes → OpenYOLO3D scene_dir adapter
-│   ├── lidar_proposals.py          # LiDARProposalGenerator (HDBSCAN + ground filter)
-│   └── centerpoint_proposals.py    # CenterPointProposalGenerator (mmdet3d wrapper)
-├── preprocessing/
-│   ├── pillar_foreground.py        # PillarForegroundExtractor (β1, locked config)
-│   ├── verticality_filter.py       # VerticalityFilter (β1.5 reference)
-│   └── detection_frustum.py        # FrustumExtractor (Option 5 reference)
-├── diagnosis/                      # Tier 1
-├── diagnosis_tier2/                # Tier 2 + 2-Extended
-├── diagnosis_w1/                   # W1: HDBSCAN baseline
-├── diagnosis_w1_5/                 # W1.5: extended sweep + distance-stratified
-├── diagnosis_step1/                # Step 1: Mask3D vs HDBSCAN vs Hybrid sim
-├── diagnosis_beta1/                # β1: pillar foreground sweep
-├── diagnosis_beta1_5/              # β1.5: verticality filter sweep
-├── diagnosis_step_a/               # Step A: pillar resolution sweep (β1 ceiling test)
-├── diagnosis_option5/              # Option 5: 2D detection-guided clustering
-├── diagnosis_gamma/                # γ: CenterPoint proposal evaluation
-├── proposal/                       # (added in Option 5; reference)
-├── configs/
-│   ├── nuscenes_baseline.yaml
-│   └── nuscenes_trainval.yaml
+├── method_scannet/
+│   ├── method_21_weighted_voting.py    # WeightedVoting class (MVPDist replacement, Phase 1)
+│   ├── method_22_feature_fusion.py     # FeatureFusionEMA class (MVPDist replacement, Phase 2)
+│   ├── method_31_iou_merging.py        # IoUMerger class (post-merge, Phase 1)
+│   ├── method_32_hungarian_merging.py  # HungarianMerger class (post-merge, Phase 2)
+│   ├── hooks.py                        # install_phase1 / uninstall_phase1 (monkey-patch hooks)
+│   ├── eval_phase1.py                  # Phase 1 evaluation entry
+│   ├── extract_prompt_embeddings.py    # CLIP text-encoder caching for METHOD_22
+│   └── tests/                          # 10/10 unit tests passing
+├── pretrained/
+│   └── scannet200_prompt_embeddings.pt # 200 × 512, ViT-B/32, L2-normalized
 ├── docs/
-│   ├── CONTEXT.md
-│   ├── BASELINE.md
-│   ├── NUSCENES_SETUP.md
-│   └── method_drafts/              # Pre-diagnosis ideas (reference only)
-├── results/                        # Per-stage outputs (aggregate.json, report.md, figures, sweep)
+│   ├── stage_b_mvpdist_location.md     # MVPDist hook locations identified
+│   ├── scannet200_classes_location.md  # Class list + CLIP variant references
+│   └── phase2_integration_plan.md      # Phase 2 integration plan + decision items
+├── results/
+│   ├── 2026-05-05_scannet_eval_v02/    # TITAN RTX baseline
+│   ├── 2026-05-07_scannet_eval_v01/    # A100 baseline (Δ ≤ 0.001 vs TITAN)
+│   └── 2026-05-07_scannet_phase1_v02/  # Phase 1 result (AP −0.0029)
+├── run_evaluation.py                    # Extended with _maybe_dump_metrics() (ScanNet/Replica)
+├── scripts/
+│   ├── run_scannet_full_eval.pbs       # Baseline (A100 pin)
+│   └── run_scannet_phase1_eval.pbs     # Phase 1 evaluation
 └── [OpenYOLO3D core files — untouched]
 ```
 
+The `OpenYOLO3D-nuscenes/` worktree (branch `feature/diagnosis`) holds the nuScenes preliminary investigation (7-stage diagnosis + α hybrid simulation). Not modified during ScanNet work.
+
+## Roadmap
+
+| Stage | Period | Status |
+|---|---|---|
+| ScanNet200 baseline reproduction | May 2026 | ✅ Done (A100 verified) |
+| nuScenes preliminary investigation (7-stage + α) | May 2026 | ✅ Done (preliminary, archived) |
+| Phase 1 evaluation (METHOD_21 + METHOD_31) | May 2026 | ✅ Done (NEUTRAL) |
+| Single-method ablations (METHOD_21 alone, METHOD_31 alone) | May 2026 | 🚧 In progress |
+| Phase 2 + Mix experiments | Jun 2026 | Pending |
+| nuScenes adaptation (METHOD_11/12 + outdoor extension) | Jul–Aug 2026 | Pending |
+| Full experiments + ablation | Aug 2026 | Pending |
+| Graduation thesis presentation | Sep 2026 | Pending |
+| Paper writing | Oct 2026 | Pending |
+| CVPR 2027 submission | Nov 1, 2026 | Pending |
+
 ## Setup
 
-See [`docs/NUSCENES_SETUP.md`](docs/NUSCENES_SETUP.md) for nuScenes data layout and environment setup. The development environment `openyolo3d-dev` is built on OpenYOLO3D's `openyolo3d` env with `nuscenes-devkit`, `hdbscan`, and `mmdet3d 1.4.0` added. Pre-mmdet3d package snapshots are kept under `/home/rintern16/env_snapshots/` for reproducibility.
+OpenYOLO3D ScanNet evaluation environment:
 
-## Branching policy
+```bash
+conda activate openyolo3d
+# A100 queue: scripts pinned with Qlist=agpu
+qsub scripts/run_scannet_full_eval.pbs
+```
+
+Method evaluation:
+
+```bash
+# Phase 1
+python -m method_scannet.eval_phase1 --output results/<run_dir>
+```
+
+For nuScenes preliminary work, see `OpenYOLO3D-nuscenes/` worktree (`openyolo3d-dev` env with `nuscenes-devkit` + `mmdet3d 1.4.0` added; pre-mmdet3d snapshot at `/home/rintern16/env_snapshots/`).
+
+## Branching
 
 - `main`: stable, integrated stages only
-- `feature/diagnosis`: Tier 1 / 2 / 2-Ext (merged)
-- `feature/method-w1` … `feature/gamma-centerpoint`: per-stage branches for proposal diagnosis (kept for provenance)
-- Stages merge to `main` only after acceptance criteria are verified end-to-end.
+- `feature/method-scannet-21-31`: current ScanNet method work
+- `feature/diagnosis` (separate worktree `OpenYOLO3D-nuscenes`): nuScenes preliminary investigation (7-stage + α), archived
 
 ## License and acknowledgments
 
-Built on top of [OpenYOLO3D](https://github.com/aminebdj/OpenYOLO3D). Uses [YOLO-World](https://github.com/AILab-CVC/YOLO-World), [Mask3D](https://github.com/JonasSchult/Mask3D), [CenterPoint](https://github.com/tianweiy/CenterPoint) (via [mmdet3d](https://github.com/open-mmlab/mmdetection3d)), and the [nuScenes devkit](https://github.com/nutonomy/nuscenes-devkit).
+Built on top of [OpenYOLO3D](https://github.com/aminebdj/OpenYOLO3D). Uses [YOLO-World](https://github.com/AILab-CVC/YOLO-World), [Mask3D](https://github.com/JonasSchult/Mask3D), [CenterPoint](https://github.com/tianweiy/CenterPoint) (via [mmdet3d](https://github.com/open-mmlab/mmdetection3d)) for the nuScenes preliminary work, and the [nuScenes devkit](https://github.com/nutonomy/nuscenes-devkit).
 
-This work is conducted as a graduation research project at Soongsil university.
+This work is conducted as a graduation research project at Soongsil University.
 
 ---
-<<<<<<< HEAD
-=======
 
 **Contact**: yuha@soongsil.ac.kr
->>>>>>> Pre-method: ScanNet baseline reproduction infrastructure
