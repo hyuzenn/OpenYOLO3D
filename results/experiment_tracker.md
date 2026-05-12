@@ -13,9 +13,15 @@ Average metrics across 312 scenes. Higher is better.
 | 2026-05-08 | `2026-05-08_scannet_method_22_only_v02`          | 0.2188 | 0.2797 | 0.3189 | METHOD_22 only (raw class-name prompts)     |
 | 2026-05-08 | `2026-05-08_scannet_method_32_only_v01`          | 0.2141 | 0.2751 | 0.3157 | METHOD_32 only                              |
 | 2026-05-08 | `2026-05-08_scannet_method_22_v2_v01`            | 0.2192 | 0.2821 | 0.3230 | METHOD_22 + "a photo of a {class}" template |
+| 2026-05-09 | `2026-05-09_scannet_phase2_v02`                  | 0.1698 | 0.2156 | 0.2505 | Phase 2 (METHOD_22 + METHOD_32 combined)    |
 
 ## Status summary
 - **Phase 1 (METHOD_21 + METHOD_31)**: neutral / near-no-op — no clear win.
-- **Phase 2 (METHOD_22, METHOD_32)**: regresses ~−0.028 AP. Prompt template tweak
-  in METHOD_22_v2 does not recover the gap (+0.0004 AP); regression lives in the
-  CLIP-image-feature re-classification logic itself, not in the text side.
+- **Phase 2 axes (METHOD_22, METHOD_32 individually)**: each regresses ~−0.03 AP.
+  Prompt template tweak in METHOD_22_v2 does not recover the gap (+0.0004 AP);
+  regression lives in the CLIP-image-feature re-classification logic itself, not
+  in the text side.
+- **Phase 2 combined (METHOD_22 + METHOD_32)**: AP 0.1698 (Δ −0.0775 vs baseline).
+  Super-additive negative — worse than either axis alone (M22 −0.0285, M32 −0.0332;
+  additive estimate −0.0617). Indicates the two regressions compound rather than
+  cancel.
