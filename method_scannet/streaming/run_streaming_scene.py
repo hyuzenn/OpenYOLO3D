@@ -49,6 +49,8 @@ def run(
     output_dir: str,
     config_path: str = "pretrained/config_scannet200.yaml",
     sanity_threshold: float = 0.005,
+    mask3d_filter: bool = False,
+    projection_index: str = "ply",
 ) -> dict:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -137,7 +139,24 @@ def run(
         f"{len(streaming_frames)} (frequency={frequency})"
     )
 
-    evaluator.setup_scene()
+    if projection_index == "npy":
+        scene_id = scene_name.replace("scene", "")
+        npy_path = scene_dir / f"{scene_id}.npy"
+        processed_scene_path = str(npy_path) if npy_path.exists() else None
+        if processed_scene_path is None:
+            log_print(f"  [warn] projection_index=npy requested but {npy_path} missing — falling back to .ply")
+    else:
+        processed_scene_path = None
+    log_print(
+        f"  setup_scene: projection_index={projection_index} "
+        f"(processed_scene_path={'set' if processed_scene_path else 'none'}) "
+        f"mask3d_filter={mask3d_filter}"
+    )
+
+    evaluator.setup_scene(
+        processed_scene_path=processed_scene_path,
+        apply_mask3d_filter=mask3d_filter,
+    )
     log_print(
         f"  Mask3D produced {evaluator.instance_vertex_masks.shape[0]} instances"
     )
@@ -236,12 +255,28 @@ def main():
         "--config", default="pretrained/config_scannet200.yaml", type=str
     )
     parser.add_argument("--sanity-threshold", default=0.005, type=float)
+    parser.add_argument(
+        "--mask3d-filter",
+        action="store_true",
+        default=False,
+        help="Apply OpenYolo3D's post-Mask3D score threshold + NMS to match "
+             "the offline pipeline (utils/__init__.py:114-118).",
+    )
+    parser.add_argument(
+        "--projection-index",
+        choices=["ply", "npy"],
+        default="ply",
+        help="Mask3D input: 'ply' mesh (Task 1.2b v02 default) or 'npy' "
+             "pre-processed point cloud (matches offline OpenYolo3D.predict).",
+    )
     args = parser.parse_args()
     run(
         scene_name=args.scene,
         output_dir=args.output,
         config_path=args.config,
         sanity_threshold=args.sanity_threshold,
+        mask3d_filter=args.mask3d_filter,
+        projection_index=args.projection_index,
     )
 
 
