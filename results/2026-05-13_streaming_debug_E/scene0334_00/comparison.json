@@ -1,0 +1,20 @@
+{
+  "summary": {
+    "n_instances_offline": 12,
+    "n_instances_streaming": 12,
+    "n_instances_match": true,
+    "n_valid_frames_offline": 116,
+    "n_valid_frames_streaming": 117,
+    "n_final_preds_offline": 600,
+    "n_final_preds_streaming": 600,
+    "rep_frames_jaccard_mean": 0.46705745760487694,
+    "rep_frames_jaccard_median": 0.5180809165771572,
+    "rep_frames_jaccard_min": 0.0,
+    "instances_with_low_jaccard_lt_0_95": 11,
+    "total_visible_diff_mean": 4450.0,
+    "total_visible_diff_max_abs": 52242,
+    "instances_with_visible_mismatch": 11,
+    "final_class_match_count": 8,
+    "final_class_match_ratio": 0.013333333333333334
+  }
+}
