@@ -90,14 +90,50 @@ class StreamingScanNetEvaluator:
         pcd = o3d.io.read_point_cloud(mesh_file)
         return np.asarray(pcd.points, dtype=np.float64)
 
-    def setup_scene(self) -> None:
-        """Run Mask3D once and cache scene-level state."""
-        mesh_files = list(self.scene_dir.glob("*.ply"))
-        mesh_file = str(mesh_files[0]) if mesh_files else None
+    def setup_scene(
+        self,
+        processed_scene_path: Optional[str] = None,
+        apply_mask3d_filter: bool = False,
+    ) -> None:
+        """Run Mask3D once and cache scene-level state.
+
+        Args:
+            processed_scene_path: optional path to the pre-processed point-
+                cloud (``.npy``) that offline ``OpenYolo3D.predict`` feeds to
+                Mask3D. When supplied, the streaming wrapper uses the same
+                input as offline for fair comparison; otherwise it defaults
+                to the mesh ``*.ply``.
+            apply_mask3d_filter: when True, apply the post-Mask3D score
+                threshold + NMS exactly the way ``OpenYolo3D.predict`` does
+                (utils/__init__.py:114-118). Default False for backwards
+                compatibility with the Task 1.2a tests.
+        """
+        if processed_scene_path is not None:
+            mesh_file = processed_scene_path
+        else:
+            mesh_files = list(self.scene_dir.glob("*.ply"))
+            mesh_file = str(mesh_files[0]) if mesh_files else None
 
         masks_raw, scores_raw = self.openyolo3d.network_3d.get_class_agnostic_masks(
             mesh_file, datatype="mesh"
         )
+
+        if apply_mask3d_filter:
+            from utils import apply_nms
+
+            th = self.openyolo3d.openyolo3d_config["network3d"]["th"]
+            nms_iou = self.openyolo3d.openyolo3d_config["network3d"]["nms"]
+            keep_score = scores_raw >= th
+            if int(keep_score.sum().item()) > 0:
+                keep_nms = apply_nms(
+                    masks_raw[:, keep_score].cuda(),
+                    scores_raw[keep_score].cuda(),
+                    nms_iou,
+                )
+                masks_raw = (
+                    masks_raw.cpu().permute(1, 0)[keep_score][keep_nms].permute(1, 0)
+                )
+                scores_raw = scores_raw.cpu()[keep_score][keep_nms]
 
         masks_np = masks_raw.cpu().numpy() if hasattr(masks_raw, "cpu") else np.asarray(masks_raw)
         if masks_np.ndim != 2:
@@ -113,7 +149,15 @@ class StreamingScanNetEvaluator:
         scores_np = scores_raw.cpu().numpy() if hasattr(scores_raw, "cpu") else np.asarray(scores_raw)
         self.instance_scores = scores_np.astype(np.float64, copy=False)
 
-        self.scene_vertices = self._load_scene_vertices(mesh_file)
+        # When a ``.npy`` point cloud is used, the mesh-vertex layout we need
+        # for projection still comes from the ``*.ply`` file; only Mask3D
+        # consumed the pre-processed input.
+        mesh_for_vertices = mesh_file
+        if processed_scene_path is not None:
+            ply_files = list(self.scene_dir.glob("*.ply"))
+            if ply_files:
+                mesh_for_vertices = str(ply_files[0])
+        self.scene_vertices = self._load_scene_vertices(mesh_for_vertices)
 
         # Probe color/depth resolution from the first frame so we can rescale
         # the intrinsic exactly like OpenYOLO3D's offline path.
