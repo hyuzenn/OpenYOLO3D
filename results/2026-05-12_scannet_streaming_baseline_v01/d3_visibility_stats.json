@@ -1,0 +1,11 @@
+{
+  "frame_visible_instance_count": {
+    "n_samples": 54090,
+    "min": 0,
+    "median": 7.0,
+    "mean": 8.340414124607136,
+    "max": 43,
+    "p90": 15.0,
+    "p99": 26.0
+  }
+}

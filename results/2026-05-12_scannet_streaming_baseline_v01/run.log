@@ -1,0 +1,1814 @@
+=== Run directory: /home/rintern16/OpenYOLO3D/results/2026-05-12_scannet_streaming_baseline_v01 ===
+=== Date: Tue May 12 20:51:05 KST 2026 ===
+=== Hostname: ece-agpu1 ===
+=== Task 1.2c streaming baseline — 312 scenes ===
+config         : pretrained/config_scannet200.yaml
+output         : /home/rintern16/OpenYOLO3D/results/2026-05-12_scannet_streaming_baseline_v01
+num scenes     : 312
+num_classes    : 199
+topk / topk_pi : 40 / 600
+depth_th       : 0.05
+frequency      : 10
+
+[init] Constructing OpenYolo3D (~1 min) ...
+2026-05-12 20:51:14.612 | WARNING  | mask3d.utils.utils:load_checkpoint_with_missing_or_exsessive_keys:91 - Key not found, it will be initialized randomly: criterion.empty_weight
+2026-05-12 20:51:15.067 | WARNING  | mask3d.utils.utils:load_checkpoint_with_missing_or_exsessive_keys:115 - excessive key: criterion.empty_weight
+05/12 20:51:15 - mmengine - WARNING - Failed to search registry with scope "mmyolo" in the "log_processor" registry tree. As a workaround, the current "log_processor" registry in "mmengine" is used to build instance. This may cause unexpected failure when running the built modules. Please check whether "mmyolo" is a correct scope, or whether the registry is initialized.
+05/12 20:51:16 - mmengine - INFO - 
+------------------------------------------------------------
+System environment:
+    sys.platform: linux
+    Python: 3.10.9 (main, Jan 11 2023, 15:21:40) [GCC 11.2.0]
+    CUDA available: True
+    MUSA available: False
+    numpy_random_seed: 510995405
+    GPU 0: NVIDIA A100-SXM4-80GB
+    CUDA_HOME: /usr/local/cuda
+    NVCC: Cuda compilation tools, release 11.7, V11.7.64
+    GCC: gcc (Ubuntu 9.4.0-1ubuntu1~20.04.1) 9.4.0
+    PyTorch: 1.12.1+cu113
+    PyTorch compiling details: PyTorch built with:
+  - GCC 9.3
+  - C++ Version: 201402
+  - Intel(R) Math Kernel Library Version 2020.0.0 Product Build 20191122 for Intel(R) 64 architecture applications
+  - Intel(R) MKL-DNN v2.6.0 (Git Hash 52b5f107dd9cf10910aaa19cb47f3abf9b349815)
+  - OpenMP 201511 (a.k.a. OpenMP 4.5)
+  - LAPACK is enabled (usually provided by MKL)
+  - NNPACK is enabled
+  - CPU capability usage: AVX2
+  - CUDA Runtime 11.3
+  - NVCC architecture flags: -gencode;arch=compute_37,code=sm_37;-gencode;arch=compute_50,code=sm_50;-gencode;arch=compute_60,code=sm_60;-gencode;arch=compute_70,code=sm_70;-gencode;arch=compute_75,code=sm_75;-gencode;arch=compute_80,code=sm_80;-gencode;arch=compute_86,code=sm_86
+  - CuDNN 8.3.2  (built against CUDA 11.5)
+  - Magma 2.5.2
+  - Build settings: BLAS_INFO=mkl, BUILD_TYPE=Release, CUDA_VERSION=11.3, CUDNN_VERSION=8.3.2, CXX_COMPILER=/opt/rh/devtoolset-9/root/usr/bin/c++, CXX_FLAGS= -fabi-version=11 -Wno-deprecated -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -fopenmp -DNDEBUG -DUSE_KINETO -DUSE_FBGEMM -DUSE_QNNPACK -DUSE_PYTORCH_QNNPACK -DUSE_XNNPACK -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -DEDGE_PROFILER_USE_KINETO -O2 -fPIC -Wno-narrowing -Wall -Wextra -Werror=return-type -Wno-missing-field-initializers -Wno-type-limits -Wno-array-bounds -Wno-unknown-pragmas -Wno-unused-parameter -Wno-unused-function -Wno-unused-result -Wno-unused-local-typedefs -Wno-strict-overflow -Wno-strict-aliasing -Wno-error=deprecated-declarations -Wno-stringop-overflow -Wno-psabi -Wno-error=pedantic -Wno-error=redundant-decls -Wno-error=old-style-cast -fdiagnostics-color=always -faligned-new -Wno-unused-but-set-variable -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Werror=cast-function-type -Wno-stringop-overflow, LAPACK_INFO=mkl, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, PERF_WITH_AVX512=1, TORCH_VERSION=1.12.1, USE_CUDA=ON, USE_CUDNN=ON, USE_EXCEPTION_PTR=1, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_MKL=ON, USE_MKLDNN=OFF, USE_MPI=OFF, USE_NCCL=ON, USE_NNPACK=ON, USE_OPENMP=ON, USE_ROCM=OFF, 
+
+    TorchVision: 0.13.1+cu113
+    OpenCV: 4.11.0
+    MMEngine: 0.10.7
+
+Runtime environment:
+    cudnn_benchmark: True
+    mp_cfg: {'mp_start_method': 'fork', 'opencv_num_threads': 0}
+    dist_cfg: {'backend': 'nccl'}
+    seed: 510995405
+    Distributed launcher: none
+    Distributed training: False
+    GPU number: 1
+------------------------------------------------------------
+
+05/12 20:51:17 - mmengine - INFO - Config:
+_backend_args = None
+_multiscale_resize_transforms = [
+    dict(
+        transforms=[
+            dict(scale=(
+                640,
+                640,
+            ), type='YOLOv5KeepRatioResize'),
+            dict(
+                allow_scale_up=False,
+                pad_val=dict(img=114),
+                scale=(
+                    640,
+                    640,
+                ),
+                type='LetterResize'),
+        ],
+        type='Compose'),
+    dict(
+        transforms=[
+            dict(scale=(
+                320,
+                320,
+            ), type='YOLOv5KeepRatioResize'),
+            dict(
+                allow_scale_up=False,
+                pad_val=dict(img=114),
+                scale=(
+                    320,
+                    320,
+                ),
+                type='LetterResize'),
+        ],
+        type='Compose'),
+    dict(
+        transforms=[
+            dict(scale=(
+                960,
+                960,
+            ), type='YOLOv5KeepRatioResize'),
+            dict(
+                allow_scale_up=False,
+                pad_val=dict(img=114),
+                scale=(
+                    960,
+                    960,
+                ),
+                type='LetterResize'),
+        ],
+        type='Compose'),
+]
+affine_scale = 0.9
+albu_train_transforms = [
+    dict(p=0.01, type='Blur'),
+    dict(p=0.01, type='MedianBlur'),
+    dict(p=0.01, type='ToGray'),
+    dict(p=0.01, type='CLAHE'),
+]
+backend_args = None
+base_lr = 0.002
+batch_shapes_cfg = None
+close_mosaic_epochs = 2
+coco_val_dataset = dict(
+    _delete_=True,
+    class_text_path='data/texts/lvis_v1_class_texts.json',
+    dataset=dict(
+        ann_file='lvis/lvis_v1_minival_inserted_image_name.json',
+        batch_shapes_cfg=None,
+        data_prefix=dict(img=''),
+        data_root='data/coco/',
+        test_mode=True,
+        type='YOLOv5LVISV1Dataset'),
+    pipeline=[
+        dict(backend_args=None, type='LoadImageFromFile'),
+        dict(scale=(
+            640,
+            640,
+        ), type='YOLOv5KeepRatioResize'),
+        dict(
+            allow_scale_up=False,
+            pad_val=dict(img=114),
+            scale=(
+                640,
+                640,
+            ),
+            type='LetterResize'),
+        dict(_scope_='mmdet', type='LoadAnnotations', with_bbox=True),
+        dict(type='LoadText'),
+        dict(
+            meta_keys=(
+                'img_id',
+                'img_path',
+                'ori_shape',
+                'img_shape',
+                'scale_factor',
+                'pad_param',
+                'texts',
+            ),
+            type='mmdet.PackDetInputs'),
+    ],
+    type='MultiModalDataset')
+custom_hooks = [
+    dict(
+        ema_type='ExpMomentumEMA',
+        momentum=0.0001,
+        priority=49,
+        strict_load=False,
+        type='EMAHook',
+        update_buffers=True),
+    dict(
+        switch_epoch=98,
+        switch_pipeline=[
+            dict(backend_args=None, type='LoadImageFromFile'),
+            dict(type='LoadAnnotations', with_bbox=True),
+            dict(scale=(
+                640,
+                640,
+            ), type='YOLOv5KeepRatioResize'),
+            dict(
+                allow_scale_up=True,
+                pad_val=dict(img=114.0),
+                scale=(
+                    640,
+                    640,
+                ),
+                type='LetterResize'),
+            dict(
+                border_val=(
+                    114,
+                    114,
+                    114,
+                ),
+                max_aspect_ratio=100,
+                max_rotate_degree=0.0,
+                max_shear_degree=0.0,
+                scaling_ratio_range=(
+                    0.09999999999999998,
+                    1.9,
+                ),
+                type='YOLOv5RandomAffine'),
+            dict(
+                bbox_params=dict(
+                    format='pascal_voc',
+                    label_fields=[
+                        'gt_bboxes_labels',
+                        'gt_ignore_flags',
+                    ],
+                    type='BboxParams'),
+                keymap=dict(gt_bboxes='bboxes', img='image'),
+                transforms=[
+                    dict(p=0.01, type='Blur'),
+                    dict(p=0.01, type='MedianBlur'),
+                    dict(p=0.01, type='ToGray'),
+                    dict(p=0.01, type='CLAHE'),
+                ],
+                type='mmdet.Albu'),
+            dict(type='YOLOv5HSVRandomAug'),
+            dict(prob=0.5, type='mmdet.RandomFlip'),
+            dict(
+                max_num_samples=80,
+                num_neg_samples=(
+                    1203,
+                    1203,
+                ),
+                padding_to_max=True,
+                padding_value='',
+                type='RandomLoadText'),
+            dict(
+                meta_keys=(
+                    'img_id',
+                    'img_path',
+                    'ori_shape',
+                    'img_shape',
+                    'flip',
+                    'flip_direction',
+                    'texts',
+                ),
+                type='mmdet.PackDetInputs'),
+        ],
+        type='mmdet.PipelineSwitchHook'),
+]
+custom_imports = dict(
+    allow_failed_imports=False, imports=[
+        'yolo_world',
+    ])
+data_root = 'data/coco/'
+dataset_type = 'YOLOv5CocoDataset'
+deepen_factor = 1.0
+default_hooks = dict(
+    checkpoint=dict(
+        interval=2,
+        max_keep_ckpts=2,
+        rule='greater',
+        save_best='auto',
+        type='CheckpointHook'),
+    logger=dict(interval=50, type='LoggerHook'),
+    param_scheduler=dict(
+        lr_factor=0.01,
+        max_epochs=100,
+        scheduler_type='linear',
+        type='YOLOv5ParamSchedulerHook'),
+    sampler_seed=dict(type='DistSamplerSeedHook'),
+    timer=dict(type='IterTimerHook'),
+    visualization=dict(type='mmdet.DetVisualizationHook'))
+default_scope = 'mmyolo'
+env_cfg = dict(
+    cudnn_benchmark=True,
+    dist_cfg=dict(backend='nccl'),
+    mp_cfg=dict(mp_start_method='fork', opencv_num_threads=0))
+flickr_train_dataset = dict(
+    ann_file='annotations/final_flickr_separateGT_train.json',
+    data_prefix=dict(img='full_images/'),
+    data_root='data/flickr/',
+    filter_cfg=dict(filter_empty_gt=True, min_size=32),
+    pipeline=[
+        dict(backend_args=None, type='LoadImageFromFile'),
+        dict(type='LoadAnnotations', with_bbox=True),
+        dict(
+            img_scale=(
+                640,
+                640,
+            ),
+            pad_val=114.0,
+            pre_transform=[
+                dict(backend_args=None, type='LoadImageFromFile'),
+                dict(type='LoadAnnotations', with_bbox=True),
+            ],
+            type='MultiModalMosaic'),
+        dict(
+            border=(
+                -320,
+                -320,
+            ),
+            border_val=(
+                114,
+                114,
+                114,
+            ),
+            max_aspect_ratio=100,
+            max_rotate_degree=0.0,
+            max_shear_degree=0.0,
+            scaling_ratio_range=(
+                0.09999999999999998,
+                1.9,
+            ),
+            type='YOLOv5RandomAffine'),
+        dict(
+            bbox_params=dict(
+                format='pascal_voc',
+                label_fields=[
+                    'gt_bboxes_labels',
+                    'gt_ignore_flags',
+                ],
+                type='BboxParams'),
+            keymap=dict(gt_bboxes='bboxes', img='image'),
+            transforms=[
+                dict(p=0.01, type='Blur'),
+                dict(p=0.01, type='MedianBlur'),
+                dict(p=0.01, type='ToGray'),
+                dict(p=0.01, type='CLAHE'),
+            ],
+            type='mmdet.Albu'),
+        dict(type='YOLOv5HSVRandomAug'),
+        dict(prob=0.5, type='mmdet.RandomFlip'),
+        dict(
+            max_num_samples=80,
+            num_neg_samples=(
+                1203,
+                1203,
+            ),
+            padding_to_max=True,
+            padding_value='',
+            type='RandomLoadText'),
+        dict(
+            meta_keys=(
+                'img_id',
+                'img_path',
+                'ori_shape',
+                'img_shape',
+                'flip',
+                'flip_direction',
+                'texts',
+            ),
+            type='mmdet.PackDetInputs'),
+    ],
+    type='YOLOv5MixedGroundingDataset')
+img_scale = (
+    640,
+    640,
+)
+img_scales = [
+    (
+        640,
+        640,
+    ),
+    (
+        320,
+        320,
+    ),
+    (
+        960,
+        960,
+    ),
+]
+last_stage_out_channels = 512
+last_transform = [
+    dict(
+        bbox_params=dict(
+            format='pascal_voc',
+            label_fields=[
+                'gt_bboxes_labels',
+                'gt_ignore_flags',
+            ],
+            type='BboxParams'),
+        keymap=dict(gt_bboxes='bboxes', img='image'),
+        transforms=[
+            dict(p=0.01, type='Blur'),
+            dict(p=0.01, type='MedianBlur'),
+            dict(p=0.01, type='ToGray'),
+            dict(p=0.01, type='CLAHE'),
+        ],
+        type='mmdet.Albu'),
+    dict(type='YOLOv5HSVRandomAug'),
+    dict(prob=0.5, type='mmdet.RandomFlip'),
+    dict(
+        meta_keys=(
+            'img_id',
+            'img_path',
+            'ori_shape',
+            'img_shape',
+            'flip',
+            'flip_direction',
+        ),
+        type='mmdet.PackDetInputs'),
+]
+load_from = '/home/rintern16/OpenYOLO3D/pretrained/checkpoints/yolo_world_v2_x_obj365v1_goldg_cc3mlite_pretrain_1280ft-14996a36.pth'
+log_level = 'INFO'
+log_processor = dict(by_epoch=True, type='LogProcessor', window_size=50)
+loss_bbox_weight = 7.5
+loss_cls_weight = 0.5
+loss_dfl_weight = 0.375
+lr_factor = 0.01
+max_aspect_ratio = 100
+max_epochs = 100
+max_keep_ckpts = 2
+mg_train_dataset = dict(
+    ann_file='annotations/final_mixed_train_no_coco.json',
+    data_prefix=dict(img='gqa/images/'),
+    data_root='data/mixed_grounding/',
+    filter_cfg=dict(filter_empty_gt=False, min_size=32),
+    pipeline=[
+        dict(backend_args=None, type='LoadImageFromFile'),
+        dict(type='LoadAnnotations', with_bbox=True),
+        dict(
+            img_scale=(
+                640,
+                640,
+            ),
+            pad_val=114.0,
+            pre_transform=[
+                dict(backend_args=None, type='LoadImageFromFile'),
+                dict(type='LoadAnnotations', with_bbox=True),
+            ],
+            type='MultiModalMosaic'),
+        dict(
+            border=(
+                -320,
+                -320,
+            ),
+            border_val=(
+                114,
+                114,
+                114,
+            ),
+            max_aspect_ratio=100,
+            max_rotate_degree=0.0,
+            max_shear_degree=0.0,
+            scaling_ratio_range=(
+                0.09999999999999998,
+                1.9,
+            ),
+            type='YOLOv5RandomAffine'),
+        dict(
+            bbox_params=dict(
+                format='pascal_voc',
+                label_fields=[
+                    'gt_bboxes_labels',
+                    'gt_ignore_flags',
+                ],
+                type='BboxParams'),
+            keymap=dict(gt_bboxes='bboxes', img='image'),
+            transforms=[
+                dict(p=0.01, type='Blur'),
+                dict(p=0.01, type='MedianBlur'),
+                dict(p=0.01, type='ToGray'),
+                dict(p=0.01, type='CLAHE'),
+            ],
+            type='mmdet.Albu'),
+        dict(type='YOLOv5HSVRandomAug'),
+        dict(prob=0.5, type='mmdet.RandomFlip'),
+        dict(
+            max_num_samples=80,
+            num_neg_samples=(
+                1203,
+                1203,
+            ),
+            padding_to_max=True,
+            padding_value='',
+            type='RandomLoadText'),
+        dict(
+            meta_keys=(
+                'img_id',
+                'img_path',
+                'ori_shape',
+                'img_shape',
+                'flip',
+                'flip_direction',
+                'texts',
+            ),
+            type='mmdet.PackDetInputs'),
+    ],
+    type='YOLOv5MixedGroundingDataset')
+mixup_prob = 0.15
+model = dict(
+    backbone=dict(
+        image_model=dict(
+            act_cfg=dict(inplace=True, type='SiLU'),
+            arch='P5',
+            deepen_factor=1.0,
+            last_stage_out_channels=512,
+            norm_cfg=dict(eps=0.001, momentum=0.03, type='BN'),
+            type='YOLOv8CSPDarknet',
+            widen_factor=1.25),
+        text_model=dict(
+            frozen_modules=[
+                'all',
+            ],
+            model_name='openai/clip-vit-base-patch32',
+            type='HuggingCLIPLanguageBackbone'),
+        type='MultiModalYOLOBackbone'),
+    bbox_head=dict(
+        bbox_coder=dict(type='DistancePointBBoxCoder'),
+        head_module=dict(
+            act_cfg=dict(inplace=True, type='SiLU'),
+            embed_dims=512,
+            featmap_strides=[
+                8,
+                16,
+                32,
+            ],
+            in_channels=[
+                256,
+                512,
+                512,
+            ],
+            norm_cfg=dict(eps=0.001, momentum=0.03, type='BN'),
+            num_classes=80,
+            reg_max=16,
+            type='YOLOWorldHeadModule',
+            use_bn_head=True,
+            widen_factor=1.25),
+        loss_bbox=dict(
+            bbox_format='xyxy',
+            iou_mode='ciou',
+            loss_weight=7.5,
+            reduction='sum',
+            return_iou=False,
+            type='IoULoss'),
+        loss_cls=dict(
+            loss_weight=0.5,
+            reduction='none',
+            type='mmdet.CrossEntropyLoss',
+            use_sigmoid=True),
+        loss_dfl=dict(
+            loss_weight=0.375,
+            reduction='mean',
+            type='mmdet.DistributionFocalLoss'),
+        prior_generator=dict(
+            offset=0.5, strides=[
+                8,
+                16,
+                32,
+            ], type='mmdet.MlvlPointGenerator'),
+        type='YOLOWorldHead'),
+    data_preprocessor=dict(
+        bgr_to_rgb=True,
+        mean=[
+            0.0,
+            0.0,
+            0.0,
+        ],
+        std=[
+            255.0,
+            255.0,
+            255.0,
+        ],
+        type='YOLOWDetDataPreprocessor'),
+    mm_neck=True,
+    neck=dict(
+        act_cfg=dict(inplace=True, type='SiLU'),
+        block_cfg=dict(type='MaxSigmoidCSPLayerWithTwoConv'),
+        deepen_factor=1.0,
+        embed_channels=[
+            128,
+            256,
+            256,
+        ],
+        guide_channels=512,
+        in_channels=[
+            256,
+            512,
+            512,
+        ],
+        norm_cfg=dict(eps=0.001, momentum=0.03, type='BN'),
+        num_csp_blocks=3,
+        num_heads=[
+            4,
+            8,
+            8,
+        ],
+        out_channels=[
+            256,
+            512,
+            512,
+        ],
+        type='YOLOWorldPAFPN',
+        widen_factor=1.25),
+    num_test_classes=1203,
+    num_train_classes=80,
+    test_cfg=dict(
+        max_per_img=300,
+        multi_label=True,
+        nms=dict(iou_threshold=0.7, type='nms'),
+        nms_pre=30000,
+        score_thr=0.001),
+    train_cfg=dict(
+        assigner=dict(
+            alpha=0.5,
+            beta=6.0,
+            eps=1e-09,
+            num_classes=80,
+            topk=10,
+            type='BatchTaskAlignedAssigner',
+            use_ciou=True)),
+    type='YOLOWorldDetector')
+model_test_cfg = dict(
+    max_per_img=300,
+    multi_label=True,
+    nms=dict(iou_threshold=0.7, type='nms'),
+    nms_pre=30000,
+    score_thr=0.001)
+mosaic_affine_transform = [
+    dict(
+        img_scale=(
+            640,
+            640,
+        ),
+        pad_val=114.0,
+        pre_transform=[
+            dict(backend_args=None, type='LoadImageFromFile'),
+            dict(type='LoadAnnotations', with_bbox=True),
+        ],
+        type='Mosaic'),
+    dict(
+        border=(
+            -320,
+            -320,
+        ),
+        border_val=(
+            114,
+            114,
+            114,
+        ),
+        max_aspect_ratio=100,
+        max_rotate_degree=0.0,
+        max_shear_degree=0.0,
+        scaling_ratio_range=(
+            0.09999999999999998,
+            1.9,
+        ),
+        type='YOLOv5RandomAffine'),
+]
+neck_embed_channels = [
+    128,
+    256,
+    256,
+]
+neck_num_heads = [
+    4,
+    8,
+    8,
+]
+norm_cfg = dict(eps=0.001, momentum=0.03, type='BN')
+num_classes = 1203
+num_det_layers = 3
+num_training_classes = 80
+obj365v1_train_dataset = dict(
+    class_text_path='data/texts/obj365v1_class_texts.json',
+    dataset=dict(
+        ann_file='annotations/objects365_train.json',
+        data_prefix=dict(img='train/'),
+        data_root='data/objects365v1/',
+        filter_cfg=dict(filter_empty_gt=False, min_size=32),
+        type='YOLOv5Objects365V1Dataset'),
+    pipeline=[
+        dict(backend_args=None, type='LoadImageFromFile'),
+        dict(type='LoadAnnotations', with_bbox=True),
+        dict(
+            img_scale=(
+                640,
+                640,
+            ),
+            pad_val=114.0,
+            pre_transform=[
+                dict(backend_args=None, type='LoadImageFromFile'),
+                dict(type='LoadAnnotations', with_bbox=True),
+            ],
+            type='MultiModalMosaic'),
+        dict(
+            border=(
+                -320,
+                -320,
+            ),
+            border_val=(
+                114,
+                114,
+                114,
+            ),
+            max_aspect_ratio=100,
+            max_rotate_degree=0.0,
+            max_shear_degree=0.0,
+            scaling_ratio_range=(
+                0.09999999999999998,
+                1.9,
+            ),
+            type='YOLOv5RandomAffine'),
+        dict(
+            bbox_params=dict(
+                format='pascal_voc',
+                label_fields=[
+                    'gt_bboxes_labels',
+                    'gt_ignore_flags',
+                ],
+                type='BboxParams'),
+            keymap=dict(gt_bboxes='bboxes', img='image'),
+            transforms=[
+                dict(p=0.01, type='Blur'),
+                dict(p=0.01, type='MedianBlur'),
+                dict(p=0.01, type='ToGray'),
+                dict(p=0.01, type='CLAHE'),
+            ],
+            type='mmdet.Albu'),
+        dict(type='YOLOv5HSVRandomAug'),
+        dict(prob=0.5, type='mmdet.RandomFlip'),
+        dict(
+            max_num_samples=80,
+            num_neg_samples=(
+                1203,
+                1203,
+            ),
+            padding_to_max=True,
+            padding_value='',
+            type='RandomLoadText'),
+        dict(
+            meta_keys=(
+                'img_id',
+                'img_path',
+                'ori_shape',
+                'img_shape',
+                'flip',
+                'flip_direction',
+                'texts',
+            ),
+            type='mmdet.PackDetInputs'),
+    ],
+    type='MultiModalDataset')
+optim_wrapper = dict(
+    clip_grad=dict(max_norm=10.0),
+    constructor='YOLOWv5OptimizerConstructor',
+    optimizer=dict(
+        batch_size_per_gpu=16, lr=0.002, type='AdamW', weight_decay=0.025),
+    paramwise_cfg=dict(
+        bias_decay_mult=0.0,
+        custom_keys=dict({
+            'backbone.text_model': dict(lr_mult=0.01),
+            'logit_scale': dict(weight_decay=0.0)
+        }),
+        norm_decay_mult=0.0),
+    type='OptimWrapper')
+param_scheduler = None
+persistent_workers = True
+pre_transform = [
+    dict(backend_args=None, type='LoadImageFromFile'),
+    dict(type='LoadAnnotations', with_bbox=True),
+]
+resume = False
+save_epoch_intervals = 2
+strides = [
+    8,
+    16,
+    32,
+]
+tal_alpha = 0.5
+tal_beta = 6.0
+tal_topk = 10
+test_cfg = dict(type='TestLoop')
+test_dataloader = dict(
+    batch_size=1,
+    dataset=dict(
+        class_text_path='data/texts/lvis_v1_class_texts.json',
+        dataset=dict(
+            ann_file='lvis/lvis_v1_minival_inserted_image_name.json',
+            batch_shapes_cfg=None,
+            data_prefix=dict(img=''),
+            data_root='data/coco/',
+            test_mode=True,
+            type='YOLOv5LVISV1Dataset'),
+        pipeline=[
+            dict(backend_args=None, type='LoadImageFromFile'),
+            dict(scale=(
+                640,
+                640,
+            ), type='YOLOv5KeepRatioResize'),
+            dict(
+                allow_scale_up=False,
+                pad_val=dict(img=114),
+                scale=(
+                    640,
+                    640,
+                ),
+                type='LetterResize'),
+            dict(_scope_='mmdet', type='LoadAnnotations', with_bbox=True),
+            dict(type='LoadText'),
+            dict(
+                meta_keys=(
+                    'img_id',
+                    'img_path',
+                    'ori_shape',
+                    'img_shape',
+                    'scale_factor',
+                    'pad_param',
+                    'texts',
+                ),
+                type='mmdet.PackDetInputs'),
+        ],
+        type='MultiModalDataset'),
+    drop_last=False,
+    num_workers=2,
+    persistent_workers=True,
+    pin_memory=True,
+    sampler=dict(shuffle=False, type='DefaultSampler'))
+test_evaluator = dict(
+    ann_file='data/coco/lvis/lvis_v1_minival_inserted_image_name.json',
+    metric='bbox',
+    proposal_nums=(
+        100,
+        1,
+        10,
+    ),
+    type='mmdet.LVISMetric')
+test_pipeline = [
+    dict(backend_args=None, type='LoadImageFromFile'),
+    dict(scale=(
+        640,
+        640,
+    ), type='YOLOv5KeepRatioResize'),
+    dict(
+        allow_scale_up=False,
+        pad_val=dict(img=114),
+        scale=(
+            640,
+            640,
+        ),
+        type='LetterResize'),
+    dict(_scope_='mmdet', type='LoadAnnotations', with_bbox=True),
+    dict(type='LoadText'),
+    dict(
+        meta_keys=(
+            'img_id',
+            'img_path',
+            'ori_shape',
+            'img_shape',
+            'scale_factor',
+            'pad_param',
+            'texts',
+        ),
+        type='mmdet.PackDetInputs'),
+]
+text_channels = 512
+text_transform = [
+    dict(
+        max_num_samples=80,
+        num_neg_samples=(
+            1203,
+            1203,
+        ),
+        padding_to_max=True,
+        padding_value='',
+        type='RandomLoadText'),
+    dict(
+        meta_keys=(
+            'img_id',
+            'img_path',
+            'ori_shape',
+            'img_shape',
+            'flip',
+            'flip_direction',
+            'texts',
+        ),
+        type='mmdet.PackDetInputs'),
+]
+train_ann_file = 'annotations/instances_train2017.json'
+train_batch_size_per_gpu = 16
+train_cfg = dict(
+    dynamic_intervals=[
+        (
+            98,
+            1,
+        ),
+    ],
+    max_epochs=100,
+    type='EpochBasedTrainLoop',
+    val_interval=10)
+train_data_prefix = 'train2017/'
+train_dataloader = dict(
+    batch_size=16,
+    collate_fn=dict(type='yolow_collate'),
+    dataset=dict(
+        datasets=[
+            dict(
+                class_text_path='data/texts/obj365v1_class_texts.json',
+                dataset=dict(
+                    ann_file='annotations/objects365_train.json',
+                    data_prefix=dict(img='train/'),
+                    data_root='data/objects365v1/',
+                    filter_cfg=dict(filter_empty_gt=False, min_size=32),
+                    type='YOLOv5Objects365V1Dataset'),
+                pipeline=[
+                    dict(backend_args=None, type='LoadImageFromFile'),
+                    dict(type='LoadAnnotations', with_bbox=True),
+                    dict(
+                        img_scale=(
+                            640,
+                            640,
+                        ),
+                        pad_val=114.0,
+                        pre_transform=[
+                            dict(backend_args=None, type='LoadImageFromFile'),
+                            dict(type='LoadAnnotations', with_bbox=True),
+                        ],
+                        type='MultiModalMosaic'),
+                    dict(
+                        border=(
+                            -320,
+                            -320,
+                        ),
+                        border_val=(
+                            114,
+                            114,
+                            114,
+                        ),
+                        max_aspect_ratio=100,
+                        max_rotate_degree=0.0,
+                        max_shear_degree=0.0,
+                        scaling_ratio_range=(
+                            0.09999999999999998,
+                            1.9,
+                        ),
+                        type='YOLOv5RandomAffine'),
+                    dict(
+                        bbox_params=dict(
+                            format='pascal_voc',
+                            label_fields=[
+                                'gt_bboxes_labels',
+                                'gt_ignore_flags',
+                            ],
+                            type='BboxParams'),
+                        keymap=dict(gt_bboxes='bboxes', img='image'),
+                        transforms=[
+                            dict(p=0.01, type='Blur'),
+                            dict(p=0.01, type='MedianBlur'),
+                            dict(p=0.01, type='ToGray'),
+                            dict(p=0.01, type='CLAHE'),
+                        ],
+                        type='mmdet.Albu'),
+                    dict(type='YOLOv5HSVRandomAug'),
+                    dict(prob=0.5, type='mmdet.RandomFlip'),
+                    dict(
+                        max_num_samples=80,
+                        num_neg_samples=(
+                            1203,
+                            1203,
+                        ),
+                        padding_to_max=True,
+                        padding_value='',
+                        type='RandomLoadText'),
+                    dict(
+                        meta_keys=(
+                            'img_id',
+                            'img_path',
+                            'ori_shape',
+                            'img_shape',
+                            'flip',
+                            'flip_direction',
+                            'texts',
+                        ),
+                        type='mmdet.PackDetInputs'),
+                ],
+                type='MultiModalDataset'),
+            dict(
+                ann_file='annotations/final_flickr_separateGT_train.json',
+                data_prefix=dict(img='full_images/'),
+                data_root='data/flickr/',
+                filter_cfg=dict(filter_empty_gt=True, min_size=32),
+                pipeline=[
+                    dict(backend_args=None, type='LoadImageFromFile'),
+                    dict(type='LoadAnnotations', with_bbox=True),
+                    dict(
+                        img_scale=(
+                            640,
+                            640,
+                        ),
+                        pad_val=114.0,
+                        pre_transform=[
+                            dict(backend_args=None, type='LoadImageFromFile'),
+                            dict(type='LoadAnnotations', with_bbox=True),
+                        ],
+                        type='MultiModalMosaic'),
+                    dict(
+                        border=(
+                            -320,
+                            -320,
+                        ),
+                        border_val=(
+                            114,
+                            114,
+                            114,
+                        ),
+                        max_aspect_ratio=100,
+                        max_rotate_degree=0.0,
+                        max_shear_degree=0.0,
+                        scaling_ratio_range=(
+                            0.09999999999999998,
+                            1.9,
+                        ),
+                        type='YOLOv5RandomAffine'),
+                    dict(
+                        bbox_params=dict(
+                            format='pascal_voc',
+                            label_fields=[
+                                'gt_bboxes_labels',
+                                'gt_ignore_flags',
+                            ],
+                            type='BboxParams'),
+                        keymap=dict(gt_bboxes='bboxes', img='image'),
+                        transforms=[
+                            dict(p=0.01, type='Blur'),
+                            dict(p=0.01, type='MedianBlur'),
+                            dict(p=0.01, type='ToGray'),
+                            dict(p=0.01, type='CLAHE'),
+                        ],
+                        type='mmdet.Albu'),
+                    dict(type='YOLOv5HSVRandomAug'),
+                    dict(prob=0.5, type='mmdet.RandomFlip'),
+                    dict(
+                        max_num_samples=80,
+                        num_neg_samples=(
+                            1203,
+                            1203,
+                        ),
+                        padding_to_max=True,
+                        padding_value='',
+                        type='RandomLoadText'),
+                    dict(
+                        meta_keys=(
+                            'img_id',
+                            'img_path',
+                            'ori_shape',
+                            'img_shape',
+                            'flip',
+                            'flip_direction',
+                            'texts',
+                        ),
+                        type='mmdet.PackDetInputs'),
+                ],
+                type='YOLOv5MixedGroundingDataset'),
+            dict(
+                ann_file='annotations/final_mixed_train_no_coco.json',
+                data_prefix=dict(img='gqa/images/'),
+                data_root='data/mixed_grounding/',
+                filter_cfg=dict(filter_empty_gt=False, min_size=32),
+                pipeline=[
+                    dict(backend_args=None, type='LoadImageFromFile'),
+                    dict(type='LoadAnnotations', with_bbox=True),
+                    dict(
+                        img_scale=(
+                            640,
+                            640,
+                        ),
+                        pad_val=114.0,
+                        pre_transform=[
+                            dict(backend_args=None, type='LoadImageFromFile'),
+                            dict(type='LoadAnnotations', with_bbox=True),
+                        ],
+                        type='MultiModalMosaic'),
+                    dict(
+                        border=(
+                            -320,
+                            -320,
+                        ),
+                        border_val=(
+                            114,
+                            114,
+                            114,
+                        ),
+                        max_aspect_ratio=100,
+                        max_rotate_degree=0.0,
+                        max_shear_degree=0.0,
+                        scaling_ratio_range=(
+                            0.09999999999999998,
+                            1.9,
+                        ),
+                        type='YOLOv5RandomAffine'),
+                    dict(
+                        bbox_params=dict(
+                            format='pascal_voc',
+                            label_fields=[
+                                'gt_bboxes_labels',
+                                'gt_ignore_flags',
+                            ],
+                            type='BboxParams'),
+                        keymap=dict(gt_bboxes='bboxes', img='image'),
+                        transforms=[
+                            dict(p=0.01, type='Blur'),
+                            dict(p=0.01, type='MedianBlur'),
+                            dict(p=0.01, type='ToGray'),
+                            dict(p=0.01, type='CLAHE'),
+                        ],
+                        type='mmdet.Albu'),
+                    dict(type='YOLOv5HSVRandomAug'),
+                    dict(prob=0.5, type='mmdet.RandomFlip'),
+                    dict(
+                        max_num_samples=80,
+                        num_neg_samples=(
+                            1203,
+                            1203,
+                        ),
+                        padding_to_max=True,
+                        padding_value='',
+                        type='RandomLoadText'),
+                    dict(
+                        meta_keys=(
+                            'img_id',
+                            'img_path',
+                            'ori_shape',
+                            'img_shape',
+                            'flip',
+                            'flip_direction',
+                            'texts',
+                        ),
+                        type='mmdet.PackDetInputs'),
+                ],
+                type='YOLOv5MixedGroundingDataset'),
+        ],
+        ignore_keys=[
+            'classes',
+            'palette',
+        ],
+        type='ConcatDataset'),
+    num_workers=8,
+    persistent_workers=True,
+    pin_memory=True,
+    sampler=dict(shuffle=True, type='DefaultSampler'))
+train_num_workers = 8
+train_pipeline = [
+    dict(backend_args=None, type='LoadImageFromFile'),
+    dict(type='LoadAnnotations', with_bbox=True),
+    dict(
+        img_scale=(
+            640,
+            640,
+        ),
+        pad_val=114.0,
+        pre_transform=[
+            dict(backend_args=None, type='LoadImageFromFile'),
+            dict(type='LoadAnnotations', with_bbox=True),
+        ],
+        type='MultiModalMosaic'),
+    dict(
+        border=(
+            -320,
+            -320,
+        ),
+        border_val=(
+            114,
+            114,
+            114,
+        ),
+        max_aspect_ratio=100,
+        max_rotate_degree=0.0,
+        max_shear_degree=0.0,
+        scaling_ratio_range=(
+            0.09999999999999998,
+            1.9,
+        ),
+        type='YOLOv5RandomAffine'),
+    dict(
+        bbox_params=dict(
+            format='pascal_voc',
+            label_fields=[
+                'gt_bboxes_labels',
+                'gt_ignore_flags',
+            ],
+            type='BboxParams'),
+        keymap=dict(gt_bboxes='bboxes', img='image'),
+        transforms=[
+            dict(p=0.01, type='Blur'),
+            dict(p=0.01, type='MedianBlur'),
+            dict(p=0.01, type='ToGray'),
+            dict(p=0.01, type='CLAHE'),
+        ],
+        type='mmdet.Albu'),
+    dict(type='YOLOv5HSVRandomAug'),
+    dict(prob=0.5, type='mmdet.RandomFlip'),
+    dict(
+        max_num_samples=80,
+        num_neg_samples=(
+            1203,
+            1203,
+        ),
+        padding_to_max=True,
+        padding_value='',
+        type='RandomLoadText'),
+    dict(
+        meta_keys=(
+            'img_id',
+            'img_path',
+            'ori_shape',
+            'img_shape',
+            'flip',
+            'flip_direction',
+            'texts',
+        ),
+        type='mmdet.PackDetInputs'),
+]
+train_pipeline_stage2 = [
+    dict(backend_args=None, type='LoadImageFromFile'),
+    dict(type='LoadAnnotations', with_bbox=True),
+    dict(scale=(
+        640,
+        640,
+    ), type='YOLOv5KeepRatioResize'),
+    dict(
+        allow_scale_up=True,
+        pad_val=dict(img=114.0),
+        scale=(
+            640,
+            640,
+        ),
+        type='LetterResize'),
+    dict(
+        border_val=(
+            114,
+            114,
+            114,
+        ),
+        max_aspect_ratio=100,
+        max_rotate_degree=0.0,
+        max_shear_degree=0.0,
+        scaling_ratio_range=(
+            0.09999999999999998,
+            1.9,
+        ),
+        type='YOLOv5RandomAffine'),
+    dict(
+        bbox_params=dict(
+            format='pascal_voc',
+            label_fields=[
+                'gt_bboxes_labels',
+                'gt_ignore_flags',
+            ],
+            type='BboxParams'),
+        keymap=dict(gt_bboxes='bboxes', img='image'),
+        transforms=[
+            dict(p=0.01, type='Blur'),
+            dict(p=0.01, type='MedianBlur'),
+            dict(p=0.01, type='ToGray'),
+            dict(p=0.01, type='CLAHE'),
+        ],
+        type='mmdet.Albu'),
+    dict(type='YOLOv5HSVRandomAug'),
+    dict(prob=0.5, type='mmdet.RandomFlip'),
+    dict(
+        max_num_samples=80,
+        num_neg_samples=(
+            1203,
+            1203,
+        ),
+        padding_to_max=True,
+        padding_value='',
+        type='RandomLoadText'),
+    dict(
+        meta_keys=(
+            'img_id',
+            'img_path',
+            'ori_shape',
+            'img_shape',
+            'flip',
+            'flip_direction',
+            'texts',
+        ),
+        type='mmdet.PackDetInputs'),
+]
+tta_model = dict(
+    tta_cfg=dict(max_per_img=300, nms=dict(iou_threshold=0.65, type='nms')),
+    type='mmdet.DetTTAModel')
+tta_pipeline = [
+    dict(backend_args=None, type='LoadImageFromFile'),
+    dict(
+        transforms=[
+            [
+                dict(
+                    transforms=[
+                        dict(scale=(
+                            640,
+                            640,
+                        ), type='YOLOv5KeepRatioResize'),
+                        dict(
+                            allow_scale_up=False,
+                            pad_val=dict(img=114),
+                            scale=(
+                                640,
+                                640,
+                            ),
+                            type='LetterResize'),
+                    ],
+                    type='Compose'),
+                dict(
+                    transforms=[
+                        dict(scale=(
+                            320,
+                            320,
+                        ), type='YOLOv5KeepRatioResize'),
+                        dict(
+                            allow_scale_up=False,
+                            pad_val=dict(img=114),
+                            scale=(
+                                320,
+                                320,
+                            ),
+                            type='LetterResize'),
+                    ],
+                    type='Compose'),
+                dict(
+                    transforms=[
+                        dict(scale=(
+                            960,
+                            960,
+                        ), type='YOLOv5KeepRatioResize'),
+                        dict(
+                            allow_scale_up=False,
+                            pad_val=dict(img=114),
+                            scale=(
+                                960,
+                                960,
+                            ),
+                            type='LetterResize'),
+                    ],
+                    type='Compose'),
+            ],
+            [
+                dict(prob=1.0, type='mmdet.RandomFlip'),
+                dict(prob=0.0, type='mmdet.RandomFlip'),
+            ],
+            [
+                dict(type='mmdet.LoadAnnotations', with_bbox=True),
+            ],
+            [
+                dict(
+                    meta_keys=(
+                        'img_id',
+                        'img_path',
+                        'ori_shape',
+                        'img_shape',
+                        'scale_factor',
+                        'pad_param',
+                        'flip',
+                        'flip_direction',
+                    ),
+                    type='mmdet.PackDetInputs'),
+            ],
+        ],
+        type='TestTimeAug'),
+]
+val_ann_file = 'annotations/instances_val2017.json'
+val_batch_size_per_gpu = 1
+val_cfg = dict(type='ValLoop')
+val_data_prefix = 'val2017/'
+val_dataloader = dict(
+    batch_size=1,
+    dataset=dict(
+        class_text_path='data/texts/lvis_v1_class_texts.json',
+        dataset=dict(
+            ann_file='lvis/lvis_v1_minival_inserted_image_name.json',
+            batch_shapes_cfg=None,
+            data_prefix=dict(img=''),
+            data_root='data/coco/',
+            test_mode=True,
+            type='YOLOv5LVISV1Dataset'),
+        pipeline=[
+            dict(backend_args=None, type='LoadImageFromFile'),
+            dict(scale=(
+                640,
+                640,
+            ), type='YOLOv5KeepRatioResize'),
+            dict(
+                allow_scale_up=False,
+                pad_val=dict(img=114),
+                scale=(
+                    640,
+                    640,
+                ),
+                type='LetterResize'),
+            dict(_scope_='mmdet', type='LoadAnnotations', with_bbox=True),
+            dict(type='LoadText'),
+            dict(
+                meta_keys=(
+                    'img_id',
+                    'img_path',
+                    'ori_shape',
+                    'img_shape',
+                    'scale_factor',
+                    'pad_param',
+                    'texts',
+                ),
+                type='mmdet.PackDetInputs'),
+        ],
+        type='MultiModalDataset'),
+    drop_last=False,
+    num_workers=2,
+    persistent_workers=True,
+    pin_memory=True,
+    sampler=dict(shuffle=False, type='DefaultSampler'))
+val_evaluator = dict(
+    ann_file='data/coco/lvis/lvis_v1_minival_inserted_image_name.json',
+    metric='bbox',
+    proposal_nums=(
+        100,
+        1,
+        10,
+    ),
+    type='mmdet.LVISMetric')
+val_interval_stage2 = 1
+val_num_workers = 2
+vis_backends = [
+    dict(type='LocalVisBackend'),
+]
+visualizer = dict(
+    name='visualizer',
+    type='mmdet.DetLocalVisualizer',
+    vis_backends=[
+        dict(type='LocalVisBackend'),
+    ])
+weight_decay = 0.025
+widen_factor = 1.25
+work_dir = '/home/rintern16/OpenYOLO3D/models/YOLO-World/yolo_world/work_dirs/yolo_world_v2_x_vlpan_bn_2e-3_100e_4x8gpus_obj365v1_goldg_train_lvis_minival'
+
+FutureWarning: `clean_up_tokenization_spaces` was not set. It will be set to `True` by default. This behavior will be depracted in transformers v4.45, and will be then set to `False` by default. For more details check this issue: https://github.com/huggingface/transformers/issues/31884
+05/12 20:51:22 - mmengine - INFO - Distributed training is not used, all SyncBatchNorm (SyncBN) layers in the model will be automatically reverted to BatchNormXd layers if they are used.
+05/12 20:51:22 - mmengine - INFO - Hooks will be executed in the following order:
+before_run:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(49          ) EMAHook                            
+(BELOW_NORMAL) LoggerHook                         
+ -------------------- 
+after_load_checkpoint:
+(49          ) EMAHook                            
+ -------------------- 
+before_train:
+(9           ) YOLOv5ParamSchedulerHook           
+(VERY_HIGH   ) RuntimeInfoHook                    
+(49          ) EMAHook                            
+(NORMAL      ) IterTimerHook                      
+(VERY_LOW    ) CheckpointHook                     
+ -------------------- 
+before_train_epoch:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+(NORMAL      ) DistSamplerSeedHook                
+(NORMAL      ) PipelineSwitchHook                 
+ -------------------- 
+before_train_iter:
+(9           ) YOLOv5ParamSchedulerHook           
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+ -------------------- 
+after_train_iter:
+(9           ) YOLOv5ParamSchedulerHook           
+(VERY_HIGH   ) RuntimeInfoHook                    
+(49          ) EMAHook                            
+(NORMAL      ) IterTimerHook                      
+(BELOW_NORMAL) LoggerHook                         
+(VERY_LOW    ) CheckpointHook                     
+ -------------------- 
+after_train_epoch:
+(9           ) YOLOv5ParamSchedulerHook           
+(NORMAL      ) IterTimerHook                      
+(VERY_LOW    ) CheckpointHook                     
+ -------------------- 
+before_val:
+(VERY_HIGH   ) RuntimeInfoHook                    
+ -------------------- 
+before_val_epoch:
+(49          ) EMAHook                            
+(NORMAL      ) IterTimerHook                      
+ -------------------- 
+before_val_iter:
+(NORMAL      ) IterTimerHook                      
+ -------------------- 
+after_val_iter:
+(NORMAL      ) IterTimerHook                      
+(NORMAL      ) DetVisualizationHook               
+(BELOW_NORMAL) LoggerHook                         
+ -------------------- 
+after_val_epoch:
+(9           ) YOLOv5ParamSchedulerHook           
+(VERY_HIGH   ) RuntimeInfoHook                    
+(49          ) EMAHook                            
+(NORMAL      ) IterTimerHook                      
+(BELOW_NORMAL) LoggerHook                         
+(VERY_LOW    ) CheckpointHook                     
+ -------------------- 
+after_val:
+(VERY_HIGH   ) RuntimeInfoHook                    
+ -------------------- 
+before_save_checkpoint:
+(49          ) EMAHook                            
+ -------------------- 
+after_train:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(VERY_LOW    ) CheckpointHook                     
+ -------------------- 
+before_test:
+(VERY_HIGH   ) RuntimeInfoHook                    
+ -------------------- 
+before_test_epoch:
+(49          ) EMAHook                            
+(NORMAL      ) IterTimerHook                      
+ -------------------- 
+before_test_iter:
+(NORMAL      ) IterTimerHook                      
+ -------------------- 
+after_test_iter:
+(NORMAL      ) IterTimerHook                      
+(NORMAL      ) DetVisualizationHook               
+(BELOW_NORMAL) LoggerHook                         
+ -------------------- 
+after_test_epoch:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(49          ) EMAHook                            
+(NORMAL      ) IterTimerHook                      
+(BELOW_NORMAL) LoggerHook                         
+ -------------------- 
+after_test:
+(VERY_HIGH   ) RuntimeInfoHook                    
+ -------------------- 
+after_run:
+(BELOW_NORMAL) LoggerHook                         
+ -------------------- 
+Loads checkpoint by local backend from path: /home/rintern16/OpenYOLO3D/pretrained/checkpoints/yolo_world_v2_x_obj365v1_goldg_cc3mlite_pretrain_1280ft-14996a36.pth
+05/12 20:51:26 - mmengine - INFO - Load checkpoint from /home/rintern16/OpenYOLO3D/pretrained/checkpoints/yolo_world_v2_x_obj365v1_goldg_cc3mlite_pretrain_1280ft-14996a36.pth
+[init] OpenYolo3D ready in 15.6s
+UserWarning: __floordiv__ is deprecated, and its behavior will change in a future version of pytorch. It currently rounds toward 0 (like the 'trunc' function NOT 'floor'). This results in incorrect rounding for negative values. To keep the current behavior, use torch.div(a, b, rounding_mode='trunc'), or for actual floor division, use torch.div(a, b, rounding_mode='floor').
+UserWarning: torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument. (Triggered internally at  ../aten/src/ATen/native/TensorShape.cpp:2894.)
+RuntimeWarning: invalid value encountered in cast
+RuntimeWarning: invalid value encountered in cast
+[10/312] scene0030_01 frames=165 K_mask3d=73 d3_med=14 wt=27.1s  elapsed=4.9min  eta=147.7min
+[20/312] scene0064_01 frames=81 K_mask3d=64 d3_med=19 wt=13.3s  elapsed=11.3min  eta=165.5min
+[30/312] scene0086_01 frames=137 K_mask3d=24 d3_med=5 wt=21.6s  elapsed=14.6min  eta=137.7min
+[40/312] scene0100_02 frames=99 K_mask3d=24 d3_med=6 wt=12.7s  elapsed=18.3min  eta=124.3min
+[50/312] scene0149_00 frames=141 K_mask3d=38 d3_med=9 wt=22.8s  elapsed=21.5min  eta=112.8min
+[60/312] scene0187_01 frames=183 K_mask3d=17 d3_med=5 wt=29.4s  elapsed=25.2min  eta=105.9min
+[70/312] scene0208_00 frames=239 K_mask3d=120 d3_med=18 wt=41.7s  elapsed=30.2min  eta=104.5min
+[80/312] scene0249_00 frames=274 K_mask3d=57 d3_med=12 wt=47.4s  elapsed=39.1min  eta=113.4min
+[90/312] scene0278_01 frames=72 K_mask3d=19 d3_med=4 wt=11.2s  elapsed=42.3min  eta=104.4min
+[100/312] scene0329_00 frames=156 K_mask3d=50 d3_med=6 wt=25.3s  elapsed=47.5min  eta=100.7min
+[110/312] scene0343_00 frames=124 K_mask3d=30 d3_med=8 wt=22.2s  elapsed=50.4min  eta=92.6min
+[120/312] scene0356_01 frames=129 K_mask3d=16 d3_med=4 wt=20.0s  elapsed=54.8min  eta=87.6min
+[130/312] scene0382_00 frames=113 K_mask3d=13 d3_med=3 wt=18.1s  elapsed=58.2min  eta=81.5min
+[140/312] scene0423_01 frames=62 K_mask3d=5 d3_med=4 wt=9.4s  elapsed=61.7min  eta=75.8min
+[150/312] scene0432_01 frames=31 K_mask3d=7 d3_med=6 wt=5.1s  elapsed=65.5min  eta=70.7min
+[160/312] scene0474_00 frames=164 K_mask3d=52 d3_med=10 wt=25.7s  elapsed=70.5min  eta=66.9min
+[170/312] scene0496_00 frames=134 K_mask3d=36 d3_med=8 wt=23.0s  elapsed=74.8min  eta=62.5min
+[180/312] scene0552_01 frames=61 K_mask3d=25 d3_med=8 wt=10.8s  elapsed=78.8min  eta=57.8min
+[190/312] scene0565_00 frames=107 K_mask3d=56 d3_med=14 wt=19.1s  elapsed=81.9min  eta=52.6min
+[200/312] scene0578_00 frames=149 K_mask3d=16 d3_med=6 wt=22.0s  elapsed=86.9min  eta=48.7min
+[210/312] scene0591_02 frames=234 K_mask3d=43 d3_med=10 wt=39.0s  elapsed=92.8min  eta=45.1min
+[220/312] scene0606_00 frames=250 K_mask3d=44 d3_med=10 wt=41.9s  elapsed=97.3min  eta=40.7min
+[230/312] scene0609_02 frames=171 K_mask3d=18 d3_med=5 wt=26.3s  elapsed=102.7min  eta=36.6min
+[240/312] scene0633_01 frames=143 K_mask3d=24 d3_med=5 wt=24.4s  elapsed=108.7min  eta=32.6min
+[250/312] scene0651_00 frames=104 K_mask3d=19 d3_med=5 wt=15.2s  elapsed=116.6min  eta=28.9min
+[260/312] scene0660_00 frames=105 K_mask3d=13 d3_med=4 wt=15.5s  elapsed=120.7min  eta=24.1min
+[270/312] scene0670_01 frames=356 K_mask3d=66 d3_med=9 wt=61.0s  elapsed=126.6min  eta=19.7min
+[280/312] scene0685_02 frames=327 K_mask3d=14 d3_med=3 wt=55.4s  elapsed=131.5min  eta=15.0min
+[290/312] scene0695_00 frames=182 K_mask3d=50 d3_med=7 wt=28.4s  elapsed=134.9min  eta=10.2min
+[300/312] scene0697_03 frames=271 K_mask3d=39 d3_med=8 wt=42.7s  elapsed=141.4min  eta=5.7min
+[310/312] scene0702_02 frames=72 K_mask3d=9 d3_med=3 wt=10.5s  elapsed=146.6min  eta=0.9min
+[312/312] scene0704_01 frames=179 K_mask3d=35 d3_med=8 wt=29.2s  elapsed=147.7min  eta=0.0min
+
+[streaming] all scenes processed in 147.7 min
+
+[eval] Running evaluate_scannet200 on aggregated predictions ...
+evaluating 312 scans...
+scans processed: 1scans processed: 2scans processed: 3scans processed: 4scans processed: 5scans processed: 6scans processed: 7scans processed: 8scans processed: 9scans processed: 10scans processed: 11scans processed: 12scans processed: 13scans processed: 14scans processed: 15scans processed: 16scans processed: 17scans processed: 18scans processed: 19scans processed: 20scans processed: 21scans processed: 22scans processed: 23scans processed: 24scans processed: 25scans processed: 26scans processed: 27scans processed: 28scans processed: 29scans processed: 30scans processed: 31scans processed: 32scans processed: 33scans processed: 34scans processed: 35scans processed: 36scans processed: 37scans processed: 38scans processed: 39scans processed: 40scans processed: 41scans processed: 42scans processed: 43scans processed: 44scans processed: 45scans processed: 46scans processed: 47scans processed: 48scans processed: 49scans processed: 50scans processed: 51scans processed: 52scans processed: 53scans processed: 54scans processed: 55scans processed: 56scans processed: 57scans processed: 58scans processed: 59scans processed: 60scans processed: 61scans processed: 62scans processed: 63scans processed: 64scans processed: 65scans processed: 66scans processed: 67scans processed: 68scans processed: 69scans processed: 70scans processed: 71scans processed: 72scans processed: 73scans processed: 74scans processed: 75scans processed: 76scans processed: 77scans processed: 78scans processed: 79scans processed: 80scans processed: 81scans processed: 82scans processed: 83scans processed: 84scans processed: 85scans processed: 86scans processed: 87scans processed: 88scans processed: 89scans processed: 90scans processed: 91scans processed: 92scans processed: 93scans processed: 94scans processed: 95scans processed: 96scans processed: 97scans processed: 98scans processed: 99scans processed: 100scans processed: 101scans processed: 102scans processed: 103scans processed: 104scans processed: 105scans processed: 106scans processed: 107scans processed: 108scans processed: 109scans processed: 110scans processed: 111scans processed: 112scans processed: 113scans processed: 114scans processed: 115scans processed: 116scans processed: 117scans processed: 118scans processed: 119scans processed: 120scans processed: 121scans processed: 122scans processed: 123scans processed: 124scans processed: 125scans processed: 126scans processed: 127scans processed: 128scans processed: 129scans processed: 130scans processed: 131scans processed: 132scans processed: 133scans processed: 134scans processed: 135scans processed: 136scans processed: 137scans processed: 138scans processed: 139scans processed: 140scans processed: 141scans processed: 142scans processed: 143scans processed: 144scans processed: 145scans processed: 146scans processed: 147scans processed: 148scans processed: 149scans processed: 150scans processed: 151scans processed: 152scans processed: 153scans processed: 154scans processed: 155scans processed: 156scans processed: 157scans processed: 158scans processed: 159scans processed: 160scans processed: 161scans processed: 162scans processed: 163scans processed: 164scans processed: 165scans processed: 166scans processed: 167scans processed: 168scans processed: 169scans processed: 170scans processed: 171scans processed: 172scans processed: 173scans processed: 174scans processed: 175scans processed: 176scans processed: 177scans processed: 178scans processed: 179scans processed: 180scans processed: 181scans processed: 182scans processed: 183scans processed: 184scans processed: 185scans processed: 186scans processed: 187scans processed: 188scans processed: 189scans processed: 190scans processed: 191scans processed: 192scans processed: 193scans processed: 194scans processed: 195scans processed: 196scans processed: 197scans processed: 198scans processed: 199scans processed: 200scans processed: 201scans processed: 202scans processed: 203scans processed: 204scans processed: 205scans processed: 206scans processed: 207scans processed: 208scans processed: 209scans processed: 210scans processed: 211scans processed: 212scans processed: 213scans processed: 214scans processed: 215scans processed: 216scans processed: 217scans processed: 218scans processed: 219scans processed: 220scans processed: 221scans processed: 222scans processed: 223scans processed: 224scans processed: 225scans processed: 226scans processed: 227scans processed: 228scans processed: 229scans processed: 230scans processed: 231scans processed: 232scans processed: 233scans processed: 234scans processed: 235scans processed: 236scans processed: 237scans processed: 238scans processed: 239scans processed: 240scans processed: 241scans processed: 242scans processed: 243scans processed: 244scans processed: 245scans processed: 246scans processed: 247scans processed: 248scans processed: 249scans processed: 250scans processed: 251scans processed: 252scans processed: 253scans processed: 254scans processed: 255scans processed: 256scans processed: 257scans processed: 258scans processed: 259scans processed: 260scans processed: 261scans processed: 262scans processed: 263scans processed: 264scans processed: 265scans processed: 266scans processed: 267scans processed: 268scans processed: 269scans processed: 270scans processed: 271scans processed: 272scans processed: 273scans processed: 274scans processed: 275scans processed: 276scans processed: 277scans processed: 278scans processed: 279scans processed: 280scans processed: 281scans processed: 282scans processed: 283scans processed: 284scans processed: 285scans processed: 286scans processed: 287scans processed: 288scans processed: 289scans processed: 290scans processed: 291scans processed: 292scans processed: 293scans processed: 294scans processed: 295scans processed: 296scans processed: 297scans processed: 298scans processed: 299scans processed: 300scans processed: 301scans processed: 302scans processed: 303scans processed: 304scans processed: 305scans processed: 306scans processed: 307scans processed: 308scans processed: 309scans processed: 310scans processed: 311scans processed: 312
+
+################################################################################################################################################################
+what           :             AP         AP_50%         AP_25%             AR         RC_50%         RC_25%          APCDC       PCDC_50%       PCDC_25%
+################################################################################################################################################################
+chair          :          0.447          0.515          0.539          0.656          0.732          0.753
+table          :          0.307          0.415          0.453          0.573          0.761          0.820
+door           :          0.355          0.437          0.487          0.641          0.775          0.846
+couch          :          0.322          0.437          0.494          0.603          0.804          0.897
+cabinet        :          0.167          0.245          0.297          0.317          0.459          0.547
+shelf          :          0.251          0.346          0.410          0.478          0.649          0.760
+desk           :          0.264          0.430          0.483          0.513          0.827          0.921
+office chair   :          0.443          0.470          0.477          0.854          0.905          0.914
+bed            :          0.326          0.479          0.515          0.622          0.900          0.957
+pillow         :          0.339          0.418          0.442          0.601          0.725          0.758
+sink           :          0.337          0.417          0.509          0.623          0.760          0.906
+picture        :          0.258          0.310          0.358          0.465          0.548          0.617
+window         :          0.234          0.345          0.433          0.427          0.613          0.745
+toilet         :          0.501          0.538          0.550          0.906          0.965          0.982
+bookshelf      :          0.224          0.315          0.428          0.436          0.610          0.818
+monitor        :          0.403          0.503          0.528          0.705          0.859          0.890
+curtain        :          0.280          0.396          0.447          0.542          0.761          0.851
+book           :          0.088          0.132          0.188          0.167          0.246          0.339
+armchair       :          0.433          0.455          0.463          0.838          0.878          0.892
+coffee table   :          0.427          0.500          0.502          0.801          0.930          0.930
+box            :          0.164          0.224          0.269          0.314          0.422          0.500
+refrigerator   :          0.391          0.458          0.506          0.759          0.886          0.971
+lamp           :          0.325          0.409          0.465          0.608          0.756          0.846
+kitchen cabinet:          0.247          0.337          0.432          0.440          0.585          0.726
+towel          :          0.272          0.369          0.413          0.525          0.703          0.780
+clothes        :          0.172          0.268          0.387          0.339          0.525          0.750
+tv             :          0.439          0.490          0.492          0.836          0.929          0.929
+nightstand     :          0.341          0.507          0.543          0.644          0.941          1.000
+counter        :          0.224          0.372          0.453          0.444          0.737          0.895
+dresser        :          0.275          0.336          0.387          0.542          0.659          0.756
+stool          :          0.353          0.453          0.496          0.689          0.880          0.960
+cushion        :          0.000          0.000          0.500          0.000          0.000          1.000
+plant          :          0.233          0.314          0.350          0.444          0.592          0.653
+ceiling        :          0.347          0.427          0.471          0.602          0.721          0.777
+bathtub        :          0.386          0.453          0.455          0.746          0.871          0.871
+end table      :          0.347          0.377          0.378          0.681          0.739          0.739
+dining table   :          0.241          0.334          0.334          0.481          0.667          0.667
+keyboard       :          0.179          0.205          0.248          0.349          0.400          0.480
+bag            :          0.289          0.309          0.355          0.565          0.603          0.690
+backpack       :          0.413          0.501          0.530          0.748          0.891          0.932
+toilet paper   :          0.071          0.085          0.104          0.140          0.167          0.204
+printer        :          0.300          0.371          0.419          0.591          0.727          0.818
+tv stand       :          0.436          0.505          0.506          0.864          1.000          1.000
+whiteboard     :          0.286          0.379          0.430          0.528          0.684          0.763
+blanket        :          0.072          0.178          0.388          0.144          0.353          0.765
+shower curtain :          0.340          0.405          0.464          0.663          0.786          0.893
+trash can      :          0.295          0.340          0.363          0.506          0.574          0.603
+closet         :          0.000          0.000          0.000          0.000          0.000          0.000
+stairs         :          0.238          0.378          0.378          0.472          0.750          0.750
+microwave      :          0.228          0.319          0.371          0.444          0.619          0.714
+stove          :          0.395          0.488          0.521          0.765          0.941          1.000
+shoe           :          0.120          0.138          0.173          0.231          0.263          0.325
+computer tower :          0.252          0.297          0.311          0.485          0.568          0.591
+bottle         :          0.168          0.225          0.244          0.333          0.444          0.481
+bin            :          0.161          0.189          0.189          0.319          0.375          0.375
+ottoman        :          0.327          0.366          0.391          0.640          0.714          0.762
+bench          :          0.258          0.342          0.343          0.506          0.667          0.667
+board          :          0.005          0.024          0.024          0.011          0.048          0.048
+washing machine:          0.112          0.198          0.404          0.222          0.389          0.778
+mirror         :          0.206          0.328          0.478          0.398          0.623          0.884
+copier         :          0.276          0.307          0.307          0.541          0.600          0.600
+basket         :          0.149          0.335          0.335          0.296          0.667          0.667
+sofa chair     :          0.360          0.403          0.403          0.708          0.789          0.789
+file cabinet   :          0.247          0.268          0.269          0.481          0.521          0.521
+fan            :          0.291          0.376          0.377          0.570          0.733          0.733
+laptop         :          0.139          0.264          0.369          0.276          0.520          0.720
+shower         :          0.128          0.288          0.360          0.254          0.571          0.714
+paper          :          0.081          0.107          0.107          0.162          0.212          0.212
+person         :          0.000          0.000          0.072          0.000          0.000          0.143
+paper towel dispenser:          0.230          0.257          0.257          0.449          0.500          0.500
+oven           :          0.105          0.126          0.189          0.208          0.250          0.375
+blinds         :          0.142          0.232          0.232          0.282          0.462          0.462
+rack           :          0.000          0.000          0.000          0.000          0.000          0.000
+plate          :          0.000          0.000          0.000          0.000          0.000          0.000
+blackboard     :          0.327          0.378          0.379          0.637          0.733          0.733
+piano          :          0.411          0.505          0.505          0.815          1.000          1.000
+suitcase       :          0.349          0.413          0.414          0.680          0.800          0.800
+rail           :          0.002          0.019          0.037          0.004          0.037          0.074
+radiator       :          0.272          0.352          0.379          0.531          0.683          0.732
+recycling bin  :          0.302          0.323          0.338          0.583          0.622          0.649
+container      :          0.123          0.201          0.201          0.244          0.400          0.400
+wardrobe       :          0.223          0.223          0.391          0.444          0.444          0.778
+soap dispenser :          0.138          0.138          0.138          0.273          0.273          0.273
+telephone      :          0.207          0.295          0.327          0.407          0.576          0.636
+bucket         :          0.404          0.470          0.471          0.795          0.923          0.923
+clock          :          0.350          0.381          0.381          0.672          0.727          0.727
+stand          :          0.250          0.250          0.250          0.500          0.500          0.500
+light          :          0.063          0.063          0.125          0.125          0.125          0.250
+laundry basket :          0.322          0.379          0.379          0.639          0.750          0.750
+pipe           :          0.000          0.000          0.072          0.000          0.000          0.143
+clothes dryer  :          0.037          0.084          0.168          0.074          0.167          0.333
+guitar         :          0.000          0.000          0.336          0.000          0.000          0.667
+toilet paper holder:          0.000          0.000          0.000          0.000          0.000          0.000
+seat           :          0.284          0.319          0.365          0.566          0.636          0.727
+speaker        :          0.000          0.000          0.000          0.000          0.000          0.000
+column         :          0.125          0.125          0.125          0.250          0.250          0.250
+bicycle        :            nan            nan            nan            nan            nan            nan
+ladder         :          0.263          0.360          0.360          0.524          0.714          0.714
+bathroom stall :          0.090          0.233          0.511          0.179          0.462          1.000
+shower wall    :          0.292          0.355          0.355          0.573          0.692          0.692
+cup            :          0.139          0.162          0.162          0.276          0.320          0.320
+jacket         :          0.178          0.212          0.233          0.352          0.417          0.458
+storage bin    :          0.245          0.301          0.369          0.489          0.600          0.733
+coffee maker   :          0.478          0.507          0.507          0.944          1.000          1.000
+dishwasher     :          0.179          0.252          0.355          0.356          0.500          0.700
+paper towel roll:          0.367          0.414          0.461          0.727          0.818          0.909
+machine        :          0.279          0.502          0.503          0.556          1.000          1.000
+mat            :          0.022          0.025          0.025          0.044          0.050          0.050
+windowsill     :          0.028          0.036          0.144          0.056          0.071          0.286
+bar            :          0.000          0.000          0.000          0.000          0.000          0.000
+toaster        :          0.280          0.378          0.378          0.556          0.750          0.750
+bulletin board :          0.021          0.063          0.188          0.042          0.125          0.375
+ironing board  :          0.000          0.000          0.000          0.000          0.000          0.000
+fireplace      :          0.067          0.201          0.201          0.133          0.400          0.400
+soap dish      :          0.042          0.042          0.126          0.083          0.083          0.250
+kitchen counter:          0.118          0.197          0.280          0.231          0.385          0.538
+doorframe      :          0.134          0.206          0.274          0.258          0.392          0.512
+toilet paper dispenser:          0.136          0.169          0.169          0.269          0.333          0.333
+mini fridge    :          0.270          0.361          0.415          0.528          0.700          0.800
+fire extinguisher:          0.167          0.167          0.167          0.333          0.333          0.333
+ball           :          0.447          0.503          0.503          0.889          1.000          1.000
+hat            :          0.130          0.167          0.336          0.259          0.333          0.667
+shower curtain rod:          0.000          0.000          0.000          0.000          0.000          0.000
+water cooler   :          0.195          0.503          0.503          0.389          1.000          1.000
+paper cutter   :          0.350          0.430          0.502          0.698          0.857          1.000
+tray           :          0.147          0.183          0.275          0.293          0.364          0.545
+shower door    :          0.065          0.167          0.252          0.130          0.333          0.500
+pillar         :          0.000          0.000          0.000          0.000          0.000          0.000
+ledge          :          0.000          0.000          0.031          0.000          0.000          0.062
+toaster oven   :          0.235          0.302          0.302          0.467          0.600          0.600
+mouse          :            nan            nan            nan            nan            nan            nan
+toilet seat cover dispenser:          0.000          0.000          0.000          0.000          0.000          0.000
+furniture      :          0.000          0.000          0.000          0.000          0.000          0.000
+cart           :          0.283          0.410          0.376          0.556          0.800          0.733
+storage container:            nan            nan            nan            nan            nan            nan
+scale          :          0.502          0.502          0.502          1.000          1.000          1.000
+tissue box     :          0.224          0.295          0.296          0.444          0.583          0.583
+light switch   :            nan            nan            nan            nan            nan            nan
+crate          :          0.349          0.377          0.377          0.694          0.750          0.750
+power outlet   :          0.000          0.000          0.000          0.000          0.000          0.000
+decoration     :          0.056          0.056          0.056          0.111          0.111          0.111
+sign           :          0.106          0.112          0.168          0.210          0.222          0.333
+projector      :          0.000          0.000          0.000          0.000          0.000          0.000
+closet door    :          0.078          0.167          0.235          0.156          0.333          0.467
+vacuum cleaner :          0.420          0.505          0.506          0.833          1.000          1.000
+candle         :            nan            nan            nan            nan            nan            nan
+plunger        :          0.000          0.000          0.000          0.000          0.000          0.000
+stuffed animal :          0.000          0.000          0.000          0.000          0.000          0.000
+headphones     :          0.000          0.000          0.000          0.000          0.000          0.000
+dish rack      :          0.460          0.502          0.502          0.917          1.000          1.000
+broom          :          0.167          0.201          0.302          0.333          0.400          0.600
+guitar case    :            nan            nan            nan            nan            nan            nan
+range hood     :          0.249          0.339          0.339          0.491          0.667          0.667
+dustpan        :          0.028          0.250          0.250          0.056          0.500          0.500
+hair dryer     :          0.000          0.000          0.250          0.000          0.000          0.500
+water bottle   :          0.347          0.404          0.404          0.689          0.800          0.800
+handicap bar   :          0.000          0.000          0.000          0.000          0.000          0.000
+purse          :            nan            nan            nan            nan            nan            nan
+vent           :          0.000          0.000          0.000          0.000          0.000          0.000
+shower floor   :          0.000          0.000          0.000          0.000          0.000          0.000
+water pitcher  :          0.334          0.501          0.501          0.667          1.000          1.000
+mailbox        :          0.000          0.000          0.030          0.000          0.000          0.059
+bowl           :          0.016          0.072          0.143          0.032          0.143          0.286
+paper bag      :          0.297          0.334          0.334          0.593          0.667          0.667
+alarm clock    :            nan            nan            nan            nan            nan            nan
+music stand    :            nan            nan            nan            nan            nan            nan
+projector screen:          0.214          0.336          0.506          0.426          0.667          1.000
+divider        :          0.056          0.143          0.287          0.111          0.286          0.571
+laundry detergent:          0.000          0.000          0.000          0.000          0.000          0.000
+bathroom counter:          0.159          0.337          0.337          0.315          0.667          0.667
+object         :          0.014          0.016          0.019          0.027          0.031          0.037
+bathroom vanity:          0.291          0.385          0.452          0.569          0.750          0.875
+closet wall    :          0.019          0.083          0.167          0.037          0.167          0.333
+laundry hamper :          0.056          0.056          0.056          0.111          0.111          0.111
+bathroom stall door:          0.487          0.509          0.510          0.957          1.000          1.000
+ceiling light  :          0.074          0.101          0.101          0.148          0.200          0.200
+trash bin      :          0.280          0.302          0.302          0.556          0.600          0.600
+dumbbell       :          0.000          0.000          0.251          0.000          0.000          0.500
+stair rail     :          0.064          0.180          0.363          0.127          0.357          0.714
+tube           :          0.000          0.000          0.000          0.000          0.000          0.000
+bathroom cabinet:          0.149          0.252          0.252          0.296          0.500          0.500
+cd case        :            nan            nan            nan            nan            nan            nan
+closet rod     :          0.000          0.000          0.000          0.000          0.000          0.000
+coffee kettle  :          0.238          0.252          0.252          0.472          0.500          0.500
+structure      :            nan            nan            nan            nan            nan            nan
+shower head    :          0.000          0.000          0.000          0.000          0.000          0.000
+keyboard piano :          0.167          0.201          0.403          0.333          0.400          0.800
+case of water bottles:          0.326          0.406          0.406          0.644          0.800          0.800
+coat rack      :          0.000          0.000          0.000          0.000          0.000          0.000
+storage organizer:            nan            nan            nan            nan            nan            nan
+folded chair   :          0.019          0.167          0.334          0.037          0.333          0.667
+fire alarm     :            nan            nan            nan            nan            nan            nan
+power strip    :            nan            nan            nan            nan            nan            nan
+calendar       :          0.167          0.167          0.167          0.333          0.333          0.333
+poster         :          0.151          0.215          0.215          0.302          0.429          0.429
+potted plant   :          0.000          0.000          0.000          0.000          0.000          0.000
+luggage        :            nan            nan            nan            nan            nan            nan
+mattress       :          0.101          0.201          0.201          0.200          0.400          0.400
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+head           :          0.260          0.337          0.389          0.491          0.632          0.723
+common         :          0.177          0.236          0.274          0.349          0.466          0.539
+tail           :          0.127          0.157          0.192          0.252          0.311          0.381
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+what           :             AP         AP_50%         AP_25%             AR         RC_50%         RC_25%          APCDC       PCDC_50%       PCDC_25%
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+average        :          0.191          0.248          0.290          0.370          0.478          0.557          0.609          0.727          0.781
+
+[eval] done in 281.6s
+[eval] aggregate metrics.json -> /home/rintern16/OpenYOLO3D/results/2026-05-12_scannet_streaming_baseline_v01/metrics.json
+[viz] d3_visibility_stats.json written
+[temporal] temporal_metrics.json written
+[sanity] {
+  "sanity_threshold": 0.005,
+  "offline_AP": 0.24726472743621264,
+  "streaming_AP": 0.19105609463035172,
+  "delta_AP": -0.056208632805860914,
+  "offline_AP_50": 0.31754644603378346,
+  "streaming_AP_50": 0.2481649725361257,
+  "delta_AP_50": -0.06938147349765775,
+  "offline_AP_25": 0.36240411494463204,
+  "streaming_AP_25": 0.28998729016763425,
+  "delta_AP_25": -0.07241682477699779,
+  "sanity_pass": false
+}
+=== Streaming baseline exit code: 0 ===
+  "offline_AP": 0.24726472743621264,
+  "streaming_AP": 0.19105609463035172,
+  "delta_AP": -0.056208632805860914,
+  "offline_AP_50": 0.31754644603378346,
+  "streaming_AP_50": 0.2481649725361257,
+  "delta_AP_50": -0.06938147349765775,
+  "offline_AP_25": 0.36240411494463204,
+  "streaming_AP_25": 0.28998729016763425,
+  "delta_AP_25": -0.07241682477699779,
+  "sanity_pass": false
+}
