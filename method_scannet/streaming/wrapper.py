@@ -115,15 +115,8 @@ class StreamingScanNetEvaluator:
 
         self.scene_vertices = self._load_scene_vertices(mesh_file)
 
-        intrinsic_path = self.scene_dir / "intrinsics.txt"
-        full_intrinsic = np.loadtxt(intrinsic_path)
-        if full_intrinsic.ndim == 2 and full_intrinsic.shape[0] >= 3 and full_intrinsic.shape[1] >= 3:
-            self.intrinsic = full_intrinsic[:3, :3].astype(np.float64, copy=False)
-        else:
-            self.intrinsic = np.asarray(full_intrinsic, dtype=np.float64)
-
-        # Probe color/depth resolution from the first frame so the scaling
-        # parameters (depth/image) match OpenYOLO3D's WORLD_2_CAM init.
+        # Probe color/depth resolution from the first frame so we can rescale
+        # the intrinsic exactly like OpenYOLO3D's offline path.
         if self.frame_indices:
             f0 = self.frame_indices[0]
             try:
@@ -140,8 +133,6 @@ class StreamingScanNetEvaluator:
                     ).shape[:2]
                 )
             except Exception:
-                # Tests inject mock OY3D + tiny scene; fall back to depth-only
-                # probing if color load fails.
                 self.image_resolution = self.depth_resolution = (0, 0)
         else:
             self.image_resolution = self.depth_resolution = (0, 0)
@@ -153,6 +144,37 @@ class StreamingScanNetEvaluator:
             self.scaling_w = (
                 self.depth_resolution[1] / self.image_resolution[1]
             )
+
+        # Load intrinsic and rescale color → depth resolution. The raw
+        # ScanNet ``intrinsics.txt`` is at color resolution (e.g. 968×1296);
+        # vertex projection happens in the depth frame (e.g. 480×640) so we
+        # need OpenYOLO3D's exact rescaling. Reuse the offline helper to
+        # avoid math drift (Task 1.2b sanity FAIL root cause).
+        intrinsic_path = self.scene_dir / "intrinsics.txt"
+        full_intrinsic = np.loadtxt(intrinsic_path)
+        if full_intrinsic.ndim == 2 and full_intrinsic.shape[0] >= 3 and full_intrinsic.shape[1] >= 3:
+            color_intrinsic = full_intrinsic[:3, :3].astype(np.float64, copy=True)
+        else:
+            color_intrinsic = np.asarray(full_intrinsic, dtype=np.float64).copy()
+
+        if (
+            self.image_resolution[0] > 0
+            and self.depth_resolution[0] > 0
+            and self.image_resolution != self.depth_resolution
+        ):
+            from utils import WORLD_2_CAM
+
+            # adjust_intrinsic doesn't read ``self``; the class binding only
+            # supplies the namespace. Calling it as an unbound method with
+            # ``None`` as the placeholder ``self`` works in Python 3.
+            self.intrinsic = WORLD_2_CAM.adjust_intrinsic(
+                None,
+                color_intrinsic,
+                self.image_resolution,
+                self.depth_resolution,
+            ).astype(np.float64, copy=False)
+        else:
+            self.intrinsic = color_intrinsic
 
         # Pre-arm the baseline accumulator. step_frame() will push raw
         # frame data into it; compute_baseline_predictions() drains it.
