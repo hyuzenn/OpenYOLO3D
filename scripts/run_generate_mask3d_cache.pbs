@@ -1,0 +1,30 @@
+#!/bin/bash
+#PBS -N mask3d_cache_gen
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=02:00:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+CACHE_DIR="${PROJECT_ROOT}/results/2026-05-13_mask3d_cache"
+mkdir -p "$CACHE_DIR"
+
+LOG="$CACHE_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Mask3D cache directory: $CACHE_DIR ==="
+echo "=== Task 1.2c Option G — generate one .pt per scene ==="
+echo "=== Date: $(date) ==="
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+
+python -m method_scannet.streaming.tools.generate_mask3d_cache \
+  --cache-dir "$CACHE_DIR" \
+  --config pretrained/config_scannet200.yaml
+
+EXIT=$?
+echo "=== exit code: $EXIT ==="
+exit $EXIT

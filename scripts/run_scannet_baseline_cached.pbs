@@ -1,0 +1,37 @@
+#!/bin/bash
+#PBS -N scannet_baseline_cached
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=03:00:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+CACHE_DIR="${PROJECT_ROOT}/results/2026-05-13_mask3d_cache"
+DATE=$(date +%F)
+EXP=scannet_baseline_cached
+N=$(printf '%02d' $(($(ls -d "results/${DATE}_${EXP}_v"* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+export RUN_DIR
+mkdir -p "$RUN_DIR/outputs"
+cp pretrained/config_scannet200.yaml "$RUN_DIR/config.yaml"
+
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Run directory: $RUN_DIR ==="
+echo "=== Task 1.2c Option G — offline OpenYolo3D.predict on cached Mask3D ==="
+echo "=== Cache:          $CACHE_DIR ==="
+echo "=== Date: $(date) ==="
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+
+python run_evaluation.py \
+  --dataset_name scannet200 \
+  --path_to_3d_masks "$CACHE_DIR"
+
+EXIT=$?
+echo "=== exit code: $EXIT ==="
+exit $EXIT

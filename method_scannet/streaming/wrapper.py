@@ -77,6 +77,18 @@ class StreamingScanNetEvaluator:
         # Per-frame prediction history for Task 1.3 temporal metrics.
         self.pred_history: list[dict[int, int]] = []
 
+        # Task 1.4a method-axis hooks. Populated by
+        # ``method_scannet.streaming.hooks_streaming.install_method_streaming``.
+        # ``None`` means the axis is inactive (baseline behaviour).
+        self.method_11 = None  # FrameCountingGate (registration)
+        self.method_12 = None  # BayesianGate (registration)
+        self.method_21 = None  # WeightedVoting (label, replaces baseline votes)
+        self.method_22 = None  # FeatureFusionEMA (label, visual feature)
+        self.method_31 = None  # IoUMerger (post-merge)
+        self.method_32 = None  # HungarianMerger (post-merge)
+        # State carried between step_frame calls when methods are active.
+        self._method_state: dict = {}
+
     # ------------------------------------------------------------------
     # Scene-level setup (Mask3D + mesh load + intrinsic)
     # ------------------------------------------------------------------
@@ -94,46 +106,57 @@ class StreamingScanNetEvaluator:
         self,
         processed_scene_path: Optional[str] = None,
         apply_mask3d_filter: bool = False,
+        mask3d_cache_path: Optional[str] = None,
     ) -> None:
         """Run Mask3D once and cache scene-level state.
 
         Args:
             processed_scene_path: optional path to the pre-processed point-
                 cloud (``.npy``) that offline ``OpenYolo3D.predict`` feeds to
-                Mask3D. When supplied, the streaming wrapper uses the same
-                input as offline for fair comparison; otherwise it defaults
-                to the mesh ``*.ply``.
+                Mask3D. Ignored when ``mask3d_cache_path`` is provided.
             apply_mask3d_filter: when True, apply the post-Mask3D score
                 threshold + NMS exactly the way ``OpenYolo3D.predict`` does
                 (utils/__init__.py:114-118). Default False for backwards
-                compatibility with the Task 1.2a tests.
+                compatibility with the Task 1.2a tests. Ignored when
+                ``mask3d_cache_path`` is provided (cache is already filtered).
+            mask3d_cache_path: optional path to a ``.pt`` file containing a
+                ``(masks, scores)`` tuple already produced by
+                :mod:`method_scannet.streaming.tools.generate_mask3d_cache`.
+                When supplied, Mask3D inference is skipped and the cached
+                tensors are loaded directly — the canonical fix for the
+                Task 1.2c H6 non-determinism issue.
         """
-        if processed_scene_path is not None:
-            mesh_file = processed_scene_path
+        if mask3d_cache_path is not None and Path(mask3d_cache_path).exists():
+            masks_raw, scores_raw = torch.load(mask3d_cache_path, map_location="cpu")
+            ply_files = list(self.scene_dir.glob("*.ply"))
+            mesh_file = str(ply_files[0]) if ply_files else None
         else:
-            mesh_files = list(self.scene_dir.glob("*.ply"))
-            mesh_file = str(mesh_files[0]) if mesh_files else None
+            if processed_scene_path is not None:
+                mesh_file = processed_scene_path
+            else:
+                mesh_files = list(self.scene_dir.glob("*.ply"))
+                mesh_file = str(mesh_files[0]) if mesh_files else None
 
-        masks_raw, scores_raw = self.openyolo3d.network_3d.get_class_agnostic_masks(
-            mesh_file, datatype="mesh"
-        )
+            masks_raw, scores_raw = self.openyolo3d.network_3d.get_class_agnostic_masks(
+                mesh_file, datatype="mesh"
+            )
 
-        if apply_mask3d_filter:
-            from utils import apply_nms
+            if apply_mask3d_filter:
+                from utils import apply_nms
 
-            th = self.openyolo3d.openyolo3d_config["network3d"]["th"]
-            nms_iou = self.openyolo3d.openyolo3d_config["network3d"]["nms"]
-            keep_score = scores_raw >= th
-            if int(keep_score.sum().item()) > 0:
-                keep_nms = apply_nms(
-                    masks_raw[:, keep_score].cuda(),
-                    scores_raw[keep_score].cuda(),
-                    nms_iou,
-                )
-                masks_raw = (
-                    masks_raw.cpu().permute(1, 0)[keep_score][keep_nms].permute(1, 0)
-                )
-                scores_raw = scores_raw.cpu()[keep_score][keep_nms]
+                th = self.openyolo3d.openyolo3d_config["network3d"]["th"]
+                nms_iou = self.openyolo3d.openyolo3d_config["network3d"]["nms"]
+                keep_score = scores_raw >= th
+                if int(keep_score.sum().item()) > 0:
+                    keep_nms = apply_nms(
+                        masks_raw[:, keep_score].cuda(),
+                        scores_raw[keep_score].cuda(),
+                        nms_iou,
+                    )
+                    masks_raw = (
+                        masks_raw.cpu().permute(1, 0)[keep_score][keep_nms].permute(1, 0)
+                    )
+                    scores_raw = scores_raw.cpu()[keep_score][keep_nms]
 
         masks_np = masks_raw.cpu().numpy() if hasattr(masks_raw, "cpu") else np.asarray(masks_raw)
         if masks_np.ndim != 2:
@@ -299,17 +322,45 @@ class StreamingScanNetEvaluator:
             }
 
         # --- Step C: M11/12 instance registration gate ------------------
-        # TODO(Task 1.4 M11/M12): registration gate (frame-counting /
-        # Bayesian). Baseline: pass-through.
-        confirmed_visible = visible_instances
+        # Default: pass-through (baseline). M11/M12 gate visible_instances
+        # against accumulated detection history.
+        if self.method_11 is not None:
+            confirmed_visible = np.asarray(
+                self.method_11.gate(visible_instances), dtype=np.int64
+            )
+        elif self.method_12 is not None:
+            confirmed_visible = np.asarray(
+                self.method_12.gate(visible_instances), dtype=np.int64
+            )
+        else:
+            confirmed_visible = visible_instances
 
         # --- Step D: feed baseline accumulator + record label snapshot --
-        # TODO(Task 1.4 M21/M22): replace this baseline accumulator update
-        # with the method module's frame update (weighted vote / CLIP EMA).
+        # M21/M22 hooks observe the per-frame data alongside the baseline
+        # accumulator. They do not replace ``add_frame``; instead they keep
+        # their own state and override ``compute_predictions()`` semantics
+        # (resolved at end-of-scene via the hook's ``finalize`` method).
         if self.baseline_accumulator is not None:
             self.baseline_accumulator.add_frame(
                 projection=projection,
                 visible_mask=inside_mask,
+                bbox_pred=single_frame_bbox,
+            )
+        if self.method_21 is not None and hasattr(self.method_21, "observe_frame"):
+            self.method_21.observe_frame(
+                frame_idx=frame_idx,
+                visible_instances=confirmed_visible,
+                projection=projection,
+                inside_mask=inside_mask,
+                bbox_pred=single_frame_bbox,
+                instance_vertex_masks=self.instance_vertex_masks,
+                scene_vertices=self.scene_vertices,
+            )
+        if self.method_22 is not None and hasattr(self.method_22, "observe_frame"):
+            self.method_22.observe_frame(
+                frame_idx=frame_idx,
+                visible_instances=confirmed_visible,
+                color_path=color_path,
                 bbox_pred=single_frame_bbox,
             )
 
@@ -357,6 +408,51 @@ class StreamingScanNetEvaluator:
             "pred_classes": pred_classes.cpu().numpy(),
             "pred_scores": pred_scores.cpu().numpy(),
         }
+
+    def compute_method_predictions(self) -> dict:
+        """End-of-scene prediction with the currently-installed method axes.
+
+        Pipeline order (Stage 2 §3 of Task 1.1 streaming design):
+            1. Start from baseline preds.
+            2. If M21 or M22 is active, ask it to ``finalize`` and override
+               class assignments.
+            3. If M31 or M32 is active, run ``merge`` over the final
+               instance map.
+
+        Returns ``{"pred_masks", "pred_classes", "pred_scores"}`` numpy
+        arrays in the same schema as :meth:`compute_baseline_predictions`.
+        """
+        preds = self.compute_baseline_predictions()
+
+        label_method = self.method_22 or self.method_21
+        if label_method is not None and hasattr(label_method, "finalize"):
+            try:
+                overridden = label_method.finalize(
+                    pred_masks=preds["pred_masks"],
+                    pred_classes=preds["pred_classes"],
+                    pred_scores=preds["pred_scores"],
+                    instance_vertex_masks=self.instance_vertex_masks,
+                )
+                if overridden is not None:
+                    preds = overridden
+            except NotImplementedError:
+                pass
+
+        merger = self.method_32 or self.method_31
+        if merger is not None and hasattr(merger, "merge"):
+            try:
+                merged = merger.merge(
+                    pred_masks=preds["pred_masks"],
+                    pred_classes=preds["pred_classes"],
+                    pred_scores=preds["pred_scores"],
+                    scene_vertices=self.scene_vertices,
+                )
+                if merged is not None:
+                    preds = merged
+            except NotImplementedError:
+                pass
+
+        return preds
 
     # ------------------------------------------------------------------
     # Driver
