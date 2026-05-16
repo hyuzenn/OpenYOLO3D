@@ -100,6 +100,7 @@ def run(
     config_path: str = "pretrained/config_scannet200.yaml",
     scene_names: list[str] | None = None,
     log_every: int = 10,
+    mask3d_cache_dir: str | None = None,
 ) -> dict:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -167,9 +168,15 @@ def run(
             evaluator.frame_indices = [f for f in all_frames if f % frequency == 0]
 
             # Mask3D filter + .npy input mirror ``OpenYolo3D.predict`` exactly.
+            cache_pt = None
+            if mask3d_cache_dir is not None:
+                pt = Path(mask3d_cache_dir) / f"{scene_name}.pt"
+                if pt.exists():
+                    cache_pt = str(pt)
             evaluator.setup_scene(
                 processed_scene_path=processed_scene_path,
-                apply_mask3d_filter=True,
+                apply_mask3d_filter=True if cache_pt is None else False,
+                mask3d_cache_path=cache_pt,
             )
 
             scene_visible_counts: list[int] = []
@@ -349,13 +356,26 @@ def main():
         default=None,
         help="Optional: evaluate only the first N scenes (for smoke).",
     )
+    parser.add_argument(
+        "--mask3d-cache-dir",
+        type=str,
+        default=None,
+        help="Task 1.2c Option G shared Mask3D cache directory. When set, "
+             "each scene loads its cached (masks, scores) and skips Mask3D "
+             "inference.",
+    )
     args = parser.parse_args()
 
     scenes = list(SCENE_NAMES_SCANNET200)
     if args.limit is not None:
         scenes = scenes[: args.limit]
 
-    run(output_dir=args.output, config_path=args.config, scene_names=scenes)
+    run(
+        output_dir=args.output,
+        config_path=args.config,
+        scene_names=scenes,
+        mask3d_cache_dir=args.mask3d_cache_dir,
+    )
 
 
 if __name__ == "__main__":
