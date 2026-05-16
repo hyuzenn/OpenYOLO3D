@@ -29,6 +29,10 @@ from method_scannet.streaming.hooks_streaming import (
     list_method_ids,
     uninstall_all_streaming,
 )
+from method_scannet.streaming.metrics import (
+    label_switch_count,
+    time_to_confirm,
+)
 from method_scannet.streaming.wrapper import StreamingScanNetEvaluator
 from utils import OpenYolo3D
 from utils.utils_2d import load_yaml
@@ -99,6 +103,7 @@ def run_one_axis(
     out_dir.mkdir(parents=True, exist_ok=True)
     log_lines: list[str] = []
     preds_full: dict[str, dict] = {}
+    temporal_per_scene: dict[str, dict] = {}
 
     print(f"\n[axis {name}] method_id={method_id} kwargs={method_kwargs}", flush=True)
     t_axis = time.time()
@@ -137,6 +142,17 @@ def run_one_axis(
             "pred_scores": np.ones_like(preds["pred_scores"]),
         }
 
+        # Task 1.3 — temporal metrics from the running labeler's history.
+        pred_history = list(evaluator.pred_history)
+        lsc = int(label_switch_count(pred_history))
+        ttc = time_to_confirm(pred_history, K=3)
+        temporal_per_scene[scene_name] = {
+            "n_frames": len(pred_history),
+            "n_unique_instances": len(set().union(*[h.keys() for h in pred_history])) if pred_history else 0,
+            "label_switch_count": lsc,
+            "time_to_confirm": dict(ttc),  # {iid: frames_to_confirm}
+        }
+
         if (s_idx + 1) % 25 == 0 or s_idx == len(scenes) - 1:
             elapsed = time.time() - t_axis
             rate = (s_idx + 1) / max(elapsed, 1e-6)
@@ -164,7 +180,56 @@ def run_one_axis(
         "n_scenes": len(preds_full),
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
-    print(f"[axis {name}] AP={summary['AP']:.4f} AP_50={summary['AP_50']:.4f}",
+
+    # ---- Task 1.3 temporal-metric aggregation -------------------------
+    lsc_values = [v["label_switch_count"] for v in temporal_per_scene.values()]
+    ttc_values: list[int] = []
+    for v in temporal_per_scene.values():
+        ttc_values.extend(v["time_to_confirm"].values())
+    n_inst_total = int(sum(v["n_unique_instances"] for v in temporal_per_scene.values()))
+    temporal_axis = {
+        "axis": name,
+        "n_scenes": len(temporal_per_scene),
+        "n_unique_instances_total": n_inst_total,
+        "label_switch_count": {
+            "total": int(sum(lsc_values)),
+            "mean_per_scene": float(np.mean(lsc_values)) if lsc_values else 0.0,
+            "median_per_scene": float(np.median(lsc_values)) if lsc_values else 0.0,
+            "p90_per_scene": float(np.percentile(lsc_values, 90)) if lsc_values else 0.0,
+            "max_per_scene": int(max(lsc_values)) if lsc_values else 0,
+        },
+        "time_to_confirm": {
+            "n_instances": len(ttc_values),
+            "mean": float(np.mean(ttc_values)) if ttc_values else None,
+            "median": float(np.median(ttc_values)) if ttc_values else None,
+            "p90": float(np.percentile(ttc_values, 90)) if ttc_values else None,
+            "max": int(max(ttc_values)) if ttc_values else None,
+        },
+    }
+    (out_dir / "temporal_metrics.json").write_text(json.dumps(temporal_axis, indent=2))
+    (out_dir / "temporal_per_scene.json").write_text(
+        json.dumps(
+            {
+                s: {
+                    "n_frames": v["n_frames"],
+                    "n_unique_instances": v["n_unique_instances"],
+                    "label_switch_count": v["label_switch_count"],
+                    "time_to_confirm_n_instances": len(v["time_to_confirm"]),
+                    "time_to_confirm_mean": (
+                        float(np.mean(list(v["time_to_confirm"].values())))
+                        if v["time_to_confirm"] else None
+                    ),
+                }
+                for s, v in temporal_per_scene.items()
+            },
+            indent=2,
+        )
+    )
+
+    print(f"[axis {name}] AP={summary['AP']:.4f} AP_50={summary['AP_50']:.4f}  "
+          f"lsc_total={temporal_axis['label_switch_count']['total']} "
+          f"ttc_n={temporal_axis['time_to_confirm']['n_instances']} "
+          f"ttc_mean={temporal_axis['time_to_confirm']['mean']}",
           flush=True)
     return summary
 
@@ -185,6 +250,13 @@ def main():
     )
     parser.add_argument("--limit", type=int, default=None,
                         help="Optional: only evaluate the first N scenes.")
+    parser.add_argument(
+        "--scenes",
+        nargs="*",
+        default=None,
+        help="Optional explicit scene names (overrides --limit). "
+             "E.g. --scenes scene0011_00",
+    )
     args = parser.parse_args()
 
     out_root = Path(args.output)
@@ -202,9 +274,12 @@ def main():
     print("Constructing OpenYolo3D ...", flush=True)
     oy3d = OpenYolo3D(args.config)
 
-    scenes = list(SCENE_NAMES_SCANNET200)
-    if args.limit is not None:
-        scenes = scenes[: args.limit]
+    if args.scenes:
+        scenes = list(args.scenes)
+    else:
+        scenes = list(SCENE_NAMES_SCANNET200)
+        if args.limit is not None:
+            scenes = scenes[: args.limit]
 
     summaries: list[dict] = []
     for name, kwargs in axes:

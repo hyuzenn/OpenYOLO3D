@@ -75,7 +75,12 @@ class StreamingScanNetEvaluator:
         self.baseline_accumulator: Optional[BaselineLabelAccumulator] = None
 
         # Per-frame prediction history for Task 1.3 temporal metrics.
+        # Each element is ``{instance_id: cumulative_label_at_this_frame}``
+        # written by step_frame from ``self.running_labeler.snapshot(...)``.
         self.pred_history: list[dict[int, int]] = []
+        # Per-frame running labeler is created in setup_scene once scene
+        # vertices / depth resolution are known.
+        self.running_labeler = None  # type: Optional[RunningInstanceLabeler]
 
         # Task 1.4a method-axis hooks. Populated by
         # ``method_scannet.streaming.hooks_streaming.install_method_streaming``.
@@ -264,6 +269,32 @@ class StreamingScanNetEvaluator:
             depth_width=int(depth_w),
         )
 
+        # Per-frame running labeler for Task 1.3 temporal-metric snapshots.
+        # The labeler is reset/rebuilt per setup_scene call so multi-scene
+        # eval loops start fresh. Voter is wired in step_frame on demand
+        # to pick up whatever WeightedVoting hyperparameters M21 supplied.
+        from method_scannet.streaming.running_labeler import (
+            RunningInstanceLabeler,
+        )
+
+        img_h, img_w = self.image_resolution
+        self.running_labeler = RunningInstanceLabeler(
+            num_classes=self.num_classes,
+            instance_vertex_masks=self.instance_vertex_masks,
+            scene_vertices=self.scene_vertices,
+            depth_height=int(depth_h),
+            depth_width=int(depth_w),
+            image_height=int(img_h),
+            image_width=int(img_w),
+            scaling_w=self.scaling_w,
+            scaling_h=self.scaling_h,
+        )
+        # Reset pred_history / camera history when starting a new scene
+        # (the eval loop instantiates a fresh wrapper per scene, but this
+        # is cheap insurance against reuse).
+        self.pred_history = []
+        self._camera_positions = []
+
     # ------------------------------------------------------------------
     # Per-frame streaming step
     # ------------------------------------------------------------------
@@ -375,12 +406,37 @@ class StreamingScanNetEvaluator:
                 confirmed_visible=confirmed_visible,
             )
 
-        # Lightweight per-frame snapshot (label-only). Confirmed visible
-        # instances get a placeholder -1 label here; the final-frame label
-        # comes from compute_baseline_predictions(). Task 1.2b deliberately
-        # does NOT call the accumulator each frame (O(F·V·K) cost) — Task
-        # 1.3 / 1.4 will add checkpoint-based per-frame mAP if needed.
-        current_instance_map: dict[int, int] = {int(k): -1 for k in confirmed_visible}
+        # --- Step E: per-frame running label snapshot (Task 1.3) -------
+        # Update the running labeler with this frame's label_map (same data
+        # the baseline accumulator just consumed) then snapshot cumulative
+        # labels for the confirmed-visible instances. ``pred_history[t]``
+        # carries the model's current best guess at frame t, which is what
+        # ``metrics.label_switch_count`` / ``metrics.time_to_confirm``
+        # expect. M21 active → labeler uses WeightedVoting frame_weight.
+        # M22 active → snapshot from FeatureFusionEMA.predict_label instead.
+        if self.method_21 is not None:
+            self.running_labeler.voter = self.method_21
+        else:
+            self.running_labeler.voter = None
+        # Reuse the label_map the accumulator just constructed (cheap).
+        if self.baseline_accumulator is not None and len(self.baseline_accumulator._label_maps) > 0:
+            label_map_np = self.baseline_accumulator._label_maps[-1].numpy()
+            self.running_labeler.update_frame(
+                visible_instances=visible_instances,
+                projection=np.asarray(projection),
+                inside_mask=np.asarray(inside_mask, dtype=bool),
+                label_map=label_map_np,
+                bbox_pred=single_frame_bbox,
+                camera_position=self._camera_positions[-1] if self._camera_positions else None,
+            )
+        if self.method_22 is not None:
+            current_instance_map = self.running_labeler.snapshot_method22(
+                instance_ids=confirmed_visible,
+                fusion=self.method_22,
+                class_name_to_idx=self._method22_class_name_to_idx(),
+            )
+        else:
+            current_instance_map = self.running_labeler.snapshot(confirmed_visible)
 
         # --- Step F: history bookkeeping for Stage 3 metrics ------------
         self.pred_history.append(current_instance_map)
@@ -416,6 +472,15 @@ class StreamingScanNetEvaluator:
             "pred_classes": pred_classes.cpu().numpy(),
             "pred_scores": pred_scores.cpu().numpy(),
         }
+
+    def _method22_class_name_to_idx(self) -> Optional[dict]:
+        """Build a class-name → index map for the M22 inference subset so
+        ``running_labeler.snapshot_method22`` can map a predicted class
+        name back to its integer id."""
+        names = self.method_22_class_names
+        if names is None:
+            return None
+        return {n: i for i, n in enumerate(names)}
 
     # ------------------------------------------------------------------
     # M22 per-frame CLIP feature accumulation
