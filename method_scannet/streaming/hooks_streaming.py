@@ -77,14 +77,84 @@ def uninstall_method_21(evaluator: Any) -> None:
     evaluator.method_21 = None
 
 
-def install_method_22(evaluator: Any, **kwargs) -> None:
+_method22_resources: dict = {
+    "encoder": None,
+    "prompt_data": None,
+}
+
+
+def _load_method22_resources(
+    prompt_embeddings_path: str,
+    use_inference_subset: bool,
+    encoder_device: str = "cuda",
+):
+    """Load CLIP image encoder + prompt embeddings once (module-cached).
+    Returns (encoder, prompt_embeddings, class_names).
+
+    ``encoder_device`` defaults to ``cuda`` for the streaming wrapper —
+    CPU CLIP would dominate Task 1.4b walltime (CPU forward ~50 ms/crop ×
+    ~10 instances × ~250 frames × 312 scenes ≈ 14 h per M22 axis).
+    Falls back to CPU if CUDA is not available.
+    """
+    import torch as _torch
+
+    from method_scannet.clip_image_encoder import CLIPImageEncoder
+
+    if _method22_resources["prompt_data"] is None:
+        _method22_resources["prompt_data"] = _torch.load(
+            prompt_embeddings_path, map_location="cpu"
+        )
+    pdata = _method22_resources["prompt_data"]
+
+    if use_inference_subset and pdata.get("openyolo3d_inference_classes") is not None:
+        inference_names = pdata["openyolo3d_inference_classes"]
+        all_names = list(pdata["class_names"])
+        name_to_idx = {n: i for i, n in enumerate(all_names)}
+        keep = [name_to_idx[n] for n in inference_names if n in name_to_idx]
+        embeddings = pdata["embeddings"][keep]
+        class_names = [all_names[i] for i in keep]
+    else:
+        embeddings = pdata["embeddings"]
+        class_names = list(pdata["class_names"])
+
+    if _method22_resources["encoder"] is None:
+        effective_device = (
+            encoder_device if (encoder_device == "cpu" or _torch.cuda.is_available())
+            else "cpu"
+        )
+        _method22_resources["encoder"] = CLIPImageEncoder(
+            variant=pdata["clip_variant"], device=effective_device
+        )
+    return _method22_resources["encoder"], embeddings, class_names
+
+
+def install_method_22(
+    evaluator: Any,
+    prompt_embeddings_path: str = "pretrained/scannet200_prompt_embeddings.pt",
+    ema_alpha: float = 0.7,
+    use_inference_subset: bool = True,
+    **kwargs,
+) -> None:
     from method_scannet.method_22_feature_fusion import FeatureFusionEMA
 
-    evaluator.method_22 = FeatureFusionEMA(**kwargs)
+    encoder, embeddings, class_names = _load_method22_resources(
+        prompt_embeddings_path=prompt_embeddings_path,
+        use_inference_subset=use_inference_subset,
+    )
+    evaluator.method_22 = FeatureFusionEMA(
+        ema_alpha=ema_alpha,
+        prompt_embeddings=embeddings,
+        prompt_class_names=class_names,
+        **kwargs,
+    )
+    evaluator.method_22_encoder = encoder
+    evaluator.method_22_class_names = class_names
 
 
 def uninstall_method_22(evaluator: Any) -> None:
     evaluator.method_22 = None
+    evaluator.method_22_encoder = None
+    evaluator.method_22_class_names = None
 
 
 def install_method_31(evaluator: Any, **kwargs) -> None:

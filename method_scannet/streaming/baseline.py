@@ -123,6 +123,10 @@ class BaselineLabelAccumulator:
         self._visible_masks: list[torch.Tensor] = []  # each (V,) bool
         self._bbox_preds: list[dict] = []  # each {"bbox", "labels", ...}
         self._label_maps: list[torch.Tensor] = []  # each (H, W) int16
+        # Mapping output-column k → original mask3d proposal index, set by
+        # compute_predictions after the topk-flatten step. Method axes use
+        # this to filter / re-rank predictions on the proposal level.
+        self._last_mask_idx: Optional[torch.Tensor] = None
 
     @property
     def n_frames(self) -> int:
@@ -170,6 +174,20 @@ class BaselineLabelAccumulator:
         visible_masks = torch.stack(self._visible_masks, dim=0)  # (F, V) bool
         label_maps = torch.stack(self._label_maps, dim=0)  # (F, H, W) int16
         return projections, visible_masks, label_maps
+
+    def stack_for_methods(self) -> dict:
+        """Public access to per-frame buffers for the method-axis adapters
+        (M21 WeightedVoting, M22 FeatureFusionEMA). Returns CPU numpy arrays
+        + the raw bbox-pred dicts in frame order.
+        """
+        projections, visible_masks, label_maps = self._stack()
+        return {
+            "projections": projections.numpy(),       # (F, V, 2) int32
+            "visible_masks": visible_masks.numpy(),   # (F, V) bool
+            "label_maps": label_maps.numpy(),         # (F, H, W) int16
+            "bbox_preds": list(self._bbox_preds),     # list of dicts
+            "prediction_3d_masks": self.prediction_3d_masks,  # (V, K) bool
+        }
 
     def compute_predictions(self) -> tuple:
         """Run offline-equivalent label assignment on accumulated state.
@@ -342,6 +360,9 @@ class BaselineLabelAccumulator:
             pred_classes_t = labels_flat[idx]
             pred_scores_t = distributions_flat[idx]
             pred_masks_KV_cpu = pred_masks_KV_cpu[mask_idx]
+            self._last_mask_idx = mask_idx.cpu().long()
+        else:
+            self._last_mask_idx = torch.arange(pred_masks_KV_cpu.shape[0], dtype=torch.long)
 
         # Return (V, K_out)
         return pred_masks_KV_cpu.permute(1, 0).contiguous(), pred_classes_t, pred_scores_t

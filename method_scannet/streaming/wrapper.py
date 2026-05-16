@@ -86,6 +86,13 @@ class StreamingScanNetEvaluator:
         self.method_22 = None  # FeatureFusionEMA (label, visual feature)
         self.method_31 = None  # IoUMerger (post-merge)
         self.method_32 = None  # HungarianMerger (post-merge)
+        # M22 needs a CLIP image encoder + the inference-subset class list.
+        # Installer (install_method_22) sets these alongside method_22.
+        self.method_22_encoder = None
+        self.method_22_class_names: Optional[list] = None
+        # Per-scene camera positions in pose order — needed by M21's
+        # distance-weighted voting. Populated in step_frame.
+        self._camera_positions: list[np.ndarray] = []
         # State carried between step_frame calls when methods are active.
         self._method_state: dict = {}
 
@@ -294,6 +301,12 @@ class StreamingScanNetEvaluator:
         pose_cam_to_world = self._load_pose(frame_idx)
         extrinsic = np.linalg.inv(pose_cam_to_world)
         depth_map = self._load_depth(frame_idx)
+        # World-frame camera position is the translation column of the
+        # camera-to-world pose (needed by M21 distance weighting). Recorded
+        # in the same order as baseline_accumulator._projections.
+        self._camera_positions.append(
+            np.asarray(pose_cam_to_world[:3, 3], dtype=np.float64).reshape(-1)
+        )
 
         # --- Step A: vertex-level projection + D3 instance visibility ----
         projection, inside_mask = compute_vertex_projection(
@@ -335,33 +348,31 @@ class StreamingScanNetEvaluator:
         else:
             confirmed_visible = visible_instances
 
-        # --- Step D: feed baseline accumulator + record label snapshot --
-        # M21/M22 hooks observe the per-frame data alongside the baseline
-        # accumulator. They do not replace ``add_frame``; instead they keep
-        # their own state and override ``compute_predictions()`` semantics
-        # (resolved at end-of-scene via the hook's ``finalize`` method).
+        # --- Step D: feed baseline accumulator -------------------------
+        # M21/M22 do not replace ``add_frame``; the accumulator stores the
+        # raw frame data and the method adapter replays it at finalize.
         if self.baseline_accumulator is not None:
             self.baseline_accumulator.add_frame(
                 projection=projection,
                 visible_mask=inside_mask,
                 bbox_pred=single_frame_bbox,
             )
-        if self.method_21 is not None and hasattr(self.method_21, "observe_frame"):
-            self.method_21.observe_frame(
+
+        # M22: per-frame CLIP image-feature accumulation. For each visible
+        # instance, project its vertex set, find the matching YOLO 2D bbox
+        # (best IoU), encode the cropped image with CLIP, EMA-accumulate.
+        if (
+            self.method_22 is not None
+            and self.method_22_encoder is not None
+            and len(confirmed_visible) > 0
+        ):
+            self._method22_per_frame(
                 frame_idx=frame_idx,
-                visible_instances=confirmed_visible,
+                color_path=color_path,
                 projection=projection,
                 inside_mask=inside_mask,
                 bbox_pred=single_frame_bbox,
-                instance_vertex_masks=self.instance_vertex_masks,
-                scene_vertices=self.scene_vertices,
-            )
-        if self.method_22 is not None and hasattr(self.method_22, "observe_frame"):
-            self.method_22.observe_frame(
-                frame_idx=frame_idx,
-                visible_instances=confirmed_visible,
-                color_path=color_path,
-                bbox_pred=single_frame_bbox,
+                confirmed_visible=confirmed_visible,
             )
 
         # Lightweight per-frame snapshot (label-only). Confirmed visible
@@ -370,9 +381,6 @@ class StreamingScanNetEvaluator:
         # does NOT call the accumulator each frame (O(F·V·K) cost) — Task
         # 1.3 / 1.4 will add checkpoint-based per-frame mAP if needed.
         current_instance_map: dict[int, int] = {int(k): -1 for k in confirmed_visible}
-
-        # --- Step E: M31/32 spatial merging -----------------------------
-        # TODO(Task 1.4 M31/M32): IoU-based / Hungarian merge step.
 
         # --- Step F: history bookkeeping for Stage 3 metrics ------------
         self.pred_history.append(current_instance_map)
@@ -409,50 +417,186 @@ class StreamingScanNetEvaluator:
             "pred_scores": pred_scores.cpu().numpy(),
         }
 
+    # ------------------------------------------------------------------
+    # M22 per-frame CLIP feature accumulation
+    # ------------------------------------------------------------------
+
+    def _method22_per_frame(
+        self,
+        frame_idx: int,
+        color_path: str,
+        projection: np.ndarray,
+        inside_mask: np.ndarray,
+        bbox_pred: dict,
+        confirmed_visible: np.ndarray,
+        min_match_iou: float = 0.05,
+    ) -> None:
+        """For each confirmed-visible Mask3D instance, find the best-matching
+        YOLO 2D bbox by IoU between the instance's projected AABB and the
+        YOLO bboxes, crop the image at that bbox, CLIP-encode, and feed
+        the embedding to ``self.method_22.update_instance_feature``.
+        """
+        import imageio
+        from utils import compute_iou
+
+        boxes_2d = bbox_pred.get("bbox")
+        if boxes_2d is None or len(boxes_2d) == 0:
+            return
+        boxes_2d_long = boxes_2d.long() if hasattr(boxes_2d, "long") else torch.as_tensor(boxes_2d).long()
+        try:
+            image = imageio.imread(color_path)
+        except Exception:
+            return
+        if image.ndim != 3 or image.shape[2] != 3:
+            return
+
+        sx = self.scaling_w
+        sy = self.scaling_h
+        instance_masks = self.instance_vertex_masks  # (K, V) bool
+        proj_int = np.asarray(projection, dtype=np.int64)
+
+        crop_bboxes: list[list[int]] = []
+        crop_prop_ids: list[int] = []
+        for prop_idx in confirmed_visible:
+            visible_pts = inside_mask & instance_masks[int(prop_idx)]
+            n_v = int(visible_pts.sum())
+            if n_v < 10:
+                continue
+            xy = proj_int[visible_pts]
+            if xy.shape[0] < 1:
+                continue
+            x_l = int(xy[:, 0].min())
+            x_r = int(xy[:, 0].max()) + 1
+            y_t = int(xy[:, 1].min())
+            y_b = int(xy[:, 1].max()) + 1
+            box_img = torch.tensor(
+                [x_l / sx, y_t / sy, x_r / sx, y_b / sy], dtype=torch.float32
+            )
+            ious = compute_iou(box_img, boxes_2d_long.float())
+            iou_max = float(ious.max().item())
+            if iou_max < min_match_iou:
+                continue
+            iou_argmax = int(ious.argmax().item())
+            best_box = boxes_2d_long[iou_argmax].cpu().numpy()
+            x1, y1, x2, y2 = (int(v) for v in best_box)
+            if x2 <= x1 or y2 <= y1:
+                continue
+            crop_bboxes.append([x1, y1, x2, y2])
+            crop_prop_ids.append(int(prop_idx))
+
+        if not crop_bboxes:
+            return
+        bboxes_arr = np.asarray(crop_bboxes, dtype=np.int64)
+        try:
+            embeddings = self.method_22_encoder.encode_cropped_bboxes(image, bboxes_arr)
+        except Exception:
+            return
+        for prop_idx, emb in zip(crop_prop_ids, embeddings):
+            self.method_22.update_instance_feature(prop_idx, emb)
+
+    # ------------------------------------------------------------------
+    # Method-axis finalize
+    # ------------------------------------------------------------------
+
     def compute_method_predictions(self) -> dict:
         """End-of-scene prediction with the currently-installed method axes.
 
-        Pipeline order (Stage 2 §3 of Task 1.1 streaming design):
-            1. Start from baseline preds.
-            2. If M21 or M22 is active, ask it to ``finalize`` and override
-               class assignments.
-            3. If M31 or M32 is active, run ``merge`` over the final
-               instance map.
+        Pipeline order (Task 1.4a redesign — May class signatures preserved):
+            1. Label assignment: baseline / M21 / M22 (choose one).
+            2. Registration filter: M11 / M12 confirmed set.
+            3. Spatial merge: M31 / M32 (choose one).
 
         Returns ``{"pred_masks", "pred_classes", "pred_scores"}`` numpy
         arrays in the same schema as :meth:`compute_baseline_predictions`.
         """
-        preds = self.compute_baseline_predictions()
+        from method_scannet.streaming import method_adapters as _ma
 
-        label_method = self.method_22 or self.method_21
-        if label_method is not None and hasattr(label_method, "finalize"):
-            try:
-                overridden = label_method.finalize(
-                    pred_masks=preds["pred_masks"],
-                    pred_classes=preds["pred_classes"],
-                    pred_scores=preds["pred_scores"],
-                    instance_vertex_masks=self.instance_vertex_masks,
-                )
-                if overridden is not None:
-                    preds = overridden
-            except NotImplementedError:
-                pass
+        # ---- 1. Label assignment ---------------------------------------
+        if self.method_21 is not None:
+            camera_positions = (
+                np.stack(self._camera_positions, axis=0)
+                if self._camera_positions
+                else np.zeros((0, 3), dtype=np.float64)
+            )
+            img_h, img_w = self.image_resolution
+            (
+                pm_t,
+                pc_t,
+                ps_t,
+                mask_idx,
+            ) = _ma.compute_predictions_method21(
+                accumulator=self.baseline_accumulator,
+                voter=self.method_21,
+                scene_vertices=self.scene_vertices,
+                camera_positions=camera_positions,
+                image_width=int(img_w),
+                image_height=int(img_h),
+            )
+            preds = {
+                "pred_masks": pm_t.cpu().numpy().astype(bool),
+                "pred_classes": pc_t.cpu().numpy().astype(np.int64),
+                "pred_scores": ps_t.cpu().numpy().astype(np.float32),
+            }
+        elif self.method_22 is not None:
+            (
+                pm_t,
+                pc_t,
+                ps_t,
+                mask_idx,
+            ) = _ma.compute_predictions_method22(
+                accumulator=self.baseline_accumulator,
+                fusion=self.method_22,
+                topk_per_image=self.topk_per_image,
+            )
+            preds = {
+                "pred_masks": pm_t.cpu().numpy().astype(bool),
+                "pred_classes": pc_t.cpu().numpy().astype(np.int64),
+                "pred_scores": ps_t.cpu().numpy().astype(np.float32),
+            }
+        else:
+            preds = self.compute_baseline_predictions()
+            mask_idx = self.baseline_accumulator._last_mask_idx
 
-        merger = self.method_32 or self.method_31
-        if merger is not None and hasattr(merger, "merge"):
-            try:
-                merged = merger.merge(
-                    pred_masks=preds["pred_masks"],
-                    pred_classes=preds["pred_classes"],
-                    pred_scores=preds["pred_scores"],
-                    scene_vertices=self.scene_vertices,
-                )
-                if merged is not None:
-                    preds = merged
-            except NotImplementedError:
-                pass
+        # ---- 2. Registration filter (M11 / M12) ------------------------
+        if self.method_11 is not None:
+            confirmed_set = set(int(i) for i in self.method_11._confirmed)
+            preds = _ma.apply_registration_filter(preds, mask_idx, confirmed_set)
+            mask_idx = self._filter_mask_idx(mask_idx, preds, confirmed_set)
+        elif self.method_12 is not None:
+            confirmed_set = set(int(i) for i in self.method_12._confirmed)
+            preds = _ma.apply_registration_filter(preds, mask_idx, confirmed_set)
+            mask_idx = self._filter_mask_idx(mask_idx, preds, confirmed_set)
+
+        # ---- 3. Spatial merge ------------------------------------------
+        if self.method_31 is not None:
+            preds = _ma.apply_method31_merge(
+                preds, self.method_31, self.scene_vertices
+            )
+        elif self.method_32 is not None:
+            instance_features = (
+                self.method_22.instance_features if self.method_22 is not None else None
+            )
+            preds = _ma.apply_method32_merge(
+                preds,
+                self.method_32,
+                self.scene_vertices,
+                mask_idx=mask_idx,
+                instance_features=instance_features,
+                class_aware=True,
+            )
 
         return preds
+
+    @staticmethod
+    def _filter_mask_idx(mask_idx, preds: dict, confirmed_set: set):
+        """Sync mask_idx to the filtered preds (same boolean keep order)."""
+        if mask_idx is None:
+            return None
+        if not confirmed_set:
+            return torch.zeros(0, dtype=torch.long)
+        mi = mask_idx.cpu().numpy() if hasattr(mask_idx, "cpu") else np.asarray(mask_idx)
+        keep = np.array([int(p) in confirmed_set for p in mi], dtype=bool)
+        return torch.from_numpy(mi[keep]).long()
 
     # ------------------------------------------------------------------
     # Driver

@@ -34,7 +34,7 @@ from utils import OpenYolo3D
 from utils.utils_2d import load_yaml
 
 
-# Default 10-way ablation matrix. Compounds can be added/removed at the CLI.
+# Default 12-way ablation matrix. Compounds can be added/removed at the CLI.
 DEFAULT_AXES: tuple[tuple[str, dict], ...] = (
     ("baseline", {}),
     ("M11", {"N": 3}),
@@ -44,8 +44,10 @@ DEFAULT_AXES: tuple[tuple[str, dict], ...] = (
     ("M31", {}),
     ("M31_iou07", {}),  # variant on M31 — installed manually below
     ("M32", {}),
-    ("phase1", {}),
-    ("phase2", {}),
+    ("phase1", {}),     # M11 + M21 + M31
+    ("phase2", {}),     # M12 + M22 + M32
+    ("M21+M31", {}),    # label + merge (no registration)
+    ("M22+M32", {}),    # Phase 2 label + merge (no registration)
 )
 
 
