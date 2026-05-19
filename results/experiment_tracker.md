@@ -49,3 +49,18 @@ Average metrics across 312 scenes. Higher is better.
 - **M11 ≡ M12 was a silent bug** (Task 1.4c): BayesianGate.gate() missed the decay branch. Post-fix M12 reaches lsc −29 % / ttc −8 % at AP cost −0.0006.
 - **Phase 2 cascade (M22+M32)**: dual failure (AP −49 %, lsc +342 %), no rescue path.
 - **§5.2 framing**: "any monotonic confirmation gate at ≈ 3 visible frames" — both M11 (counting) and fixed M12 (Bayesian) qualify; difference is hyperparameter tuning, not structural.
+
+### M11 N sensitivity sweep — Task 1.5 (paper §7.5)
+
+50-scene subset (`seed=42`, scene0011_00 excluded — Part 3 outlier). NOT directly comparable to 312-scene rows above; subset has slightly higher AP base.
+Run dir: `2026-05-19_m11_n_sweep_v02/`.
+
+| N | AP      | lsc total | lsc mean | ttc mean | ttc n_inst | Notes                                                     |
+|--:|--------:|----------:|---------:|---------:|-----------:|-----------------------------------------------------------|
+| 2 | 0.21533 | 3,201     | 64.02    | 6.347    | 1,627      | bit-identical AP to N=3                                  |
+| 3 | 0.21533 | 2,776     | 55.52    | 6.141    | 1,618      | current production default                               |
+| 4 | 0.21507 | 2,432     | 48.64    | 6.020    | 1,611      | weak strict-dominance over N=3 (every temporal metric ↓) |
+| 5 | 0.21467 | 2,186     | 43.72    | 6.263    | 1,598      | ttc starts climbing                                      |
+| 7 | 0.21317 | 1,814     | 36.28    | 9.200    | 1,557      | 41 instances dropped from confirmation; AP −1 %          |
+
+Sweet spot N=4 on this subset (same AP within 1.2e-3 vs N=3, lsc −12 %, ttc −2 %). N=3 retained as production default for direct comparability with Part 3; N=4 reported as no-cost alternative in §7.5. 312-scene re-validation of N=4 strict-dominance is the natural follow-up.
