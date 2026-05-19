@@ -121,6 +121,56 @@ def test_bayesian_gate_confirms_when_above_threshold():
     assert 42 in set(g.gate([42]))
 
 
+def test_bayesian_gate_demotes_after_single_missing_frame():
+    """Confirmed instance demoted when it disappears for one frame."""
+    g = BayesianGate(prior=0.5, detection_likelihood=0.8,
+                     false_positive_rate=0.2, threshold=0.95)
+    for _ in range(3):
+        g.gate([0])
+    assert 0 in g._confirmed
+    assert g.posterior(0) >= 0.95
+    g.gate([])  # missing this frame
+    assert 0 not in g._confirmed
+    assert g.posterior(0) < 0.95
+
+
+def test_bayesian_gate_intermittent_never_confirms():
+    """[vis, miss, vis, miss, ...] oscillates and never crosses threshold."""
+    g = BayesianGate(prior=0.5, detection_likelihood=0.8,
+                     false_positive_rate=0.2, threshold=0.95)
+    for _ in range(10):
+        g.gate([0])
+        g.gate([])
+    assert 0 not in g._confirmed
+
+
+def test_bayesian_gate_diverges_from_frame_counting_on_intermittent():
+    """The post-fix BayesianGate is no longer equivalent to FrameCountingGate(N=3)."""
+    b = BayesianGate(prior=0.5, detection_likelihood=0.8,
+                     false_positive_rate=0.2, threshold=0.95)
+    f = FrameCountingGate(N=3, consecutive=False)
+    pattern = [[0], [], [0], [], [0], []]
+    out_b = [b.gate(v) for v in pattern]
+    out_f = [f.gate(v) for v in pattern]
+    assert out_b != out_f
+    # FrameCounting confirms at frame 4 (3rd visible) and returns [0] there.
+    assert out_f[4] == [0]
+    # BayesianGate (fixed) does not.
+    assert out_b[4] == []
+
+
+def test_bayesian_gate_reset_clears_previous_visible():
+    """reset() must also clear _previous_visible so the next scene starts clean."""
+    g = BayesianGate(prior=0.5, detection_likelihood=0.8,
+                     false_positive_rate=0.2, threshold=0.95)
+    g.gate([7, 9])
+    assert g._previous_visible == {7, 9}
+    g.reset()
+    assert g._previous_visible == set()
+    assert g._posteriors == {}
+    assert g._confirmed == set()
+
+
 # ---------------------------------------------------------------------------
 # Hook installation
 # ---------------------------------------------------------------------------

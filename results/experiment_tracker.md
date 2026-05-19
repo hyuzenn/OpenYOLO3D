@@ -25,3 +25,27 @@ Average metrics across 312 scenes. Higher is better.
   Super-additive negative — worse than either axis alone (M22 −0.0285, M32 −0.0332;
   additive estimate −0.0617). Indicates the two regressions compound rather than
   cancel.
+
+---
+
+## Streaming evaluation (frequency=10, cached Mask3D, RunningInstanceLabeler)
+
+312-scene ScanNet200 val. Streaming AP is computed on per-instance final-frame predictions; not directly comparable to non-streaming offline AP above. `lsc` = label switch count total. `ttc` = time-to-confirm mean (frames).
+
+| Date       | Run dir                                                                          | Axis        | AP      | lsc total | ttc mean | Notes                                                            |
+|------------|----------------------------------------------------------------------------------|-------------|---------|-----------|----------|------------------------------------------------------------------|
+| 2026-05-16 | `2026-05-15_streaming_ablation_core_temporal/pbs_A_baseline_m11_m12_v01`          | baseline    | 0.19560 | 23,385    | 6.709    | Part 3 reference                                                 |
+| 2026-05-16 | `2026-05-15_streaming_ablation_core_temporal/pbs_A_baseline_m11_m12_v01`          | M11         | 0.19540 | 17,023    | 6.296    | FrameCountingGate N=3 — lsc −27 %, AP cost −0.0002              |
+| 2026-05-16 | `2026-05-15_streaming_ablation_core_temporal/pbs_A_baseline_m11_m12_v01`          | M12 (buggy) | 0.19540 | 17,023    | 6.296    | bit-identical to M11 (silent bug, see Task 1.4c)                |
+| 2026-05-16 | `2026-05-15_streaming_ablation_core_temporal/pbs_B_m21_m31_v01`                   | M21         | 0.19589 | 23,629    | 6.622    | WeightedVoting — lsc +1 %, near-null                            |
+| 2026-05-16 | `2026-05-15_streaming_ablation_core_temporal/pbs_B_m21_m31_v01`                   | M31         | 0.19522 | 23,359    | 6.712    | IoUMerger — null                                                |
+| 2026-05-16 | `2026-05-15_streaming_ablation_core_temporal/pbs_C_phase1_m21m31_v01`             | phase1      | 0.19507 | 17,525    | 6.345    | M11+M21+M31; benefit attributable to M11                        |
+| 2026-05-16 | `2026-05-15_streaming_ablation_core_temporal/pbs_C_phase1_m21m31_v01`             | M21+M31     | 0.19527 | 23,593    | 6.623    | phase1 vs this isolates M11 add-on                              |
+| 2026-05-16 | `2026-05-15_streaming_ablation_core_temporal/pbs_D_m22m32_v01`                    | M22+M32     | 0.09979 | 103,420   | 6.633    | Phase 2 cascade — AP halves, lsc 4.4×                           |
+| 2026-05-18 | `2026-05-18_streaming_ablation_m12_fixed_v01`                                    | M12 (fixed) | 0.19498 | 16,518    | 6.179    | BayesianGate silent-bug fix; slight strict-dominance over M11   |
+
+### Streaming status summary
+- **Phase 1 temporal stabilizer**: only M11 (or fixed M12) moves temporal metrics; M21 / M31 nulls.
+- **M11 ≡ M12 was a silent bug** (Task 1.4c): BayesianGate.gate() missed the decay branch. Post-fix M12 reaches lsc −29 % / ttc −8 % at AP cost −0.0006.
+- **Phase 2 cascade (M22+M32)**: dual failure (AP −49 %, lsc +342 %), no rescue path.
+- **§5.2 framing**: "any monotonic confirmation gate at ≈ 3 visible frames" — both M11 (counting) and fixed M12 (Bayesian) qualify; difference is hyperparameter tuning, not structural.

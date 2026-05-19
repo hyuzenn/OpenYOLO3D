@@ -42,10 +42,12 @@ class BayesianGate:
         self.threshold = float(threshold)
         self._posteriors: dict[int, float] = defaultdict(lambda: self.prior)
         self._confirmed: set[int] = set()
+        self._previous_visible: set[int] = set()
 
     def reset(self) -> None:
         self._posteriors.clear()
         self._confirmed.clear()
+        self._previous_visible.clear()
 
     def _update(self, p: float, observed_visible: bool) -> float:
         """Single Bayesian update."""
@@ -59,12 +61,19 @@ class BayesianGate:
 
     def gate(self, visible_instances) -> list[int]:
         seen_this_frame = {int(i) for i in visible_instances}
-        # Only update the posteriors of instances we've seen at least once.
-        # (Unseen-forever instances stay at the prior and never grow.)
+        # Push toward 1 for instances visible this frame.
         for k in seen_this_frame:
             self._posteriors[k] = self._update(self._posteriors[k], True)
             if self._posteriors[k] >= self.threshold:
                 self._confirmed.add(k)
+        # Pull toward 0 for instances visible last frame but missing now;
+        # a previously confirmed instance whose posterior drops below the
+        # threshold is demoted out of _confirmed.
+        for k in self._previous_visible - seen_this_frame:
+            self._posteriors[k] = self._update(self._posteriors[k], False)
+            if self._posteriors[k] < self.threshold:
+                self._confirmed.discard(k)
+        self._previous_visible = seen_this_frame
         return sorted(seen_this_frame & self._confirmed)
 
     def posterior(self, instance_id: int) -> float:
