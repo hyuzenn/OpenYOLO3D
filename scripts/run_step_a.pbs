@@ -1,0 +1,31 @@
+#!/bin/bash
+#PBS -N step_a_pillar_resolution
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=01:30:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D-nuscenes
+cd "$PROJECT_ROOT"
+
+OUT_DIR="${PROJECT_ROOT}/results/diagnosis_step_a"
+mkdir -p "$OUT_DIR"
+LOG="$OUT_DIR/run.log"
+exec >"$LOG" 2>&1
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
+hostname
+echo "=== Run dir: $OUT_DIR ==="
+python -c "import hdbscan, scipy.ndimage; print('hdbscan/scipy loaded OK')"
+
+echo "=== Step A: pillar resolution sweep on W1.5 50-sample set ==="
+python -u -m diagnosis_step_a.run_step_a \
+    --use-w1-5-samples results/w1_5_diagnostic_sweep/samples_used.json \
+    --output "$OUT_DIR"
+echo "=== Done ==="

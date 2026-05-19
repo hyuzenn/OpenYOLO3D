@@ -1,0 +1,8 @@
+nuscenes:
+  cameras:
+  - CAM_FRONT
+  dataroot: data/nuscenes
+  multi_sweep: false
+  num_sweeps: 1
+  scene_filter: null
+  version: v1.0-mini

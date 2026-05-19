@@ -123,36 +123,124 @@ def _save_intrinsics_4x4(K_3x3, path):
     np.savetxt(path, K_4x4)
 
 
-def adapt_sample(item, scene_dir, camera=CAMERA):
+_DEFAULT_NUSC_CAMERAS = (
+    "CAM_FRONT", "CAM_FRONT_LEFT", "CAM_FRONT_RIGHT",
+    "CAM_BACK", "CAM_BACK_LEFT", "CAM_BACK_RIGHT",
+)
+
+
+def adapt_sample(item, scene_dir, camera=CAMERA, cameras=None):
     """Materialize one NuScenesLoader item dict as an OpenYOLO3D scene dir.
 
-    Returns a stats dict (image size, point count, depth pixel coverage).
+    Two modes:
+      - ``cameras=None`` (default, **backward-compatible**): writes the
+        original single-camera layout used by OpenYOLO3D's ``WORLD_2_CAM``:
+        ``color/0.jpg``, ``depth/0.png``, ``poses/0.txt``, ``intrinsics.txt``,
+        ``lidar.ply``. Returns a single stats dict. Stage 2 smoke test
+        depends on this exact layout.
+      - ``cameras=list`` or ``cameras="all"``: writes a per-camera subdir
+        layout — ``scene_dir/<CAM>/{color,depth,poses}/0.{jpg,png,txt}``
+        and ``scene_dir/<CAM>/intrinsics.txt`` per cam; ``lidar.ply`` stays
+        at the scene_dir root (single shared cloud). Returns a dict
+        ``{cam_name: stats_dict}``. **Not** wired into ``WORLD_2_CAM``;
+        intended for Tier-2 diagnosis code that consumes per-cam paths
+        directly.
     """
-    os.makedirs(osp.join(scene_dir, "color"), exist_ok=True)
-    os.makedirs(osp.join(scene_dir, "depth"), exist_ok=True)
-    os.makedirs(osp.join(scene_dir, "poses"), exist_ok=True)
+    if cameras is None:
+        # ---- single-camera path (unchanged) ----
+        os.makedirs(osp.join(scene_dir, "color"), exist_ok=True)
+        os.makedirs(osp.join(scene_dir, "depth"), exist_ok=True)
+        os.makedirs(osp.join(scene_dir, "poses"), exist_ok=True)
 
-    image = item["images"][camera]
-    H, W = image.shape[:2]
-    K = item["intrinsics"][camera]
-    T_cam_to_ego = item["cam_to_ego"][camera]
+        image = item["images"][camera]
+        H, W = image.shape[:2]
+        K = item["intrinsics"][camera]
+        T_cam_to_ego = item["cam_to_ego"][camera]
+        pc_ego = item["point_cloud"]
+
+        Image.fromarray(image).save(osp.join(scene_dir, "color", "0.jpg"), quality=95)
+
+        depth_map, n_filled = project_lidar_to_depth(pc_ego, K, T_cam_to_ego, H, W)
+        Image.fromarray(depth_map).save(osp.join(scene_dir, "depth", "0.png"))
+
+        np.savetxt(osp.join(scene_dir, "poses", "0.txt"), T_cam_to_ego)
+        _save_intrinsics_4x4(K, osp.join(scene_dir, "intrinsics.txt"))
+
+        colors = _color_lidar_via_camera(pc_ego, image, K, T_cam_to_ego)
+        _save_ply(pc_ego[:, :3], colors, osp.join(scene_dir, "lidar.ply"))
+
+        # Backward-compat regression guard: the single-camera layout MUST
+        # produce exactly these files. If any of them go missing, Stage 2
+        # smoke test will silently break — fail loudly here instead.
+        required = [
+            osp.join(scene_dir, "color", "0.jpg"),
+            osp.join(scene_dir, "depth", "0.png"),
+            osp.join(scene_dir, "poses", "0.txt"),
+            osp.join(scene_dir, "intrinsics.txt"),
+            osp.join(scene_dir, "lidar.ply"),
+        ]
+        for p in required:
+            assert osp.exists(p), f"adapt_sample backward-compat regression: {p} missing"
+
+        return {
+            "image_hw": (H, W),
+            "n_lidar_points": int(pc_ego.shape[0]),
+            "n_depth_pixels_filled": int(n_filled),
+            "depth_pixel_coverage": float(n_filled) / (H * W),
+            "depth_scale_mm": DEPTH_SCALE_MM,
+        }
+
+    # ---- multi-camera path ----
+    if cameras == "all":
+        cam_list = list(_DEFAULT_NUSC_CAMERAS)
+    else:
+        cam_list = list(cameras)
+    if not cam_list:
+        raise ValueError("cameras list is empty")
+
     pc_ego = item["point_cloud"]
+    out = {}
+    for cam in cam_list:
+        if cam not in item["images"]:
+            raise KeyError(f"camera '{cam}' not present in loader item — check loader's cameras config")
+        cam_dir = osp.join(scene_dir, cam)
+        os.makedirs(osp.join(cam_dir, "color"), exist_ok=True)
+        os.makedirs(osp.join(cam_dir, "depth"), exist_ok=True)
+        os.makedirs(osp.join(cam_dir, "poses"), exist_ok=True)
 
-    Image.fromarray(image).save(osp.join(scene_dir, "color", "0.jpg"), quality=95)
+        image = item["images"][cam]
+        H, W = image.shape[:2]
+        K = item["intrinsics"][cam]
+        T_cam_to_ego = item["cam_to_ego"][cam]
 
-    depth_map, n_filled = project_lidar_to_depth(pc_ego, K, T_cam_to_ego, H, W)
-    Image.fromarray(depth_map).save(osp.join(scene_dir, "depth", "0.png"))
+        Image.fromarray(image).save(osp.join(cam_dir, "color", "0.jpg"), quality=95)
+        depth_map, n_filled = project_lidar_to_depth(pc_ego, K, T_cam_to_ego, H, W)
+        Image.fromarray(depth_map).save(osp.join(cam_dir, "depth", "0.png"))
+        np.savetxt(osp.join(cam_dir, "poses", "0.txt"), T_cam_to_ego)
+        _save_intrinsics_4x4(K, osp.join(cam_dir, "intrinsics.txt"))
+        out[cam] = {
+            "image_hw": (H, W),
+            "n_depth_pixels_filled": int(n_filled),
+            "depth_pixel_coverage": float(n_filled) / (H * W),
+            "image_path": osp.join(cam_dir, "color", "0.jpg"),
+            "depth_path": osp.join(cam_dir, "depth", "0.png"),
+            "pose_path": osp.join(cam_dir, "poses", "0.txt"),
+            "intrinsics_path": osp.join(cam_dir, "intrinsics.txt"),
+        }
 
-    np.savetxt(osp.join(scene_dir, "poses", "0.txt"), T_cam_to_ego)
-    _save_intrinsics_4x4(K, osp.join(scene_dir, "intrinsics.txt"))
-
-    colors = _color_lidar_via_camera(pc_ego, image, K, T_cam_to_ego)
-    _save_ply(pc_ego[:, :3], colors, osp.join(scene_dir, "lidar.ply"))
+    # Single shared point cloud — colored from the first cam in the list.
+    first_cam = cam_list[0]
+    colors = _color_lidar_via_camera(
+        pc_ego, item["images"][first_cam], item["intrinsics"][first_cam], item["cam_to_ego"][first_cam]
+    )
+    ply_path = osp.join(scene_dir, "lidar.ply")
+    _save_ply(pc_ego[:, :3], colors, ply_path)
 
     return {
-        "image_hw": (H, W),
+        "mode": "multi_camera",
+        "cameras": cam_list,
         "n_lidar_points": int(pc_ego.shape[0]),
-        "n_depth_pixels_filled": int(n_filled),
-        "depth_pixel_coverage": float(n_filled) / (H * W),
         "depth_scale_mm": DEPTH_SCALE_MM,
+        "lidar_ply": ply_path,
+        "per_cam": out,
     }

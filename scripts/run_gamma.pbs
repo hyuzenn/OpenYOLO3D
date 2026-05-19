@@ -1,0 +1,30 @@
+#!/bin/bash
+#PBS -N gamma_centerpoint
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=03:00:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D-nuscenes
+cd "$PROJECT_ROOT"
+
+OUT_DIR="${PROJECT_ROOT}/results/diagnosis_gamma"
+mkdir -p "$OUT_DIR"
+LOG="$OUT_DIR/run.log"
+exec >"$LOG" 2>&1
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
+hostname
+echo "=== γ Stage C — CenterPoint proposal sweep ==="
+python -c "import torch, mmdet3d; print('torch', torch.__version__, 'mmdet3d', mmdet3d.__version__, 'cuda', torch.cuda.is_available())"
+
+python -u -m diagnosis_gamma.run_gamma \
+    --use-step-a-samples results/diagnosis_step_a/samples_used.json \
+    --output "$OUT_DIR"
+echo "=== Done ==="

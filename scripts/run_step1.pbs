@@ -1,0 +1,32 @@
+#!/bin/bash
+#PBS -N step1_mask3d_compare
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=04:00:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D-nuscenes
+cd "$PROJECT_ROOT"
+
+OUT_DIR="${PROJECT_ROOT}/results/diagnosis_step1"
+mkdir -p "$OUT_DIR"
+LOG="$OUT_DIR/run.log"
+exec >"$LOG" 2>&1
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export TORCH_CUDA_ARCH_LIST="6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6"
+
+hostname
+echo "=== Run dir: $OUT_DIR ==="
+python -c "import torch, hdbscan; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+
+echo "=== Step 1: Mask3D vs HDBSCAN-best vs Hybrid (W1.5 50 samples) ==="
+python -u -m diagnosis_step1.run_step1 \
+    --use-w1-5-samples results/w1_5_diagnostic_sweep/samples_used.json \
+    --output "$OUT_DIR"
+echo "=== Done ==="

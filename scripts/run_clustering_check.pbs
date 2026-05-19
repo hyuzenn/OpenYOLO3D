@@ -1,0 +1,31 @@
+#!/bin/bash
+#PBS -N w1_clustering_check
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=00:30:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D-nuscenes
+cd "$PROJECT_ROOT"
+
+OUT_DIR="${PROJECT_ROOT}/results/w1_clustering_check"
+mkdir -p "$OUT_DIR/per_sample" "$OUT_DIR/figures"
+LOG="$OUT_DIR/run.log"
+exec >"$LOG" 2>&1
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
+hostname
+echo "=== Run dir: $OUT_DIR ==="
+python -c "import hdbscan; print('hdbscan loaded OK')"
+
+echo "=== W1 HDBSCAN gate: 20 mini + 20 trainval, seed=42, sweep + validate ==="
+python -u -m diagnosis_w1.run_clustering_check \
+    --num-mini 20 --num-trainval 20 --seed 42 \
+    --output "$OUT_DIR"
+echo "=== Done ==="
