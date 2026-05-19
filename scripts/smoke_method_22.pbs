@@ -1,0 +1,31 @@
+#!/bin/bash
+#PBS -N openyolo3d_smoke_method_22
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=4:ngpus=1:mem=32gb:Qlist=agpu
+#PBS -l walltime=00:30:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+OUT_DIR="${PROJECT_ROOT}/results/scannet_phase2_step2"
+mkdir -p "$OUT_DIR"
+LOG="$OUT_DIR/smoke_method_22.log"
+exec >"$LOG" 2>&1
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export TORCH_CUDA_ARCH_LIST="6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6"
+export SMOKE_OUT="$OUT_DIR/smoke_method_22.json"
+
+echo "=== METHOD_22 smoke (scene0011_00) ==="
+hostname
+nvidia-smi || true
+python -u -m method_scannet.smoke_method_22_one_scene
+EC=$?
+echo "=== Done (exit $EC) ==="
+exit $EC

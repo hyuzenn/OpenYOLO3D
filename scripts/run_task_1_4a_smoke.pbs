@@ -1,0 +1,38 @@
+#!/bin/bash
+#PBS -N task14a_smoke
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=01:00:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+EXP=task14a_smoke
+N=$(printf '%02d' $(($(ls -d "results/${DATE}_${EXP}_v"* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+export RUN_DIR
+mkdir -p "$RUN_DIR"
+cp pretrained/config_scannet200.yaml "$RUN_DIR/config.yaml"
+
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Run directory: $RUN_DIR ==="
+echo "=== Task 1.4a redesign — 1-scene integration smoke ==="
+echo "=== scene0011_00 × 11 method configs ==="
+echo "=== Date: $(date) ==="
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+
+python -m method_scannet.streaming.tests.test_integration_real_scene \
+  --scene scene0011_00 \
+  --cache-dir "${PROJECT_ROOT}/results/2026-05-13_mask3d_cache" \
+  --config pretrained/config_scannet200.yaml \
+  --output "$RUN_DIR"
+
+EXIT=$?
+echo "=== exit code: $EXIT ==="
+exit $EXIT

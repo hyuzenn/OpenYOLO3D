@@ -2,7 +2,7 @@ CLAUDE.md
 
 🛠 Quick Start (Commands)
   Environment: conda activate openyolo3d (Python 3.10 based on pycache)
-  GPU 할당: coss_agpu -g 1
+  GPU 할당: coss_agpu -g 1 (A100 강제로 할당)
 
 📂 실험 로그 저장 규칙 (results/)
   포맷: results/<YYYY-MM-DD>_<experiment>_v<NN>/

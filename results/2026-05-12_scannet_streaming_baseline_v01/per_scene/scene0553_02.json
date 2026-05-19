@@ -1,0 +1,15 @@
+{
+  "n_frames_streamed": 157,
+  "n_raw_frames_in_scene": 1566,
+  "n_mask3d_instances_after_filter": 8,
+  "n_final_predictions": 600,
+  "d3_visibility": {
+    "min": 0,
+    "median": 2.0,
+    "mean": 2.210191082802548,
+    "max": 4
+  },
+  "label_switch_count": 0,
+  "time_to_confirm": {},
+  "walltime_seconds": 30.22878384590149
+}

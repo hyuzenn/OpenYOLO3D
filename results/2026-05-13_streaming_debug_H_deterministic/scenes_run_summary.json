@@ -1,0 +1,30 @@
+[
+  {
+    "scene_name": "scene0334_01",
+    "comparison_summary": {
+      "n_instances_offline": 10,
+      "n_instances_streaming": 11,
+      "n_instances_match": false,
+      "n_valid_frames_offline": 100,
+      "n_valid_frames_streaming": 104,
+      "n_final_preds_offline": 600,
+      "n_final_preds_streaming": 600,
+      "final_class_match_count": 13,
+      "final_class_match_ratio": 0.021666666666666667
+    }
+  },
+  {
+    "scene_name": "scene0334_00",
+    "comparison_summary": {
+      "n_instances_offline": 12,
+      "n_instances_streaming": 11,
+      "n_instances_match": false,
+      "n_valid_frames_offline": 116,
+      "n_valid_frames_streaming": 117,
+      "n_final_preds_offline": 600,
+      "n_final_preds_streaming": 600,
+      "final_class_match_count": 3,
+      "final_class_match_ratio": 0.005
+    }
+  }
+]

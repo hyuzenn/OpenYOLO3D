@@ -1,0 +1,65 @@
+{
+  "n_candidates_with_data": 312,
+  "n_filtered_by_criteria": 50,
+  "picked_scenes": [
+    "scene0334_01",
+    "scene0334_00"
+  ],
+  "criteria": {
+    "min_common_plus_tail": 3,
+    "n_frames_range": [
+      40,
+      120
+    ],
+    "min_K_mask3d": 8
+  },
+  "picked_details": [
+    {
+      "scene_name": "scene0334_01",
+      "n_instances": 9,
+      "n_head": 5,
+      "n_common": 4,
+      "n_tail": 0,
+      "fraction_common_or_tail": 0.4444444444444444,
+      "class_counts": {
+        "couch": 2,
+        "bench": 2,
+        "pillar": 2,
+        "wall": 1,
+        "floor": 1,
+        "coffee table": 1
+      },
+      "n_frames_streamed": 106,
+      "n_mask3d_instances_after_filter": 12,
+      "d3_median": 4.0,
+      "walltime_seconds": 16.853336334228516
+    },
+    {
+      "scene_name": "scene0334_00",
+      "n_instances": 9,
+      "n_head": 5,
+      "n_common": 4,
+      "n_tail": 0,
+      "fraction_common_or_tail": 0.4444444444444444,
+      "class_counts": {
+        "couch": 2,
+        "bench": 2,
+        "pillar": 2,
+        "wall": 1,
+        "floor": 1,
+        "coffee table": 1
+      },
+      "n_frames_streamed": 119,
+      "n_mask3d_instances_after_filter": 12,
+      "d3_median": 5.0,
+      "walltime_seconds": 18.214409351348877
+    }
+  ],
+  "next_5_alternatives": [
+    "scene0702_02",
+    "scene0702_01",
+    "scene0441_00",
+    "scene0084_02",
+    "scene0100_01"
+  ]
+}

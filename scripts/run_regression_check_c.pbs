@@ -1,0 +1,31 @@
+#!/bin/bash
+#PBS -N openyolo3d_regression_check_c
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=4:ngpus=1:mem=32gb:Qlist=agpu
+#PBS -l walltime=00:30:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+OUT_DIR="${PROJECT_ROOT}/results/2026-05-07_scannet_method_31_iou07_v01"
+mkdir -p "$OUT_DIR"
+LOG="$OUT_DIR/regression_check.log"
+exec >"$LOG" 2>&1
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export TORCH_CUDA_ARCH_LIST="6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6"
+export REGRESSION_OUT="$OUT_DIR/regression_check.json"
+
+echo "=== Regression check c on scene0011_00 ==="
+hostname
+nvidia-smi || true
+python -u -m method_scannet.regression_check_c
+EC=$?
+echo "=== Done (exit $EC) ==="
+exit $EC

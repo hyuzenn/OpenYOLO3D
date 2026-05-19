@@ -1,0 +1,57 @@
+{
+  "total_warnings_captured": 6,
+  "nondeterministic_related": 1,
+  "samples": [
+    {
+      "is_nondet": false,
+      "category": "FutureWarning",
+      "message": "`clean_up_tokenization_spaces` was not set. It will be set to `True` by default. This behavior will be depracted in transformers v4.45, and will be then set to `False` by default. For more details check this issue: https://github.com/huggingface/transformers/issues/31884",
+      "filename": "/home/rintern16/miniconda3/envs/openyolo3d/lib/python3.10/site-packages/transformers/tokenization_utils_base.py",
+      "lineno": 1601
+    },
+    {
+      "is_nondet": true,
+      "category": "UserWarning",
+      "message": "scatter_add_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at  ../aten/src/ATen/Context.cpp:82.)",
+      "filename": "/home/rintern16/miniconda3/envs/openyolo3d/lib/python3.10/site-packages/torch_scatter/scatter.py",
+      "lineno": 21
+    },
+    {
+      "is_nondet": false,
+      "category": "UserWarning",
+      "message": "__floordiv__ is deprecated, and its behavior will change in a future version of pytorch. It currently rounds toward 0 (like the 'trunc' function NOT 'floor'). This results in incorrect rounding for negative values. To keep the current behavior, use torch.div(a, b, rounding_mode='trunc'), or for actual floor division, use torch.div(a, b, rounding_mode='floor').",
+      "filename": "/home/rintern16/OpenYOLO3D/models/Mask3D/mask3d/__init__.py",
+      "lineno": 225
+    },
+    {
+      "is_nondet": false,
+      "category": "UserWarning",
+      "message": "torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument. (Triggered internally at  ../aten/src/ATen/native/TensorShape.cpp:2894.)",
+      "filename": "/home/rintern16/miniconda3/envs/openyolo3d/lib/python3.10/site-packages/torch/functional.py",
+      "lineno": 478
+    },
+    {
+      "is_nondet": false,
+      "category": "RuntimeWarning",
+      "message": "invalid value encountered in cast",
+      "filename": "/home/rintern16/OpenYOLO3D/method_scannet/streaming/visibility.py",
+      "lineno": 58
+    },
+    {
+      "is_nondet": false,
+      "category": "RuntimeWarning",
+      "message": "invalid value encountered in cast",
+      "filename": "/home/rintern16/OpenYOLO3D/method_scannet/streaming/visibility.py",
+      "lineno": 59
+    }
+  ],
+  "nondet_samples": [
+    {
+      "is_nondet": true,
+      "category": "UserWarning",
+      "message": "scatter_add_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at  ../aten/src/ATen/Context.cpp:82.)",
+      "filename": "/home/rintern16/miniconda3/envs/openyolo3d/lib/python3.10/site-packages/torch_scatter/scatter.py",
+      "lineno": 21
+    }
+  ]
+}

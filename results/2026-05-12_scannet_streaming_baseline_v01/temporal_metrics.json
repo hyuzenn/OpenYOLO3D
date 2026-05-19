@@ -1,0 +1,22 @@
+{
+  "label_switch_count": {
+    "n_scenes": 312,
+    "total": 0,
+    "mean_per_scene": 0.0,
+    "median_per_scene": 0.0,
+    "p90_per_scene": 0.0
+  },
+  "time_to_confirm": {
+    "n_instances": 0,
+    "mean": null,
+    "median": null,
+    "p90": null
+  },
+  "walltime_seconds": {
+    "n_scenes": 312,
+    "total_seconds": 8860.761940956116,
+    "mean_per_scene": 28.399878015884987,
+    "median_per_scene": 24.058563947677612,
+    "max_per_scene": 91.94118666648865
+  }
+}

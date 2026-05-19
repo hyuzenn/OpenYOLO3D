@@ -1,0 +1,34 @@
+#!/bin/bash
+#PBS -N streaming_debug_E
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=01:00:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_streaming_debug_E"
+export RUN_DIR
+mkdir -p "$RUN_DIR"
+cp pretrained/config_scannet200.yaml "$RUN_DIR/config.yaml"
+
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Run directory: $RUN_DIR ==="
+echo "=== Task 1.2c Option E — common-instance scenes streaming vs offline dump ==="
+echo "=== Date: $(date) ==="
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+
+python -m method_scannet.streaming.tools.debug_compare \
+  --scenes scene0334_01 scene0334_00 \
+  --output "$RUN_DIR" \
+  --config pretrained/config_scannet200.yaml
+
+EXIT=$?
+echo "=== exit code: $EXIT ==="
+exit $EXIT

@@ -1,0 +1,42 @@
+#!/bin/bash
+#PBS -N t14b3_pbsD_m22m32
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=06:00:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+CACHE_DIR="${PROJECT_ROOT}/results/2026-05-13_mask3d_cache"
+PARENT="${PROJECT_ROOT}/results/2026-05-15_streaming_ablation_core_temporal"
+EXP=pbs_D_m22m32
+N=$(printf '%02d' $(($(ls -d "${PARENT}/${EXP}_v"* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PARENT}/${EXP}_v${N}"
+export RUN_DIR
+mkdir -p "$RUN_DIR"
+cp pretrained/config_scannet200.yaml "$RUN_DIR/config.yaml"
+
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Run directory: $RUN_DIR ==="
+echo "=== Task 1.4b Part 3 — PBS D: M22+M32 ==="
+echo "=== Axes: M22+M32 (1 axis × 312 scene) ==="
+echo "=== Date: $(date) ==="
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
+python -m method_scannet.streaming.eval_streaming_ablation \
+  --cache-dir "$CACHE_DIR" \
+  --output "$RUN_DIR" \
+  --config pretrained/config_scannet200.yaml \
+  --axes "M22+M32"
+
+EXIT=$?
+echo "=== exit code: $EXIT ==="
+exit $EXIT

@@ -1,0 +1,45 @@
+#!/bin/bash
+#PBS -N t15_m11_n_sweep
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=05:00:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+CACHE_DIR="${PROJECT_ROOT}/results/2026-05-13_mask3d_cache"
+DATE=$(date +%F)
+EXP=m11_n_sweep
+N=$(printf '%02d' $(($(ls -d "results/${DATE}_${EXP}_v"* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+export RUN_DIR
+mkdir -p "$RUN_DIR"
+cp pretrained/config_scannet200.yaml "$RUN_DIR/config.yaml"
+
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Run directory: $RUN_DIR ==="
+echo "=== Task 1.5 — M11 (FrameCountingGate) N sensitivity sweep ==="
+echo "=== Axes: M11_N2 M11_N3 M11_N4 M11_N5 M11_N7 (50-scene subset, seed=42) ==="
+echo "=== Date: $(date) ==="
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+
+python scripts/m11_n_sweep.py \
+  --cache-dir "$CACHE_DIR" \
+  --output "$RUN_DIR" \
+  --config pretrained/config_scannet200.yaml \
+  --n-values 2 3 4 5 7 \
+  --seed 42 \
+  --n-scenes 50
+
+EXIT=$?
+echo "=== exit code: $EXIT ==="
+exit $EXIT
