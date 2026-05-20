@@ -423,6 +423,83 @@ def _detection_box_dict(global_id: int,
 
 
 # ---------------------------------------------------------------------------
+# Stage B — β1 (HDBSCAN) proposal conversion + deployable hybrid union.
+# ---------------------------------------------------------------------------
+def _beta1_clusters_to_proposals(beta1_out: dict) -> list[dict]:
+    """Convert LiDARProposalGenerator output (ego-frame, axis-aligned,
+    class-agnostic clusters) into the proposal-dict shape the evaluator
+    consumes. β1 has no class (YOLO labels downstream) and no detection
+    score (we use a point-count pseudo-score). Boxes are axis-aligned in
+    ego (yaw=0); downstream applies the small lidar→ego tilt.
+    """
+    centroids = beta1_out.get("cluster_centroids")
+    bboxes = beta1_out.get("cluster_bbox")
+    sizes = beta1_out.get("cluster_sizes")
+    props: list[dict] = []
+    if centroids is None or len(centroids) == 0:
+        return props
+    for k in range(centroids.shape[0]):
+        mn = np.asarray(bboxes[k][:3], dtype=np.float64)
+        mx = np.asarray(bboxes[k][3:], dtype=np.float64)
+        center = (mn + mx) / 2.0
+        dims = np.clip(mx - mn, 1e-3, None)
+        npts = int(sizes[k]) if sizes is not None else 0
+        props.append({
+            "cls_name": "object",       # class assigned by YOLO-World downstream
+            "cls_idx": -1,
+            "score": float(min(1.0, npts / 100.0)),  # point-count pseudo-score
+            "bbox_lidar": [float(center[0]), float(center[1]), float(center[2]),
+                           float(dims[0]), float(dims[1]), float(dims[2]), 0.0],
+            "centroid_ego": center.tolist(),
+            "_source": "beta1",
+        })
+    return props
+
+
+def _hybrid_distance_aware_union(gamma_props: list[dict], beta1_props: list[dict],
+                                 threshold_m: float = 35.0,
+                                 dedup_dist_m: float = 2.0) -> list[dict]:
+    """Deployable (GT-free) distance-aware union of γ and β1 proposals.
+
+    Principle from the May α diagnosis, runtime version:
+      - near (< threshold_m ego-xy): γ preferred — keep all γ; add a β1
+        proposal only if no γ proposal is within dedup_dist_m.
+      - far  (>= threshold_m):       β1 preferred — keep all β1; add a γ
+        proposal only if no β1 proposal is within dedup_dist_m.
+    NOT the oracle strategy_distance_aware (which needs GT). Will not
+    reproduce the 46.7% oracle M-rate.
+    """
+    for p in gamma_props:
+        p.setdefault("_source", "gamma")
+
+    def _xy(p):
+        c = p["centroid_ego"]
+        return np.array([c[0], c[1]], dtype=np.float64)
+
+    def _near_any(p, others):
+        pxy = _xy(p)
+        for o in others:
+            if float(np.linalg.norm(pxy - _xy(o))) < dedup_dist_m:
+                return True
+        return False
+
+    merged: list[dict] = []
+    for p in gamma_props:
+        d = float(np.hypot(p["centroid_ego"][0], p["centroid_ego"][1]))
+        if d < threshold_m:
+            merged.append(p)                       # γ preferred near
+        elif not _near_any(p, beta1_props):
+            merged.append(p)                       # γ fills β1 gaps far
+    for p in beta1_props:
+        d = float(np.hypot(p["centroid_ego"][0], p["centroid_ego"][1]))
+        if d >= threshold_m:
+            merged.append(p)                       # β1 preferred far
+        elif not _near_any(p, gamma_props):
+            merged.append(p)                       # β1 fills γ gaps near
+    return merged
+
+
+# ---------------------------------------------------------------------------
 # Main evaluator.
 # ---------------------------------------------------------------------------
 class StreamingNuScenesEvaluator:
@@ -444,11 +521,20 @@ class StreamingNuScenesEvaluator:
         association_max_age: int = 5,
         pixel_match_radius: float = 80.0,
         iou_threshold: float = DEFAULT_IOU_THRESHOLD,
+        proposal_source: str = "gamma",      # gamma | beta1 | hybrid
+        beta1_generator=None,                # LiDARProposalGenerator (hybrid/beta1)
+        hybrid_threshold_m: float = 35.0,
         tmp_dir: Optional[str] = None,
     ) -> None:
         self.loader = nuscenes_loader
         self.cp = cp_proposals
         self.oy3d = oy3d
+        self.beta1 = beta1_generator
+        self.proposal_source = str(proposal_source)
+        self.hybrid_threshold_m = float(hybrid_threshold_m)
+        if self.proposal_source in ("beta1", "hybrid") and self.beta1 is None:
+            raise ValueError(
+                f"proposal_source={self.proposal_source} requires beta1_generator")
         self.text_prompts = list(text_prompts)
         self.num_classes = len(self.text_prompts)
         self.association_threshold_m = float(association_threshold_m)
@@ -469,11 +555,15 @@ class StreamingNuScenesEvaluator:
         self.last_axis_walltime_s: float = 0.0
 
     # -- axis lifecycle ---------------------------------------------------
-    def install_axis(self, axis_name: str, **kwargs) -> None:
+    def install_axis(self, axis_name: str, method_id: Optional[str] = None,
+                     **kwargs) -> None:
         # Use Indoor's hook installer directly — it just sets attrs on us.
+        # ``method_id`` lets display-axis names (e.g. M12_thr080) map to a
+        # real installer id (M12) with custom kwargs.
         uninstall_all_streaming(self)
-        if axis_name != "baseline":
-            install_method_streaming(self, axis_name, **kwargs)
+        mid = method_id or axis_name
+        if mid != "baseline":
+            install_method_streaming(self, mid, **kwargs)
 
     def begin_axis(self) -> None:
         self.per_sample_pred_boxes = {}
@@ -589,10 +679,27 @@ class StreamingNuScenesEvaluator:
         # correctly (the lidar mounting yaw is small but non-zero).
         lidar_to_ego_q = Quaternion(matrix=T_lidar_to_ego[:3, :3])
         tmp_bin = osp.join(self.tmp_dir, "_pc.bin")
-        # CenterPoint (mmdet3d) needs mmdet3d scope to resolve LoadPointsFromFile.
-        _set_mm_scope("mmdet3d")
-        gamma_out = self.cp.generate(pc, T_lidar_to_ego, tmp_bin_path=tmp_bin)
-        proposals = gamma_out["proposals"]
+        # Proposal source: gamma | beta1 | hybrid.
+        gamma_props: list[dict] = []
+        beta1_props: list[dict] = []
+        if self.proposal_source in ("gamma", "hybrid"):
+            # CenterPoint (mmdet3d) needs mmdet3d scope for LoadPointsFromFile.
+            _set_mm_scope("mmdet3d")
+            gamma_out = self.cp.generate(pc, T_lidar_to_ego, tmp_bin_path=tmp_bin)
+            gamma_props = gamma_out["proposals"]
+        if self.proposal_source in ("beta1", "hybrid"):
+            beta1_out = self.beta1.generate(pc)
+            beta1_props = _beta1_clusters_to_proposals(beta1_out)
+        if self.proposal_source == "gamma":
+            proposals = gamma_props
+        elif self.proposal_source == "beta1":
+            proposals = beta1_props
+        else:  # hybrid
+            proposals = _hybrid_distance_aware_union(
+                gamma_props, beta1_props,
+                threshold_m=self.hybrid_threshold_m,
+                dedup_dist_m=self.association_threshold_m,
+            )
 
         # --- cross-sample association → global ids ---------------------
         global_ids = self.associator.step(proposals)
@@ -817,6 +924,14 @@ def _build_cp_generator(score_threshold: float = 0.10):
     )
 
 
+def _build_beta1_generator():
+    # LiDARProposalGenerator takes individual kwargs (not a ClusteringConfig).
+    # Defaults: ground z_threshold=-1.4, min_cluster_size=20, eps=0.5,
+    # max_distance=100 m — the adapter's shipped config.
+    from adapters.lidar_proposals import LiDARProposalGenerator
+    return LiDARProposalGenerator()
+
+
 def _build_loader(nuscenes_config: str) -> NuScenesLoader:
     return NuScenesLoader(config_path=nuscenes_config)
 
@@ -851,6 +966,9 @@ def main():
     parser.add_argument("--score-threshold", type=float, default=0.10)
     parser.add_argument("--association-threshold-m", type=float, default=DEFAULT_ASSOC_DIST_M)
     parser.add_argument("--iou-threshold", type=float, default=DEFAULT_IOU_THRESHOLD)
+    parser.add_argument("--proposal-source", type=str, default="gamma",
+                        choices=["gamma", "beta1", "hybrid"])
+    parser.add_argument("--hybrid-threshold-m", type=float, default=35.0)
     args = parser.parse_args()
 
     out_root = Path(args.output)
@@ -860,8 +978,14 @@ def main():
     loader = _build_loader(args.nuscenes_config)
     print(f"  scenes: {len(loader.nusc.scene)}, samples: {len(loader.nusc.sample)}", flush=True)
 
-    print("Loading γ CenterPoint ...", flush=True)
-    cp = _build_cp_generator(score_threshold=args.score_threshold)
+    cp = None
+    if args.proposal_source in ("gamma", "hybrid"):
+        print("Loading γ CenterPoint ...", flush=True)
+        cp = _build_cp_generator(score_threshold=args.score_threshold)
+    beta1 = None
+    if args.proposal_source in ("beta1", "hybrid"):
+        print("Loading β1 LiDARProposalGenerator (HDBSCAN) ...", flush=True)
+        beta1 = _build_beta1_generator()
 
     print("Loading OpenYolo3D (YOLO-World) ...", flush=True)
     oy3d = _build_oy3d(args.oy3d_config)
@@ -882,18 +1006,28 @@ def main():
         text_prompts=text_prompts,
         association_threshold_m=args.association_threshold_m,
         iou_threshold=args.iou_threshold,
+        proposal_source=args.proposal_source,
+        beta1_generator=beta1,
+        hybrid_threshold_m=args.hybrid_threshold_m,
     )
 
     overall_summary: list[dict] = []
     for axis in args.axes:
+        # Axis dispatch: display name → (installer id, kwargs).
         kwargs = {}
+        method_id = axis
         if axis == "M11":
-            kwargs = {"N": 3}
+            method_id, kwargs = "M11", {"N": 3}
         elif axis == "M12":
+            method_id = "M12"
             kwargs = {"prior": 0.5, "detection_likelihood": 0.8, "threshold": 0.95}
-        print(f"\n[axis {axis}] kwargs={kwargs}", flush=True)
+        elif axis.startswith("M12_thr"):
+            thr = int(axis.split("thr")[1]) / 100.0
+            method_id = "M12"
+            kwargs = {"prior": 0.5, "detection_likelihood": 0.8, "threshold": thr}
+        print(f"\n[axis {axis}] method_id={method_id} kwargs={kwargs}", flush=True)
         axis_dir = out_root / f"axis_{axis}"
-        evaluator.install_axis(axis, **kwargs)
+        evaluator.install_axis(axis, method_id=method_id, **kwargs)
         evaluator.begin_axis()
         t_axis = time.time()
         for i, sc in enumerate(scenes):

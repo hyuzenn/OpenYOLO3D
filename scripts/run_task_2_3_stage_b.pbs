@@ -1,0 +1,51 @@
+#!/bin/bash
+#PBS -N t23_stage_b
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=06:00:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+EXP=outdoor_stage_b
+N=$(printf '%02d' $(($(ls -d "results/${DATE}_${EXP}_v"* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+export RUN_DIR
+mkdir -p "$RUN_DIR"
+cp configs/nuscenes_baseline.yaml "$RUN_DIR/nuscenes_config.yaml"
+cp configs/openyolo3d_nuscenes.yaml "$RUN_DIR/oy3d_config.yaml"
+
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Run directory: $RUN_DIR ==="
+echo "=== Task 2.3 PBS A — Stage B (β1+γ hybrid, deployable distance-aware union) ==="
+echo "=== proposal_source=hybrid threshold=35m | Axes: baseline M11 M12(0.95) | 10 mini scenes ==="
+echo "=== NOTE: deployable GT-free union, NOT the May 46.7% oracle M-rate ==="
+echo "=== Date: $(date) ==="
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+python -m method_scannet.streaming.nuscenes_evaluator \
+  --nuscenes-config configs/nuscenes_baseline.yaml \
+  --oy3d-config    configs/openyolo3d_nuscenes.yaml \
+  --output         "$RUN_DIR" \
+  --axes           baseline M11 M12 \
+  --scene-limit    10 \
+  --score-threshold 0.10 \
+  --association-threshold-m 2.0 \
+  --iou-threshold  0.3 \
+  --proposal-source hybrid \
+  --hybrid-threshold-m 35.0
+
+EXIT=$?
+echo "=== exit code: $EXIT ==="
+exit $EXIT
