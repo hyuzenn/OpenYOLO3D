@@ -1,0 +1,47 @@
+#!/bin/bash
+#PBS -N t24_stage_c_b
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=05:00:00
+#PBS -j oe
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+# Append to the existing Stage C run dir created by PBS A.
+RUN_DIR=$(ls -d "${PROJECT_ROOT}"/results/*_outdoor_stage_c_v01 2>/dev/null | tail -1)
+if [ -z "$RUN_DIR" ]; then
+  echo "ERROR: no Stage C run dir found (PBS A must run first)"; exit 2
+fi
+export RUN_DIR
+
+LOG="$RUN_DIR/run_pbs_b.log"
+exec >"$LOG" 2>&1
+
+echo "=== Run directory: $RUN_DIR ==="
+echo "=== Task 2.4 PBS B — Stage C anchor M12 thr=0.85 (confirm@2, outdoor op point) ==="
+echo "=== Axes: M12_thr085 | split=val (~150 scenes) ==="
+echo "=== Date: $(date) ==="
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+python -m method_scannet.streaming.nuscenes_evaluator \
+  --nuscenes-config configs/nuscenes_trainval.yaml \
+  --oy3d-config    configs/openyolo3d_nuscenes.yaml \
+  --output         "$RUN_DIR" \
+  --axes           M12_thr085 \
+  --scene-split    val \
+  --score-threshold 0.10 \
+  --association-threshold-m 2.0 \
+  --iou-threshold  0.3 \
+  --proposal-source gamma
+
+EXIT=$?
+echo "=== exit code: $EXIT ==="
+exit $EXIT

@@ -948,6 +948,14 @@ def _list_mini_scenes(loader: NuScenesLoader, limit: Optional[int] = None) -> li
     return scenes
 
 
+def _list_val_scenes(loader: NuScenesLoader) -> list[str]:
+    """Official nuScenes v1.0-trainval val split (~150 scenes), in canonical
+    order, restricted to scenes present in the loaded DB."""
+    from nuscenes.utils.splits import val as VAL_SCENES
+    name2tok = {s["name"]: s["token"] for s in loader.nusc.scene}
+    return [name2tok[n] for n in VAL_SCENES if n in name2tok]
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()
@@ -961,8 +969,12 @@ def main():
                         help="Subset of axes to run.")
     parser.add_argument("--scene-limit", type=int, default=10,
                         help="Number of scenes to process (default 10 for v1.0-mini).")
+    parser.add_argument("--scene-split", type=str, default="all",
+                        choices=["all", "val"],
+                        help="'val' = official v1.0-trainval val split (~150 scenes); "
+                             "'all' = first --scene-limit scenes (mini smoke).")
     parser.add_argument("--scenes", nargs="*", default=None,
-                        help="Optional explicit scene tokens (overrides --scene-limit).")
+                        help="Optional explicit scene tokens (overrides split/limit).")
     parser.add_argument("--score-threshold", type=float, default=0.10)
     parser.add_argument("--association-threshold-m", type=float, default=DEFAULT_ASSOC_DIST_M)
     parser.add_argument("--iou-threshold", type=float, default=DEFAULT_IOU_THRESHOLD)
@@ -997,9 +1009,11 @@ def main():
 
     if args.scenes:
         scenes = list(args.scenes)
+    elif args.scene_split == "val":
+        scenes = _list_val_scenes(loader)
     else:
         scenes = _list_mini_scenes(loader, limit=args.scene_limit)
-    print(f"  scenes to run: {len(scenes)}", flush=True)
+    print(f"  scenes to run: {len(scenes)} (split={args.scene_split})", flush=True)
 
     evaluator = StreamingNuScenesEvaluator(
         nuscenes_loader=loader, cp_proposals=cp, oy3d=oy3d,
