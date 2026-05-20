@@ -57,6 +57,10 @@ NUSC_10 = (
 )
 NUSC_10_SET = set(NUSC_10)
 DEFAULT_ASSOC_DIST_M = 2.0
+# Per-scene global-id stride: scene k's ids live in [k*STRIDE, (k+1)*STRIDE).
+# 1e6 comfortably exceeds any per-scene proposal-instance count.
+SCENE_ID_STRIDE = 1_000_000
+DEFAULT_IOU_THRESHOLD = 0.3
 
 
 def _set_mm_scope(name: str) -> None:
@@ -144,15 +148,16 @@ class CentroidAssociator:
     """
 
     def __init__(self, threshold_m: float = DEFAULT_ASSOC_DIST_M,
-                 max_age: int = 5) -> None:
+                 max_age: int = 5, id_offset: int = 0) -> None:
         self.threshold_m = float(threshold_m)
         self.max_age = int(max_age)
+        self.id_offset = int(id_offset)
         self._active: dict[int, dict] = {}
-        self._next_id: int = 0
+        self._next_id: int = int(id_offset)
 
     def reset(self) -> None:
         self._active.clear()
-        self._next_id = 0
+        self._next_id = int(self.id_offset)
 
     def step(self, proposals: list[dict]) -> list[int]:
         """Assign global_ids for one sample's proposals.
@@ -228,6 +233,110 @@ def _project_to_camera(centroid_ego: np.ndarray,
     if not (0.0 <= u < W and 0.0 <= v < H):
         return None
     return (u, v)
+
+
+def _box_corners_ego(centroid_ego: np.ndarray, size: tuple[float, float, float],
+                     box_q_ego: "Quaternion") -> np.ndarray:
+    """8 corners of an oriented 3D box in ego frame. size = (dx, dy, dz)
+    matching CenterPoint's bbox ordering."""
+    dx, dy, dz = float(size[0]), float(size[1]), float(size[2])
+    xs = np.array([dx, dx, dx, dx, -dx, -dx, -dx, -dx]) / 2.0
+    ys = np.array([dy, dy, -dy, -dy, dy, dy, -dy, -dy]) / 2.0
+    zs = np.array([dz, -dz, dz, -dz, dz, -dz, dz, -dz]) / 2.0
+    corners_local = np.stack([xs, ys, zs], axis=1)  # (8,3)
+    R = box_q_ego.rotation_matrix                    # (3,3)
+    return (R @ corners_local.T).T + np.asarray(centroid_ego[:3], dtype=np.float64)
+
+
+def _project_corners_to_2dbbox(corners_ego: np.ndarray, cam_to_ego: np.ndarray,
+                               intrinsic: np.ndarray,
+                               image_hw: tuple[int, int]) -> Optional[list[float]]:
+    """Project 8 ego-frame corners into a camera; return the axis-aligned
+    2D bbox [x1,y1,x2,y2] clipped to the image, or None if too few corners
+    are in front of the camera / inside the image."""
+    T_ego_to_cam = np.linalg.inv(cam_to_ego)
+    H, W = image_hw
+    pts2d = []
+    for c in corners_ego:
+        p_h = np.concatenate([c[:3], [1.0]])
+        p_cam = T_ego_to_cam @ p_h
+        z = float(p_cam[2])
+        if z <= 0.1:
+            continue
+        pix = intrinsic @ p_cam[:3]
+        u = float(pix[0] / pix[2])
+        v = float(pix[1] / pix[2])
+        pts2d.append((u, v))
+    if len(pts2d) < 2:
+        return None
+    arr = np.asarray(pts2d, dtype=np.float64)
+    x1, y1 = float(arr[:, 0].min()), float(arr[:, 1].min())
+    x2, y2 = float(arr[:, 0].max()), float(arr[:, 1].max())
+    # Reject boxes entirely off-image.
+    if x2 < 0 or y2 < 0 or x1 >= W or y1 >= H:
+        return None
+    x1 = max(0.0, x1); y1 = max(0.0, y1)
+    x2 = min(float(W - 1), x2); y2 = min(float(H - 1), y2)
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return [x1, y1, x2, y2]
+
+
+def _iou_2d(a: list[float], b: np.ndarray) -> float:
+    """IoU between axis-aligned 2D boxes a=[x1,y1,x2,y2], b=[x1,y1,x2,y2]."""
+    ix1 = max(a[0], float(b[0])); iy1 = max(a[1], float(b[1]))
+    ix2 = min(a[2], float(b[2])); iy2 = min(a[3], float(b[3]))
+    iw = max(0.0, ix2 - ix1); ih = max(0.0, iy2 - iy1)
+    inter = iw * ih
+    if inter <= 0.0:
+        return 0.0
+    area_a = (a[2] - a[0]) * (a[3] - a[1])
+    area_b = (float(b[2]) - float(b[0])) * (float(b[3]) - float(b[1]))
+    denom = area_a + area_b - inter
+    return float(inter / denom) if denom > 0 else 0.0
+
+
+def _yolo_label_for_proposal_iou(box2d_per_cam: dict, cam_outputs: dict,
+                                 text_prompts: list[str],
+                                 iou_threshold: float = DEFAULT_IOU_THRESHOLD,
+                                 ) -> tuple[Optional[str], float, float]:
+    """IoU-based YOLO label fusion (Fix 3, Task 2.2).
+
+    For each camera where the proposal's projected 3D-box footprint is
+    available, compute IoU against every YOLO 2D bbox; keep the match
+    with the highest IoU across all cameras (above ``iou_threshold``).
+    Returns (class_name_or_None, yolo_score, best_iou).
+    """
+    best_iou, best_score, best_cls = iou_threshold, -1.0, None
+    for cam_name, box2d in box2d_per_cam.items():
+        if box2d is None:
+            continue
+        out = cam_outputs.get(cam_name)
+        if out is None:
+            continue
+        bboxes = out["bbox"]
+        labels = out["labels"]
+        scores = out["scores"]
+        if bboxes is None or len(bboxes) == 0:
+            continue
+        bb = np.asarray(bboxes, dtype=np.float64)
+        sc = np.asarray(scores, dtype=np.float64)
+        lb = np.asarray(labels)
+        for k in range(bb.shape[0]):
+            iou = _iou_2d(box2d, bb[k])
+            if iou < best_iou:
+                continue
+            cls_idx = int(lb[k])
+            if cls_idx < 0 or cls_idx >= len(text_prompts):
+                continue
+            # Tie-break by IoU first, then by YOLO score.
+            if iou > best_iou or (abs(iou - best_iou) < 1e-9 and float(sc[k]) > best_score):
+                best_iou = iou
+                best_score = float(sc[k])
+                best_cls = text_prompts[cls_idx]
+    if best_cls is None:
+        return None, -1.0, 0.0
+    return best_cls, best_score, best_iou
 
 
 def _yolo_label_for_proposal(centroid_ego: np.ndarray,
@@ -334,6 +443,7 @@ class StreamingNuScenesEvaluator:
         association_threshold_m: float = DEFAULT_ASSOC_DIST_M,
         association_max_age: int = 5,
         pixel_match_radius: float = 80.0,
+        iou_threshold: float = DEFAULT_IOU_THRESHOLD,
         tmp_dir: Optional[str] = None,
     ) -> None:
         self.loader = nuscenes_loader
@@ -344,6 +454,7 @@ class StreamingNuScenesEvaluator:
         self.association_threshold_m = float(association_threshold_m)
         self.association_max_age = int(association_max_age)
         self.pixel_match_radius = float(pixel_match_radius)
+        self.iou_threshold = float(iou_threshold)
         self.tmp_dir = tmp_dir or tempfile.mkdtemp(prefix="t21_outdoor_")
         os.makedirs(self.tmp_dir, exist_ok=True)
         # State (per-scene).
@@ -371,12 +482,26 @@ class StreamingNuScenesEvaluator:
         self.last_axis_walltime_s = 0.0
 
     # -- per-scene --------------------------------------------------------
-    def setup_scene(self) -> None:
+    def setup_scene(self, scene_offset: int = 0) -> None:
+        # Fix 1 (Task 2.2): scene-offset global ids so the same physical
+        # object never shares an id across scenes in the concatenated
+        # pred_history (otherwise time_to_confirm conflates distinct
+        # instances) and so the M11/M12 gate's per-id counters cannot
+        # collide across scenes.
         self.associator = CentroidAssociator(
             threshold_m=self.association_threshold_m,
             max_age=self.association_max_age,
+            id_offset=scene_offset,
         )
         self.running_labeler = NuScenesRunningLabeler(num_classes=self.num_classes)
+        # Fix 1 (Task 2.2): clear the registration gate's per-instance
+        # state between scenes — matches Indoor's "fresh evaluator per
+        # scene" semantics. Uses the gate's own reset(); no Indoor-class
+        # modification.
+        if self.method_11 is not None and hasattr(self.method_11, "reset"):
+            self.method_11.reset()
+        if self.method_12 is not None and hasattr(self.method_12, "reset"):
+            self.method_12.reset()
 
     def _scene_sample_tokens(self, scene_token: str) -> list[str]:
         nusc = self.loader.nusc
@@ -459,6 +584,10 @@ class StreamingNuScenesEvaluator:
             translation=lidar_cs["translation"],
             rotation=Quaternion(lidar_cs["rotation"]),
         )
+        # Fix 2 (Task 2.2): box yaw from CenterPoint is in the LIDAR frame.
+        # Carry the lidar→ego rotation so box orientation reaches ego/global
+        # correctly (the lidar mounting yaw is small but non-zero).
+        lidar_to_ego_q = Quaternion(matrix=T_lidar_to_ego[:3, :3])
         tmp_bin = osp.join(self.tmp_dir, "_pc.bin")
         # CenterPoint (mmdet3d) needs mmdet3d scope to resolve LoadPointsFromFile.
         _set_mm_scope("mmdet3d")
@@ -478,11 +607,32 @@ class StreamingNuScenesEvaluator:
         proposal_records: list[dict] = []
         for j, (p, gid) in enumerate(zip(proposals, global_ids)):
             centroid_ego = np.asarray(p["centroid_ego"], dtype=np.float64)
-            per_cam = self._project_yolo_into_cams(centroid_ego, cam_outputs)
-            yolo_cls_name, yolo_score = _yolo_label_for_proposal(
-                centroid_ego, per_cam, self.text_prompts,
-                pixel_match_radius=self.pixel_match_radius,
+            bbox_lidar = p["bbox_lidar"]
+            yaw_lidar = float(bbox_lidar[6]) if len(bbox_lidar) >= 7 else 0.0
+            size = (bbox_lidar[3], bbox_lidar[4], bbox_lidar[5])
+            # Fix 2: box orientation in ego frame = lidar→ego ∘ box-yaw(lidar).
+            box_q_ego = lidar_to_ego_q * Quaternion(axis=(0.0, 0.0, 1.0), angle=yaw_lidar)
+
+            # Fix 3: IoU-based label fusion. Project the oriented 3D box into
+            # each camera, build its 2D footprint, IoU-match against YOLO boxes.
+            corners_ego = _box_corners_ego(centroid_ego, size, box_q_ego)
+            box2d_per_cam = {}
+            for cam, out in cam_outputs.items():
+                box2d_per_cam[cam] = _project_corners_to_2dbbox(
+                    corners_ego, out["cam_to_ego"], out["intrinsic"], out["image_hw"]
+                )
+            yolo_cls_name, yolo_score, best_iou = _yolo_label_for_proposal_iou(
+                box2d_per_cam, cam_outputs, self.text_prompts,
+                iou_threshold=self.iou_threshold,
             )
+            # Fallback: if no IoU match, use the centroid-radius heuristic.
+            if yolo_cls_name is None:
+                per_cam = self._project_yolo_into_cams(centroid_ego, cam_outputs)
+                yolo_cls_name, yolo_score = _yolo_label_for_proposal(
+                    centroid_ego, per_cam, self.text_prompts,
+                    pixel_match_radius=self.pixel_match_radius,
+                )
+
             # Vote for this id's label (keep only nuScenes-10).
             cls_idx_voted = -1
             chosen_name = None
@@ -494,12 +644,16 @@ class StreamingNuScenesEvaluator:
                 w = max(0.05, yolo_score)
                 self.running_labeler.add_vote(gid, cls_idx_voted, weight=w)
                 confirmed_ids_in.append(gid)
-            # Stash raw record for later prediction emission.
+            # Stash raw record for later prediction emission. Pre-compute the
+            # global box rotation here so emission uses the Fix-2 orientation.
             centroid_global = (ego_pose[:3, :3] @ centroid_ego[:3]) + ego_translation
+            global_q = ego_quat * box_q_ego
             proposal_records.append({
                 "global_id": gid,
-                "bbox_lidar": p["bbox_lidar"],
+                "bbox_lidar": bbox_lidar,
                 "centroid_global": centroid_global,
+                "rotation_global_wxyz": [float(global_q.w), float(global_q.x),
+                                         float(global_q.y), float(global_q.z)],
                 "yolo_cls_name": chosen_name,
                 "yolo_score": float(yolo_score) if yolo_score > 0 else 0.0,
                 "cp_score": float(p.get("score", 0.0)),
@@ -527,19 +681,15 @@ class StreamingNuScenesEvaluator:
             cls_name = rec["yolo_cls_name"]
             if cls_name is None or cls_name not in NUSC_10_SET:
                 continue
-            # Compose global rotation: ego_yaw * local_yaw_from_lidar.
-            yaw = float(rec["bbox_lidar"][6]) if len(rec["bbox_lidar"]) >= 7 else 0.0
-            local_q = Quaternion(axis=(0.0, 0.0, 1.0), angle=yaw)
-            global_q = ego_quat * local_q
-            rot_wxyz = [float(global_q.w), float(global_q.x),
-                        float(global_q.y), float(global_q.z)]
+            # Fix 2: rotation_global_wxyz was pre-composed with the lidar→ego
+            # mounting rotation (ego_quat ∘ lidar_to_ego ∘ box_yaw).
             sample_preds.append(_detection_box_dict(
                 global_id=rec["global_id"],
                 sample_token=sample_token,
                 bbox_lidar=rec["bbox_lidar"],
                 centroid_global=rec["centroid_global"],
                 ego_translation=ego_translation,
-                rotation_global_wxyz=rot_wxyz,
+                rotation_global_wxyz=rec["rotation_global_wxyz"],
                 detection_name=cls_name,
                 score=rec["yolo_score"] if rec["yolo_score"] > 0 else rec["cp_score"],
             ))
@@ -572,9 +722,9 @@ class StreamingNuScenesEvaluator:
             "n_confirmed_with_label": len(confirmed_set),
         }
 
-    def run_scene(self, scene_token: str) -> dict:
+    def run_scene(self, scene_token: str, scene_idx: int = 0) -> dict:
         t0 = time.time()
-        self.setup_scene()
+        self.setup_scene(scene_offset=scene_idx * SCENE_ID_STRIDE)
         tokens = self._scene_sample_tokens(scene_token)
         per_sample_info = []
         for tok in tokens:
@@ -700,6 +850,7 @@ def main():
                         help="Optional explicit scene tokens (overrides --scene-limit).")
     parser.add_argument("--score-threshold", type=float, default=0.10)
     parser.add_argument("--association-threshold-m", type=float, default=DEFAULT_ASSOC_DIST_M)
+    parser.add_argument("--iou-threshold", type=float, default=DEFAULT_IOU_THRESHOLD)
     args = parser.parse_args()
 
     out_root = Path(args.output)
@@ -730,6 +881,7 @@ def main():
         nuscenes_loader=loader, cp_proposals=cp, oy3d=oy3d,
         text_prompts=text_prompts,
         association_threshold_m=args.association_threshold_m,
+        iou_threshold=args.iou_threshold,
     )
 
     overall_summary: list[dict] = []
@@ -747,7 +899,7 @@ def main():
         for i, sc in enumerate(scenes):
             print(f"  [{i+1}/{len(scenes)}] scene {sc[:8]}...", flush=True)
             try:
-                evaluator.run_scene(sc)
+                evaluator.run_scene(sc, scene_idx=i)
             except Exception as exc:
                 print(f"    SCENE FAILED: {exc!r}", flush=True)
         evaluator.last_axis_walltime_s = time.time() - t_axis
