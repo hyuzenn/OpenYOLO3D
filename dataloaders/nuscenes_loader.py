@@ -71,8 +71,11 @@ class NuScenesLoader:
         return self._load(self.sample_tokens[idx])
 
     def _load_lidar_ego(self, sample, lidar_sd, lidar_cs):
+        times = None
         if self.multi_sweep and self.num_sweeps > 1:
-            pc, _ = LidarPointCloud.from_file_multisweep(
+            # from_file_multisweep aggregates `nsweeps` LIDAR_TOP sweeps into the
+            # keyframe sensor frame and returns the per-point time lag (s).
+            pc, times = LidarPointCloud.from_file_multisweep(
                 self.nusc,
                 sample,
                 chan="LIDAR_TOP",
@@ -88,6 +91,13 @@ class NuScenesLoader:
         xyz_h = np.concatenate([points_lidar[:, :3], np.ones((points_lidar.shape[0], 1))], axis=1)
         xyz_ego = (T_lidar_to_ego @ xyz_h.T).T[:, :3]
         intensity = points_lidar[:, 3:4] if points_lidar.shape[1] >= 4 else np.zeros((points_lidar.shape[0], 1))
+        if times is not None:
+            # Multi-sweep: carry the per-point Δt (s) as a 5th channel so the
+            # CenterPoint adapter can feed (x,y,z,intensity,Δt) exactly as the
+            # 10-sweep-trained checkpoint expects. Single-sweep path returns
+            # (N,4) unchanged for Stage C reproducibility.
+            t_col = np.asarray(times, dtype=np.float32).reshape(-1, 1)
+            return np.concatenate([xyz_ego, intensity, t_col], axis=1).astype(np.float32)
         return np.concatenate([xyz_ego, intensity], axis=1).astype(np.float32)
 
     def _load_cameras(self, sample):

@@ -1,0 +1,23 @@
+# Task 2.5 — v1.0-trainval config WITH 10-sweep LiDAR aggregation.
+# Identical to nuscenes_trainval.yaml (the Stage C single-sweep reference,
+# preserved unchanged) except multi_sweep is enabled. The CenterPoint
+# checkpoint (centerpoint_voxel0075 ... cyclic_20e_nus) was trained and is
+# evaluated by mmdet3d with LoadPointsFromMultiSweeps(sweeps_num=9..10), so
+# feeding a single keyframe is a train/test distribution mismatch. This
+# config restores the expected 10-sweep input density + per-point Δt channel.
+nuscenes:
+  dataroot: data/nuscenes
+  version: v1.0-trainval
+
+  cameras:
+    - CAM_FRONT
+    - CAM_FRONT_LEFT
+    - CAM_FRONT_RIGHT
+    - CAM_BACK
+    - CAM_BACK_LEFT
+    - CAM_BACK_RIGHT
+
+  multi_sweep: true
+  num_sweeps: 10
+
+  scene_filter: null

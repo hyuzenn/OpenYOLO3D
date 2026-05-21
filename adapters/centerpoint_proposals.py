@@ -26,10 +26,17 @@ def _load_mmdet3d():
     return init_model, inference_detector
 
 
-# nuScenes 10-class names (CenterPoint trained order — confirmed by sanity)
+# CenterPoint label index → class name, in the EXACT order the checkpoint's
+# multi-task CenterHead emits labels_3d. This is the top-level `class_names`
+# of centerpoint_voxel0075_..._nus-3d.py (tasks flattened in order:
+# car | truck,construction_vehicle | bus,trailer | barrier | motorcycle,bicycle
+# | pedestrian,traffic_cone). NOTE: this is NOT the canonical nuScenes-devkit
+# alphabetical-ish order — Task 2.5 found the previous tuple was permuted,
+# which mislabeled construction_vehicle/trailer/barrier/bicycle/pedestrian/
+# traffic_cone and zeroed their AP. Verified against the config head tasks.
 NUSC_10 = (
-    "car", "truck", "trailer", "bus", "construction_vehicle",
-    "bicycle", "motorcycle", "pedestrian", "traffic_cone", "barrier",
+    "car", "truck", "construction_vehicle", "bus", "trailer",
+    "barrier", "motorcycle", "bicycle", "pedestrian", "traffic_cone",
 )
 
 
@@ -100,7 +107,10 @@ class CenterPointProposalGenerator:
         pc_5 = np.zeros((N, 5), dtype=np.float32)
         pc_5[:, :3] = pts_lidar_xyz
         pc_5[:, 3] = intensity
-        pc_5[:, 4] = 0.0  # single-keyframe time delta
+        # Time-delta channel. With multi-sweep input the loader supplies a 5th
+        # column = per-point Δt (s); CenterPoint's 10-sweep-trained checkpoint
+        # uses it. Single-sweep input has no 5th column → Δt=0 (keyframe).
+        pc_5[:, 4] = point_cloud_ego[:, 4] if point_cloud_ego.shape[1] >= 5 else 0.0
         pc_5.tofile(tmp_bin_path)
         t1 = time.perf_counter()
 
