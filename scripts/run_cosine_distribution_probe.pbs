@@ -1,0 +1,39 @@
+#!/bin/bash
+#PBS -N cosine_probe_m22_m32
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=02:00:00
+#PBS -j oe
+
+# Step 1 of M22/M32 fix: measure cosine distributions on 5 scenes.
+#  axis M22+M32 -> M22 image<->text (max/margin) + M32 image<->image candidate sims
+#  axis M32     -> same-class pairwise distance distribution (spatial)
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+LOGDIR="${PROJECT_ROOT}/results/cosine_probe"
+mkdir -p "$LOGDIR"
+LOG="$LOGDIR/run_${DATE}.log"
+exec >"$LOG" 2>&1
+
+echo "=== cosine-distribution probe (M22+M32, M32), 5 scenes ==="
+echo "=== Date: $(date) ==="
+hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+for AX in "M22+M32" "M32"; do
+  echo; echo "########## probe axis $AX ##########"
+  python -u -m diagnosis.cosine_distribution_probe --axis "$AX" --n-scenes 5
+  echo "---- axis $AX exit: $? ----"
+done
+
+echo "=== done: $(date) ==="

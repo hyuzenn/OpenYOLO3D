@@ -35,10 +35,22 @@ class FeatureFusionEMA:
         ema_alpha: float = 0.7,
         prompt_embeddings: Optional[torch.Tensor] = None,
         prompt_class_names: Optional[list] = None,
+        normalize_per_frame: bool = False,
+        margin: float = 0.0,
     ) -> None:
         if not (0.0 <= ema_alpha <= 1.0):
             raise ValueError(f"ema_alpha must be in [0, 1], got {ema_alpha}")
         self.ema_alpha = float(ema_alpha)
+        # Fix knobs (defaults preserve original behaviour):
+        #   normalize_per_frame: L2-normalize each per-frame embedding before
+        #     the EMA so high-norm noisy crops can't dominate the running mean.
+        #   margin: confidence-margin gate on predict_label — switch an
+        #     instance's label only when (top1 - top2) cosine >= margin,
+        #     otherwise hold its previous label (kills per-frame argmax flips
+        #     in the dense open-vocab prompt space). margin=0.0 -> no gate.
+        self.normalize_per_frame = bool(normalize_per_frame)
+        self.margin = float(margin)
+        self._last_label: dict = {}
 
         if prompt_embeddings is not None and prompt_class_names is not None:
             if prompt_embeddings.shape[0] != len(prompt_class_names):
@@ -95,6 +107,8 @@ class FeatureFusionEMA:
         if frame_visual_embedding.dim() != 1:
             frame_visual_embedding = frame_visual_embedding.reshape(-1)
         cur = frame_visual_embedding.detach().float()
+        if self.normalize_per_frame:
+            cur = _l2_normalize(cur)
 
         prev = self.instance_features.get(int(instance_id))
         if prev is None:
@@ -137,9 +151,25 @@ class FeatureFusionEMA:
         prompts = self._prompt_emb_norm.to(feat.device)
         f_norm = _l2_normalize(feat.unsqueeze(0).float())  # (1, D)
         sims = (f_norm @ prompts.t()).squeeze(0)  # (n_classes,)
-        idx = int(torch.argmax(sims).item())
-        conf = float(sims[idx].item())
+        if sims.numel() >= 2:
+            top2v, top2i = torch.topk(sims, 2)
+            idx = int(top2i[0].item())
+            conf = float(top2v[0].item())
+            margin = float(top2v[0].item() - top2v[1].item())
+        else:
+            idx = int(torch.argmax(sims).item())
+            conf = float(sims[idx].item())
+            margin = float("inf")
         label = self.prompt_class_names[idx] if self.prompt_class_names is not None else idx
+
+        # Confidence-margin gate: when the top-1/top-2 cosine separation is
+        # below `margin`, the argmax is a near-tie (per-frame noise) — hold the
+        # instance's previously committed label instead of flipping. The first
+        # observation always seeds (no previous label to hold).
+        iid = int(instance_id)
+        if self.margin > 0.0 and iid in self._last_label and margin < self.margin:
+            return self._last_label[iid], conf
+        self._last_label[iid] = label
         return label, conf
 
     def predict_all(self) -> dict:

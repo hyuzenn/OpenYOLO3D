@@ -133,6 +133,8 @@ def install_method_22(
     prompt_embeddings_path: str = "pretrained/scannet200_prompt_embeddings.pt",
     ema_alpha: float = 0.7,
     use_inference_subset: bool = True,
+    normalize_per_frame: bool = True,
+    margin: float = 0.006,
     **kwargs,
 ) -> None:
     from method_scannet.method_22_feature_fusion import FeatureFusionEMA
@@ -141,10 +143,14 @@ def install_method_22(
         prompt_embeddings_path=prompt_embeddings_path,
         use_inference_subset=use_inference_subset,
     )
+    # Fix defaults (data-driven): per-frame L2-normalize + margin gate m=0.006
+    # (≈p75 of the measured top1-top2 image↔text cosine margin).
     evaluator.method_22 = FeatureFusionEMA(
         ema_alpha=ema_alpha,
         prompt_embeddings=embeddings,
         prompt_class_names=class_names,
+        normalize_per_frame=normalize_per_frame,
+        margin=margin,
         **kwargs,
     )
     evaluator.method_22_encoder = encoder
@@ -167,10 +173,19 @@ def uninstall_method_31(evaluator: Any) -> None:
     evaluator.method_31 = None
 
 
-def install_method_32(evaluator: Any, **kwargs) -> None:
+def install_method_32(evaluator: Any, distance_threshold: float = 0.5,
+                      semantic_threshold: float = 0.95, **kwargs) -> None:
     from method_scannet.method_32_hungarian_merging import HungarianMerger
 
-    evaluator.method_32 = HungarianMerger(**kwargs)
+    # Fix defaults (data-driven): tighten spatial gate 2.0 -> 0.5 m (only ~p3 of
+    # same-class pairs are this close) and the image↔image semantic gate
+    # 0.3 -> 0.95 (candidate-pair cosines cluster ~0.9-1.0). For M32-only the
+    # adapter overrides semantic_threshold to -1.0 (spatial-only).
+    evaluator.method_32 = HungarianMerger(
+        distance_threshold=distance_threshold,
+        semantic_threshold=semantic_threshold,
+        **kwargs,
+    )
 
 
 def uninstall_method_32(evaluator: Any) -> None:

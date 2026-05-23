@@ -1,0 +1,31 @@
+#!/bin/bash
+#PBS -N fullrun_m32_after
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=06:00:00
+#PBS -j oe
+
+# Full-run PBS-2: M32 After-fix (distance_threshold=0.5 m, semantic_threshold=0.95),
+# 312 scenes. Goal: confirm AP recovers toward ~0.195. AP control = recorded
+# before-fix 312 M32 AP 0.17281. (lsc == baseline by construction, finalize-only.)
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+LOGDIR="${PROJECT_ROOT}/results/m22_m32_fix"
+mkdir -p "$LOGDIR"
+LOG="$LOGDIR/fullrun_m32_after_$(date +%F).log"
+exec >"$LOG" 2>&1
+
+echo "=== Full-run PBS-2: M32 After, 312 scenes ==="; echo "Date: $(date)"; hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+python -u -m diagnosis.m22_m32_fix_ablation --configs M32_after --n-scenes 0 --tag m32_after_312
+echo "=== exit: $? ($(date)) ==="
