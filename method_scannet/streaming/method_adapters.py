@@ -149,9 +149,6 @@ def compute_predictions_method21(
 
     img_cx = image_width / 2.0
     img_cy = image_height / 2.0
-    inv_dist = 1.0 / float(voter.distance_weight_decay)
-    inv_center = 1.0 / float(voter.center_weight_decay)
-    alpha = float(voter.spatial_alpha)
 
     prediction_3d_masks_np = pred_masks_VK.permute(1, 0).cpu().numpy().astype(bool)  # (K, V)
 
@@ -221,19 +218,20 @@ def compute_predictions_method21(
             if valid_arr.size == 0 or confidence <= 0:
                 continue
 
+            # Route per-frame weighting through the audited WeightedVoting
+            # class method (was inlined here). No camera pose → cam = centroid
+            # → d3 = 0 → w_dist = 1 (matches the old d3 = 0.0 branch).
             if len(camera_positions_v) > rep_frame_id:
                 cam = camera_positions_v[rep_frame_id]
-                d3 = math.sqrt(
-                    (cam[0] - instance_centroid[0]) ** 2
-                    + (cam[1] - instance_centroid[1]) ** 2
-                    + (cam[2] - instance_centroid[2]) ** 2
-                )
             else:
-                d3 = 0.0
-            w_dist = math.exp(-d3 * inv_dist)
-            d2 = math.sqrt((bbox_cx - img_cx) ** 2 + (bbox_cy - img_cy) ** 2)
-            w_center = math.exp(-d2 * inv_center)
-            frame_w = (alpha * w_dist + (1.0 - alpha) * w_center) * confidence
+                cam = instance_centroid
+            frame_w = float(voter.frame_weight(
+                camera_pos=cam,
+                instance_centroid=instance_centroid,
+                bbox_2d_center=(bbox_cx, bbox_cy),
+                image_size=(image_width, image_height),
+                confidence=confidence,
+            ))
             if frame_w <= 0:
                 continue
 
@@ -470,7 +468,7 @@ def apply_method32_merge(
         from method_scannet.method_32_hungarian_merging import HungarianMerger
         merger = HungarianMerger(
             spatial_alpha=float(getattr(merger, "spatial_alpha", 0.5)),
-            distance_threshold=float(getattr(merger, "distance_threshold", 2.0)),
+            distance_threshold=float(getattr(merger, "distance_threshold", 0.5)),
             semantic_threshold=-1.0,
         )
 

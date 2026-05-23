@@ -170,15 +170,6 @@ class RunningInstanceLabeler:
                 centroid = np.zeros(3, dtype=np.float64)
             self._centroid_cache[iid] = centroid
 
-        d3 = float(
-            math.sqrt(
-                (camera_position[0] - centroid[0]) ** 2
-                + (camera_position[1] - centroid[1]) ** 2
-                + (camera_position[2] - centroid[2]) ** 2
-            )
-        )
-        w_dist = math.exp(-d3 / float(voter.distance_weight_decay))
-
         # 2D bbox center + IoU-vs-YOLO confidence.
         x_l = int(xy[:, 0].min())
         x_r = int(xy[:, 0].max()) + 1
@@ -206,10 +197,17 @@ class RunningInstanceLabeler:
             except Exception:
                 confidence = 1.0
 
-        d2 = float(math.sqrt((bbox_cx - img_cx) ** 2 + (bbox_cy - img_cy) ** 2))
-        w_center = math.exp(-d2 / float(voter.center_weight_decay))
-        alpha = float(voter.spatial_alpha)
-        return (alpha * w_dist + (1.0 - alpha) * w_center) * max(confidence, 0.0)
+        # Route the spatial weighting through the audited WeightedVoting
+        # class method instead of the inline reimplementation. Numerically
+        # equivalent: frame_weight uses image center = (image_size[0]/2,
+        # image_size[1]/2) == (img_cx, img_cy) and the same exp(-d/decay) form.
+        return float(voter.frame_weight(
+            camera_pos=camera_position,
+            instance_centroid=centroid,
+            bbox_2d_center=(bbox_cx, bbox_cy),
+            image_size=(self.image_w, self.image_h),
+            confidence=confidence,
+        ))
 
     # ------------------------------------------------------------------
     # Snapshot

@@ -1,0 +1,44 @@
+#!/bin/bash
+#PBS -N indoor_m21refac_m31sweep
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=02:00:00
+#PBS -j oe
+
+# Post-refactor verification (5 scenes):
+#  (1) re-run module-invocation diagnostic for M21/M31/phase1 — M21 frame_weight
+#      should now be > 0 (routed through WeightedVoting), relabel preserved.
+#  (2) M31 IoU-threshold sweep (0.5/0.4/0.3/0.25) — merges + indoor AP per thr.
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+LOGDIR="${PROJECT_ROOT}/results/indoor_module_invocation"
+mkdir -p "$LOGDIR"
+LOG="$LOGDIR/run_refactor_${DATE}.log"
+exec >"$LOG" 2>&1
+
+echo "=== Indoor M21 refactor verify + M31 IoU sweep (5 scenes) ==="
+echo "=== Date: $(date) ==="
+hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+for AX in M21 M31 phase1; do
+  echo; echo "########## (1) re-run diagnostic axis $AX ##########"
+  python -u -m diagnosis.verify_indoor_module_invocation --axis "$AX" --n-scenes 5
+  echo "---- axis $AX exit: $? ----"
+done
+
+echo; echo "########## (2) M31 IoU-threshold sweep ##########"
+python -u -m diagnosis.m31_iou_threshold_sweep --n-scenes 5
+echo "---- sweep exit: $? ----"
+
+echo "=== done: $(date) ==="

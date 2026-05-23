@@ -1,0 +1,39 @@
+#!/bin/bash
+#PBS -N indoor_mod_invocation
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=01:30:00
+#PBS -j oe
+
+# Indoor (ScanNet200) M21/M31/phase1 module-invocation diagnostic, 5 scenes.
+# Each axis runs as a separate process so per-axis monkey-patch instrumentation
+# and global counters stay isolated. Raw counters only (no verdict, no doc).
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+LOGDIR="${PROJECT_ROOT}/results/indoor_module_invocation"
+mkdir -p "$LOGDIR"
+LOG="$LOGDIR/run_${DATE}.log"
+exec >"$LOG" 2>&1
+
+echo "=== Indoor module-invocation diagnostic (M21/M31/phase1, 5 scenes) ==="
+echo "=== Date: $(date) ==="
+hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+for AX in M21 M31 phase1; do
+  echo; echo "########## axis $AX ##########"
+  python -u -m diagnosis.verify_indoor_module_invocation --axis "$AX" --n-scenes 5
+  echo "---- axis $AX exit: $? ----"
+done
+
+echo "=== done: $(date) ==="
