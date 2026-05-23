@@ -1,0 +1,53 @@
+#!/bin/bash
+#PBS -N t26_nt_pbsA_base_m11_m12
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=08:00:00
+#PBS -j oe
+
+# Step 2b PBS A — native γ CenterPoint baseline + temporal layer.
+# Axes: baseline + M11 + M12 thr=0.85 | v1.0-trainval val (150 scenes).
+# This job POPULATES the shared CenterPoint-proposal cache during `baseline`
+# (CP run once over all 150 scenes); B/C reuse it. axis_baseline mAP must
+# reproduce the Task 2.5 native single-sweep anchor (0.3407).
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_outdoor_native_temporal_v01"
+CACHE_DIR="${PROJECT_ROOT}/results/outdoor_native_temporal_cpcache_thr000_single"
+mkdir -p "$RUN_DIR" "$CACHE_DIR"
+cp configs/nuscenes_trainval.yaml "$RUN_DIR/nuscenes_config.yaml"
+
+LOG="$RUN_DIR/run_pbs_a.log"
+exec >"$LOG" 2>&1
+
+echo "=== Step 2b PBS A — baseline + M11 + M12 thr=0.85 ==="
+echo "=== Run directory: $RUN_DIR ==="
+echo "=== Cache directory: $CACHE_DIR ==="
+echo "=== Date: $(date) ==="
+hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+  --nuscenes-config configs/nuscenes_trainval.yaml \
+  --output          "$RUN_DIR" \
+  --axes            baseline M11 M12_thr085 \
+  --scene-split     val \
+  --score-threshold 0.0 \
+  --association-threshold-m 2.0 \
+  --m11-N           3 \
+  --m12-threshold   0.85 \
+  --cp-cache-dir    "$CACHE_DIR"
+
+EXIT=$?
+echo "=== exit code: $EXIT ==="
+exit $EXIT

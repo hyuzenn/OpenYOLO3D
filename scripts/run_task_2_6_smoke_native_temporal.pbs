@@ -1,0 +1,98 @@
+#!/bin/bash
+#PBS -N t26_smoke_nativetemporal
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=01:30:00
+#PBS -j oe
+
+# Step 2b SMOKE — native γ CenterPoint baseline + temporal layer, 7 axes, 3 val
+# scenes. Validates BEFORE the 150-scene PBS A/B/C:
+#   (1) axis_baseline mAP == centerpoint_native_map_sanity single-sweep mAP on
+#       the SAME 3 scenes  -> baseline-equivalence (the 0.3407 anchor path).
+#   (2) every temporal axis fires (fire_audit counter > 0); reject silent no-ops.
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+EXP=outdoor_native_temporal_smoke
+N=$(printf '%02d' $(($(ls -d ${PROJECT_ROOT}/results/${DATE}_${EXP}_v* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+mkdir -p "$RUN_DIR"
+CACHE_DIR="${RUN_DIR}/cpcache_thr000_single"
+
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Step 2b SMOKE — native temporal, 3 scenes, 7 axes ==="
+echo "=== Run directory: $RUN_DIR ==="
+echo "=== Date: $(date) ==="
+hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+echo; echo "########## (1) cross-check: native sanity baseline, same 3 scenes ##########"
+python -u scripts/centerpoint_native_map_sanity.py \
+  --nuscenes-config configs/nuscenes_trainval.yaml \
+  --output          "$RUN_DIR/native_sanity" \
+  --scenes-mode     all \
+  --sweep-mode      single \
+  --scene-limit     3 \
+  --score-threshold 0.0
+
+echo; echo "########## (2) native-temporal evaluator, 7 axes, same 3 scenes ##########"
+python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+  --nuscenes-config configs/nuscenes_trainval.yaml \
+  --output          "$RUN_DIR/native_temporal" \
+  --axes            baseline M11 M12_thr085 M21 M31 M32 phase1 \
+  --scene-split     val \
+  --scene-limit     3 \
+  --score-threshold 0.0 \
+  --cp-cache-dir    "$CACHE_DIR"
+
+echo; echo "########## (3) compare ##########"
+python -u - "$RUN_DIR" <<'PY'
+import json, sys, pathlib
+run = pathlib.Path(sys.argv[1])
+nat = json.loads((run/"native_sanity"/"native_map_sanity.json").read_text())
+nat_map = nat["single_sweep"]["mAP"]
+summ = json.loads((run/"native_temporal"/"all_summaries.json").read_text())
+by = {s["axis"]: s for s in summ}
+base = by["baseline"]["mAP"]
+print(f"native_sanity single-sweep mAP : {nat_map:.6f}")
+print(f"axis_baseline           mAP    : {base:.6f}")
+diff = abs(nat_map - base)
+print(f"|diff| = {diff:.2e}  -> {'BASELINE-EQUIVALENT ✓' if diff < 1e-4 else 'MISMATCH ✗'}")
+print()
+print(f"{'axis':12s} {'mAP':>9s} {'Δbase':>9s} {'lsc':>7s} {'fired?':>8s}  audit")
+for ax in ['baseline','M11','M12_thr085','M21','M31','M32','phase1']:
+    s = by.get(ax, {})
+    a = s.get("fire_audit", {})
+    if ax == 'baseline':
+        fired = '(ref)'
+    elif ax in ('M11','M12_thr085'):
+        fired = 'YES' if a.get('n_suppressed_by_gate',0) > 0 else 'NO!'
+    elif ax == 'M21':
+        fired = 'YES' if a.get('n_relabeled_by_m21',0) > 0 else 'check'
+    elif ax == 'M31':
+        fired = 'YES' if a.get('n_merged_by_m31',0) > 0 else 'check'
+    elif ax == 'M32':
+        fired = 'YES' if a.get('n_merged_by_m32',0) > 0 else 'check'
+    elif ax == 'phase1':
+        fired = 'YES' if (a.get('n_suppressed_by_gate',0)>0 or a.get('n_merged_by_m31',0)>0) else 'NO!'
+    mp = s.get('mAP'); db = s.get('mAP_minus_baseline')
+    lsc = s.get('temporal',{}).get('label_switch_count_total')
+    mp_s = 'None' if mp is None else f'{mp:.6f}'
+    db_s = 'None' if db is None else f'{db:+.5f}'
+    print(f"{ax:12s} {mp_s:>9s} {db_s:>9s} {str(lsc):>7s} {fired:>8s}  {a}")
+PY
+
+EXIT=$?
+echo "=== exit code: $EXIT ==="
+exit $EXIT

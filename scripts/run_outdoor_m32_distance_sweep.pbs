@@ -1,0 +1,59 @@
+#!/bin/bash
+#PBS -N outdoor_m32_dist_sweep
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=03:00:00
+#PBS -j oe
+
+# Outdoor After-fix (data-driven): M32 distance-threshold sweep on nuScenes
+# v1.0-trainval val (150 scenes). Cache-replay of the Step-2b CP proposals
+# (--no-gpu, no CenterPoint). Picks the distance that maximizes mAP, analogous
+# to the indoor M31 IoU sweep. Reference: baseline (γ-fixed) 0.3407; Step-2b
+# M32@2.0m = 0.3198 (the dist=2.0 row should reproduce it).
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+CACHE="${PROJECT_ROOT}/results/outdoor_native_temporal_cpcache_thr000_single"
+PARENT="${PROJECT_ROOT}/results/outdoor_m32_sweep"
+mkdir -p "$PARENT"
+LOG="$PARENT/run_$(date +%F).log"
+exec >"$LOG" 2>&1
+
+echo "=== Outdoor M32 distance sweep (150 scenes, cache-replay) ==="; echo "Date: $(date)"; hostname
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+for DIST in 2.0 1.5 1.0 0.5; do
+  echo; echo "########## M32 distance_threshold = ${DIST} m ##########"
+  python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+    --nuscenes-config configs/nuscenes_trainval.yaml \
+    --output          "${PARENT}/dist_${DIST}" \
+    --axes            M32 \
+    --scene-split     val \
+    --score-threshold 0.0 \
+    --association-threshold-m 2.0 \
+    --m32-distance    "${DIST}" \
+    --cp-cache-dir    "$CACHE" \
+    --no-gpu
+  echo "---- dist ${DIST} exit: $? ----"
+done
+
+echo; echo "=== sweep summary ==="
+python - "$PARENT" <<'PY'
+import json, os, sys, glob
+P=sys.argv[1]
+print(f"{'dist_m':>8s}{'mAP':>9s}{'NDS':>9s}{'merged':>9s}{'emit/prop':>16s}")
+for d in ("2.0","1.5","1.0","0.5"):
+    f=os.path.join(P,f"dist_{d}","axis_M32","metrics.json")
+    if not os.path.exists(f): print(f"{d:>8s}  (missing)"); continue
+    m=json.load(open(f)); a=m.get("fire_audit",{})
+    print(f"{d:>8s}{m.get('mAP',0):9.4f}{m.get('NDS',0):9.4f}{a.get('n_merged_by_m32',0):9d}{str(a.get('n_emitted_total'))+'/'+str(a.get('n_proposals_total')):>16s}")
+PY
+echo "=== done: $(date) ==="

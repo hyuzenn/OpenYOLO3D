@@ -1,0 +1,49 @@
+#!/bin/bash
+#PBS -N t26_nt_pbsC_m32
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=03:00:00
+#PBS -j oe
+
+# Step 2b PBS C — M32 | val (150 scenes).
+# Reuses the shared CP-proposal cache from PBS A (run with depend=afterok:B).
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+RUN_DIR=$(ls -d "${PROJECT_ROOT}"/results/*_outdoor_native_temporal_v01 2>/dev/null | tail -1)
+if [ -z "$RUN_DIR" ]; then
+  echo "ERROR: no native_temporal_v01 run dir (PBS A must run first)"; exit 2
+fi
+CACHE_DIR="${PROJECT_ROOT}/results/outdoor_native_temporal_cpcache_thr000_single"
+
+LOG="$RUN_DIR/run_pbs_c.log"
+exec >"$LOG" 2>&1
+
+echo "=== Step 2b PBS C — M32 ==="
+echo "=== Run directory: $RUN_DIR ==="
+echo "=== Cache directory: $CACHE_DIR ==="
+echo "=== Date: $(date) ==="
+hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+  --nuscenes-config configs/nuscenes_trainval.yaml \
+  --output          "$RUN_DIR" \
+  --axes            M32 \
+  --scene-split     val \
+  --score-threshold 0.0 \
+  --association-threshold-m 2.0 \
+  --m32-distance    2.0 \
+  --cp-cache-dir    "$CACHE_DIR"
+
+EXIT=$?
+echo "=== exit code: $EXIT ==="
+exit $EXIT
