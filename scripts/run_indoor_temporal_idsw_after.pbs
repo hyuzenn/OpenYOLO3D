@@ -1,0 +1,61 @@
+#!/bin/bash
+#PBS -N indoor_idsw_after
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=10:00:00
+#PBS -j oe
+
+# Task 3.2 — recompute temporal metrics (TTC + NEW id_switch / GT obj) for the
+# After-fix axes via the patched diagnosis.m22_m32_fix_ablation (312 scenes).
+#
+# Params (pass with: qsub -N <name> -v CONFIG=M22_after ...):
+#   CONFIG : one of M22_after | M32_after | M22+M32_after  (default M22_after)
+#
+# Output: results/m22_m32_fix/<tag>.json  where rows[].{ttc_mean, id_sw_per_obj}
+#   are the NEW fields. tag defaults to "<config>_after_312_temporal".
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+CONFIG="${CONFIG:-M22_after}"
+SAFE=$(echo "$CONFIG" | tr '+' '_' | tr 'A-Z' 'a-z')   # M22+M32_after -> m22_m32_after
+TAG="${TAG:-${SAFE}_312_temporal}"
+DATE=$(date +%F)
+LOGDIR="${PROJECT_ROOT}/results/m22_m32_fix"
+mkdir -p "$LOGDIR"
+LOG="${LOGDIR}/run_idsw_${SAFE}_${DATE}.log"
+exec >"$LOG" 2>&1
+
+echo "=== Task 3.2 indoor id_switch After axis ==="
+echo "Date: $(date) | CONFIG=$CONFIG | TAG=$TAG"
+hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+# ---- SMOKE GATE: 2 scenes, fail fast if the new metric path is broken -----
+echo; echo "########## SMOKE (2 scenes) ##########"
+python -u -m diagnosis.m22_m32_fix_ablation \
+    --configs "$CONFIG" --n-scenes 2 --tag "_smoke_${SAFE}" --idsw-iou 0.5
+export SMOKE_JSON="${LOGDIR}/_smoke_${SAFE}.json"
+python -u -c "
+import json, os, sys
+d = json.load(open(os.environ['SMOKE_JSON']))
+r = d['rows'][0]
+assert 'id_sw_per_obj' in r and 'ttc_mean' in r, 'new temporal fields missing'
+assert r['n_gt_instances'] > 0, 'n_gt==0'
+print('  OK', r['config'], 'ttc_mean=%s idsw=%s n_gt=%s per_obj=%s' % (
+    r['ttc_mean'], r['id_switch_total'], r['n_gt_instances'], r['id_sw_per_obj']))
+print('SMOKE OK')
+" || { echo '!!! SMOKE FAILED — aborting full run (no GPU hours wasted)'; exit 1; }
+
+# ---- FULL RUN: all 312 scenes --------------------------------------------
+echo; echo "########## FULL 312-scene run ##########"
+python -u -m diagnosis.m22_m32_fix_ablation \
+    --configs "$CONFIG" --n-scenes 0 --tag "$TAG" --idsw-iou 0.5
+echo "=== exit: $? ($(date)) ==="

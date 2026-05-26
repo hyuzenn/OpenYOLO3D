@@ -1,0 +1,124 @@
+#!/bin/bash
+#PBS -N nusc_temporal_full_150
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=96gb:Qlist=agpu
+#PBS -l walltime=20:00:00
+#PBS -j oe
+
+# ============================================================================
+# Outdoor Temporal Full-Scale Ablation (nuScenes val 150 scenes, 6019 samples)
+# ----------------------------------------------------------------------------
+# Proposal source : detguided (LiDAR-clustering open-vocab; YOLO-World 6-cam →
+#                              FrustumExtractor → PillarForeground → HDBSCAN)
+# Evaluator       : method_scannet.streaming.nuscenes_native_evaluator
+# Axes (7, sequential, single python process — shares loader + cache):
+#   1. baseline : pure detguided emission (no temporal layer)
+#   2. M11      : FrameCountingGate (N=3) — initial-wait stability margin
+#   3. M12      : BayesianGate (decay-on-miss; threshold 0.85)
+#   4. M21      : WeightedVoting track-relabel
+#   5. M31      : IoUMerger (vertex-set NMS, iou 0.5) — end-of-scene geometric
+#   6. M32      : HungarianMerger (real-time, distance_threshold 0.5 m — the
+#                                  outdoor sweep optimum)
+#   7. phase1   : M11 + M21 + M31 stacked (core stabilization bundle)
+#
+# Cache strategy : shared `--cp-cache-dir`, source-tagged `<token>.detguided.pkl`.
+#                  Baseline pass populates the cache (~6019 samples of YOLO+
+#                  HDBSCAN inference); the remaining 6 axes are cache-replays.
+# ============================================================================
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+EXP=outdoor_temporal_full_150_detguided
+N=$(printf '%02d' $(($(ls -d ${PROJECT_ROOT}/results/${DATE}_${EXP}_v* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+mkdir -p "$RUN_DIR/outputs"
+
+# Persistent shared cache — survives across re-submits so partial work isn't lost.
+CACHE_DIR="${PROJECT_ROOT}/results/outdoor_detguided_cpcache_thr000_full150"
+mkdir -p "$CACHE_DIR"
+
+# Snapshot configs into the run dir for reproducibility.
+cp configs/nuscenes_trainval.yaml          "$RUN_DIR/nuscenes_trainval.yaml"
+cp configs/openyolo3d_nuscenes_nusc10.yaml "$RUN_DIR/openyolo3d_nuscenes_nusc10.yaml"
+cp "$0"                                     "$RUN_DIR/submitted.pbs"
+
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "==========================================================================="
+echo " Outdoor Temporal Full-150 — 7-axis ablation on detguided"
+echo "==========================================================================="
+echo " Run dir   : $RUN_DIR"
+echo " Cache     : $CACHE_DIR  (pre-seed = $(ls "$CACHE_DIR" 2>/dev/null | wc -l) pkls)"
+echo " Date      : $(date)"
+echo " Host      : $(hostname)"
+nvidia-smi -L || true
+echo "==========================================================================="
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+  --nuscenes-config           configs/nuscenes_trainval.yaml \
+  --oy3d-config               configs/openyolo3d_nuscenes_nusc10.yaml \
+  --output                    "$RUN_DIR/outputs" \
+  --axes                      baseline M11 M12 M21 M31 M32 phase1 \
+  --scene-split               val \
+  --proposal-source           detguided \
+  --cp-cache-dir              "$CACHE_DIR" \
+  --score-threshold           0.0 \
+  --proposal-score-threshold  0.0 \
+  --association-threshold-m   2.0 \
+  --association-max-age       5 \
+  --m11-N                     3 \
+  --m12-threshold             0.85 \
+  --m31-iou                   0.5 \
+  --m32-distance              0.5
+EXIT=$?
+echo "=== evaluator exit: $EXIT ==="
+
+# ---------- summary table (mAP/NDS/audit per axis) ----------
+echo
+echo "=== full-150 7-axis ablation summary ==="
+python - "$RUN_DIR/outputs" <<'PY'
+import json, os, sys
+P = sys.argv[1]
+f = os.path.join(P, "all_summaries.json")
+if not os.path.exists(f):
+    print("NO all_summaries.json — pipeline did not finish"); sys.exit(0)
+S = json.load(open(f))
+hdr = ("axis","mAP","NDS","Δbase","lsc","ttc_mean","emit/prop",
+       "gated","relabel","m31","m32","wall_s")
+print("{:>8s} {:>7s} {:>7s} {:>7s} {:>5s} {:>8s} {:>14s} {:>7s} {:>7s} {:>6s} {:>6s} {:>8s}".format(*hdr))
+for r in S:
+    a = r.get("fire_audit", {})
+    t = r.get("temporal", {})
+    ttc = t.get("time_to_confirm", {})
+    def fmt(x, w, p):
+        return "None".rjust(w) if x is None else f"{x:>{w}.{p}f}"
+    print("{:>8s} {} {} {} {:>5d} {} {:>14s} {:>7d} {:>7d} {:>6d} {:>6d} {:>8.0f}".format(
+        r["axis"],
+        fmt(r.get("mAP"), 7, 4),
+        fmt(r.get("NDS"), 7, 4),
+        fmt(r.get("mAP_minus_baseline"), 7, 4),
+        int(t.get("label_switch_count_total", 0)),
+        fmt(ttc.get("mean"), 8, 3),
+        f"{a.get('n_emitted_total',0)}/{a.get('n_proposals_total',0)}",
+        int(a.get("n_suppressed_by_gate", 0)),
+        int(a.get("n_relabeled_by_m21", 0)),
+        int(a.get("n_merged_by_m31", 0)),
+        int(a.get("n_merged_by_m32", 0)),
+        float(r.get("axis_walltime_s", 0.0)),
+    ))
+PY
+
+echo
+echo "=== done: $(date) ==="
+exit $EXIT

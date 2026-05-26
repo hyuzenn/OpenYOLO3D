@@ -1,0 +1,76 @@
+#!/bin/bash
+#PBS -N detguided_smoke
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=01:30:00
+#PBS -j oe
+
+# Smoke test: detguided (LiDAR-clustering open-vocab) proposal source through the
+# full audited temporal layer, on 3 val scenes. Verifies the GPU path end-to-end:
+# YOLO-World 6-cam inference -> FrustumExtractor -> PillarForeground -> HDBSCAN ->
+# _detguided_to_proposals -> association -> M11/M32 (M32 @ default 0.5 m).
+# Axes: baseline + M11 + M32 (light pipeline-integrity check).
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+EXP=detguided_smoke
+N=$(printf '%02d' $(($(ls -d ${PROJECT_ROOT}/results/${DATE}_${EXP}_v* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+CACHE_DIR="${RUN_DIR}/detguided_cache"
+mkdir -p "$CACHE_DIR"
+
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== detguided smoke (3 val scenes, axes baseline/M11/M32) ==="
+echo "=== Run dir: $RUN_DIR ==="; echo "Date: $(date)"; hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+  --nuscenes-config configs/nuscenes_trainval.yaml \
+  --oy3d-config     configs/openyolo3d_nuscenes_nusc10.yaml \
+  --output          "$RUN_DIR" \
+  --axes            baseline M11 M32 \
+  --scene-split     val \
+  --scene-limit     3 \
+  --proposal-source detguided \
+  --cp-cache-dir    "$CACHE_DIR"
+EXIT=$?
+echo "=== evaluator exit: $EXIT ==="
+
+echo; echo "=== smoke summary ==="
+python - "$RUN_DIR" <<'PY'
+import json, sys, os
+run = sys.argv[1]
+f = os.path.join(run, "all_summaries.json")
+if not os.path.exists(f):
+    print("NO all_summaries.json — pipeline did not finish"); sys.exit(0)
+S = json.load(open(f))
+print(f"{'axis':12s}{'mAP':>9s}{'NDS':>9s}{'emit/prop':>16s}  fire-audit")
+for r in S:
+    a = r.get("fire_audit", {})
+    mp = r.get("mAP"); nds = r.get("NDS")
+    print(f"{r['axis']:12s}{(mp if mp is None else round(mp,4)):>9}{(nds if nds is None else round(nds,4)):>9}"
+          f"{str(a.get('n_emitted_total'))+'/'+str(a.get('n_proposals_total')):>16}  "
+          f"gated={a.get('n_suppressed_by_gate')} m32={a.get('n_merged_by_m32')}")
+# integrity checks
+base = next((r for r in S if r["axis"]=="baseline"), None)
+nprop = base["fire_audit"]["n_proposals_total"] if base else 0
+print()
+print(f"detguided produced proposals: {nprop} -> {'OK' if nprop>0 else 'FAIL (no clusters!)'}")
+m32 = next((r for r in S if r["axis"]=="M32"), None)
+if m32:
+    print(f"M32 merges (0.5 m): {m32['fire_audit'].get('n_merged_by_m32')} "
+          f"-> {'fired' if m32['fire_audit'].get('n_merged_by_m32',0)>=0 else '?'}")
+PY
+echo "=== done: $(date) ==="
+exit $EXIT

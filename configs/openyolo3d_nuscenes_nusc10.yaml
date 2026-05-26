@@ -1,0 +1,31 @@
+# OpenYOLO3D inference config — RESTRICTED to the nuScenes-10 official classes.
+# Derived from openyolo3d_nuscenes.yaml; the only change is text_prompts:
+# the 5 open-vocab extras (tree, pole, building, traffic_sign, traffic_light)
+# are removed because they swamped the detguided proposal set (~80% of boxes
+# were building/tree/pole and the NUSC_10 labels were skewed, e.g. barrier
+# 1405 >> car 124), driving nuScenes-detection mAP to ~0. Restricting YOLO-World
+# to the 10 scored classes suppresses that background noise.
+# Kept as a separate file so the original (open-vocab) config and γ-pipeline
+# runs are unaffected.
+
+openyolo3d:
+  frequency: 1
+  vis_depth_threshold: 0.4
+  depth_scale: 1000.0
+  topk: 40
+  topk_per_image: -1
+
+network2d:
+  text_prompts: ["car", "truck", "bus", "trailer", "construction_vehicle", "pedestrian", "motorcycle", "bicycle", "traffic_cone", "barrier"]
+  topk: 100
+  th: 0.1
+  nms: 0.3
+  use_amp: False
+  pretrained_path: "pretrained/checkpoints/yolo_world_v2_x_obj365v1_goldg_cc3mlite_pretrain_1280ft-14996a36.pth"
+  config_path: "pretrained/configs/yolo_world_v2_x_vlpan_bn_2e-3_100e_4x8gpus_obj365v1_goldg_train_lvis_minival.py"
+
+network3d:
+  pretrained_path: "pretrained/checkpoints/scannet200_val.ckpt"
+  th: 0.02
+  nms: 0.1
+  is_gt: False

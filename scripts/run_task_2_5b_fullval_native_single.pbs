@@ -1,0 +1,48 @@
+#!/bin/bash
+#PBS -N t25b_fullval_native
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=03:00:00
+#PBS -j oe
+
+# Task 2.5 Step 2a — full-val native CenterPoint single-sweep baseline.
+# class-map-fixed adapter + native CenterPoint head (YOLO-World bypassed).
+# Single-sweep needs only keyframes (all present) → no sweep download.
+# All 150 official v1.0-trainval val scenes. Output: mAP + NDS + per-class AP.
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+EXP=outdoor_centerpoint_native_fullval
+N=$(printf '%02d' $(($(ls -d ${PROJECT_ROOT}/results/${DATE}_${EXP}_v* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+mkdir -p "$RUN_DIR"
+
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Task 2.5 Step 2a — full-val native CenterPoint single-sweep ==="
+echo "=== Run directory: $RUN_DIR ==="
+echo "=== Date: $(date) ==="
+hostname
+nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+python -u scripts/centerpoint_native_map_sanity.py \
+  --nuscenes-config configs/nuscenes_trainval.yaml \
+  --output          "$RUN_DIR" \
+  --scenes-mode     all \
+  --sweep-mode      single \
+  --score-threshold 0.0
+
+EXIT=$?
+echo "=== exit code: $EXIT ==="
+exit $EXIT

@@ -124,9 +124,23 @@ class NativeTemporalNuScenesEvaluator:
         association_max_age: int = 5,
         cp_cache_dir: Optional[str] = None,
         tmp_dir: Optional[str] = None,
+        proposal_source: str = "gamma",       # gamma (CenterPoint) | detguided
+        oy3d=None,                            # OpenYolo3D (network_2d) — detguided
+        detguided_generator=None,            # DetectionGuidedClusterer | None (cache-only)
+        text_prompts: Optional[list] = None,  # YOLO-World class names (detguided)
+        proposal_score_threshold: float = 0.0,  # reliability gate (applied on read)
     ) -> None:
         self.loader = loader
         self.cp = cp_proposals
+        self.proposal_source = str(proposal_source)
+        self.proposal_score_threshold = float(proposal_score_threshold)
+        self.oy3d = oy3d
+        self.detguided = detguided_generator
+        self.text_prompts = list(text_prompts) if text_prompts is not None else None
+        if (self.proposal_source == "detguided" and self.detguided is None
+                and not cp_cache_dir):
+            raise ValueError(
+                "proposal_source=detguided requires detguided_generator (or a complete cache)")
         self.association_threshold_m = float(association_threshold_m)
         self.association_max_age = int(association_max_age)
         self.cp_cache_dir = cp_cache_dir
@@ -257,22 +271,52 @@ class NativeTemporalNuScenesEvaluator:
         return ego_pose, T_lidar_to_ego, gts
 
     def _get_proposals(self, sample_token: str) -> list[dict]:
-        """CenterPoint native proposals (NUSC_10 only), from cache or live."""
+        """Active-source proposals with the reliability score-gate applied.
+
+        The gate filters on read (the cache always stores the unfiltered set),
+        so one cache serves any threshold and the v02 cache is reused as-is.
+        """
+        props = self._proposals_raw(sample_token)
+        if self.proposal_score_threshold > 0.0:
+            props = [p for p in props
+                     if float(p.get("score", 0.0)) >= self.proposal_score_threshold]
+        return props
+
+    def _proposals_raw(self, sample_token: str) -> list[dict]:
+        """Standard proposal dicts from the active source, cache or live.
+
+        Cache key is source-tagged so the γ and detguided caches never collide:
+        "<token>.pkl" for gamma (unchanged, backward-compatible),
+        "<token>.detguided.pkl" for detguided.
+        """
         if sample_token in self._scene_cache:
             return self._scene_cache[sample_token]
-        # Disk cache.
+        suffix = "" if self.proposal_source == "gamma" else f".{self.proposal_source}"
         if self.cp_cache_dir:
-            fp = osp.join(self.cp_cache_dir, f"{sample_token}.pkl")
+            fp = osp.join(self.cp_cache_dir, f"{sample_token}{suffix}.pkl")
             if osp.exists(fp):
                 with open(fp, "rb") as f:
                     props = pickle.load(f)
                 self._scene_cache[sample_token] = props
                 return props
+        if self.proposal_source == "gamma":
+            props = self._gamma_proposals(sample_token)
+        elif self.proposal_source == "detguided":
+            props = self._detguided_proposals(sample_token)
+        else:
+            raise ValueError(f"unknown proposal_source={self.proposal_source!r}")
+        self._scene_cache[sample_token] = props
+        if self.cp_cache_dir:
+            with open(osp.join(self.cp_cache_dir, f"{sample_token}{suffix}.pkl"), "wb") as f:
+                pickle.dump(props, f)
+        return props
+
+    def _gamma_proposals(self, sample_token: str) -> list[dict]:
+        """Native CenterPoint proposals (NUSC_10 only) — the 0.3407 anchor path."""
         if self.cp is None:
             raise RuntimeError(
                 f"no cached proposals for {sample_token[:8]} and cp_proposals is None")
-        # Live inference. Use loader._load for byte-identical input to the
-        # 0.3407 native anchor (single-sweep config); image I/O is paid once.
+        # loader._load gives byte-identical single-sweep input to the anchor.
         item = self.loader._load(sample_token)
         pc = item["point_cloud"]
         nusc = self.loader.nusc
@@ -282,12 +326,101 @@ class NativeTemporalNuScenesEvaluator:
         _set_mm_scope("mmdet3d")
         out = self.cp.generate(pc, T_lidar_to_ego,
                                tmp_bin_path=osp.join(self.tmp_dir, "_pc.bin"))
-        props = [p for p in out["proposals"]
-                 if p.get("cls_name") in NUSC_10_SET]
-        self._scene_cache[sample_token] = props
-        if self.cp_cache_dir:
-            with open(osp.join(self.cp_cache_dir, f"{sample_token}.pkl"), "wb") as f:
-                pickle.dump(props, f)
+        return [p for p in out["proposals"] if p.get("cls_name") in NUSC_10_SET]
+
+    # -- detguided (LiDAR-clustering open-vocab) proposal source ----------
+    def _run_yolo_per_camera(self, images: dict, intrinsics: dict,
+                             cam_to_ego: dict) -> dict:
+        """YOLO-World on each camera image. Per-cam: {bbox, labels(int),
+        scores, image_hw, intrinsic, cam_to_ego}. (Ported from the γ pipeline.)"""
+        _set_mm_scope("mmyolo")
+        out = {}
+        for cam, img in images.items():
+            try:
+                result = self.oy3d.network_2d.inference_detector([img])
+            except Exception:
+                tmp_path = osp.join(self.tmp_dir, f"_y_{cam}.jpg")
+                from PIL import Image as PILImage
+                PILImage.fromarray(img.astype(np.uint8)).save(tmp_path)
+                result = self.oy3d.network_2d.inference_detector([tmp_path])
+            entry = next(iter(result.values())) if result else None
+            out[cam] = {
+                "bbox": None if entry is None else entry.get("bbox"),
+                "labels": None if entry is None else entry.get("labels"),
+                "scores": None if entry is None else entry.get("scores"),
+                "image_hw": (img.shape[0], img.shape[1]),
+                "intrinsic": intrinsics[cam],
+                "cam_to_ego": cam_to_ego[cam],
+            }
+        return out
+
+    def _detguided_proposals(self, sample_token: str) -> list[dict]:
+        """Detection-guided LiDAR clustering: YOLO-World 2D dets → frustum →
+        pillar foreground → HDBSCAN → per-cluster 3D proposals carrying the
+        open-vocab class/score, mapped to the standard proposal-dict contract."""
+        if self.detguided is None or self.oy3d is None:
+            raise RuntimeError(
+                f"detguided requires detguided_generator + oy3d (sample {sample_token[:8]})")
+        item = self.loader._load(sample_token)          # needs images for YOLO
+        pc = item["point_cloud"]
+        cam_outputs = self._run_yolo_per_camera(
+            item["images"], item["intrinsics"], item["cam_to_ego"])
+        prompts = self.text_prompts or []
+
+        def _name(x):
+            i = int(x)
+            return prompts[i] if 0 <= i < len(prompts) else f"class_{i}"
+
+        det, intr, c2e, hw = {}, {}, {}, {}
+        for cam, o in cam_outputs.items():
+            intr[cam], c2e[cam], hw[cam] = o["intrinsic"], o["cam_to_ego"], o["image_hw"]
+            b, l, s = o["bbox"], o["labels"], o["scores"]
+            if b is None or len(b) == 0:
+                det[cam] = {"xyxy": [], "labels": [], "scores": []}
+                continue
+            bn = b.cpu().numpy() if hasattr(b, "cpu") else np.asarray(b)
+            ln = l.cpu().numpy() if hasattr(l, "cpu") else np.asarray(l)
+            sn = s.cpu().numpy() if hasattr(s, "cpu") else np.asarray(s)
+            det[cam] = {
+                "xyxy": [[float(v) for v in bn[j]] for j in range(bn.shape[0])],
+                "labels": [_name(ln[j]) for j in range(bn.shape[0])],
+                "scores": [float(sn[j]) for j in range(bn.shape[0])],
+            }
+        dg = self.detguided.generate(pc, det, intr, c2e, hw)
+        return self._detguided_to_proposals(dg, pc)
+
+    @staticmethod
+    def _detguided_to_proposals(dg_out: dict, point_cloud_ego: np.ndarray) -> list[dict]:
+        """DetectionGuidedClusterer output → standard proposal dicts.
+
+        proposals_meta carries (class, score, centroid_ego) but no box dims, so
+        derive the axis-aligned (yaw=0) ego AABB from each cluster's point mask
+        (mirrors _beta1_clusters_to_proposals). The open-vocab class is kept so
+        it drives class-aware association + the running_labeler/M21 vote — no
+        separate relabel (minimal-change fork (i))."""
+        metas = dg_out.get("proposals_meta", [])
+        masks = dg_out.get("proposal_masks")
+        props: list[dict] = []
+        if masks is None or masks.shape[1] == 0:
+            return props
+        for j, m in enumerate(metas):
+            col = masks[:, j]
+            if not col.any():
+                continue
+            pts = point_cloud_ego[col, :3]
+            mn, mx = pts.min(axis=0), pts.max(axis=0)
+            center = (mn + mx) / 2.0
+            dims = np.clip(mx - mn, 1e-3, None)
+            cls_name = m.get("class")
+            props.append({
+                "cls_name": cls_name,
+                "cls_idx": NAME_TO_IDX.get(cls_name, -1),
+                "score": float(m.get("score", 0.0)),
+                "bbox_lidar": [float(center[0]), float(center[1]), float(center[2]),
+                               float(dims[0]), float(dims[1]), float(dims[2]), 0.0],
+                "centroid_ego": [float(center[0]), float(center[1]), float(center[2])],
+                "_source": "detguided",
+            })
         return props
 
     # -- per-sample -------------------------------------------------------
@@ -539,6 +672,29 @@ def _build_cp(score_threshold: float):
                                         score_threshold=score_threshold, device="cuda:0")
 
 
+def _build_oy3d(oy3d_config: str):
+    from utils import OpenYolo3D
+    return OpenYolo3D(oy3d_config)
+
+
+def _build_detguided_generator():
+    """DetectionGuidedClusterer = FrustumExtractor + PillarForegroundExtractor +
+    HDBSCAN. The inner HDBSCAN runs on pillar-foreground points, so its own
+    ground filter / distance cap are disabled (the pillar + frustum already
+    bound the region)."""
+    from preprocessing.detection_frustum import FrustumExtractor
+    from preprocessing.pillar_foreground import PillarForegroundExtractor
+    from adapters.lidar_proposals import LiDARProposalGenerator
+    from proposal.detection_guided_clustering import DetectionGuidedClusterer
+    frustum = FrustumExtractor(expand_ratio=0.10, min_depth=1.0, max_depth=80.0)
+    pillar = PillarForegroundExtractor(pillar_size_xy=(0.5, 0.5), z_threshold=0.3,
+                                       ground_estimation="ransac")
+    hdb = LiDARProposalGenerator(min_cluster_size=20, min_samples=5,
+                                 cluster_selection_epsilon=0.5,
+                                 ground_filter=None, max_distance=None)
+    return DetectionGuidedClusterer(frustum, pillar, hdb, min_points_per_frustum=10)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--nuscenes-config", default="configs/nuscenes_trainval.yaml")
@@ -551,7 +707,16 @@ def main():
     ap.add_argument("--association-threshold-m", type=float, default=DEFAULT_ASSOC_DIST_M)
     ap.add_argument("--association-max-age", type=int, default=5)
     ap.add_argument("--cp-cache-dir", default=None,
-                    help="shared CenterPoint-proposal cache (populated once, reused).")
+                    help="shared proposal cache (source-tagged: <token>.pkl for gamma, "
+                         "<token>.detguided.pkl for detguided).")
+    ap.add_argument("--proposal-source", choices=["gamma", "detguided"], default="gamma",
+                    help="gamma = native CenterPoint (0.3407 anchor); detguided = "
+                         "LiDAR-clustering open-vocab (YOLO-World frustum + HDBSCAN).")
+    ap.add_argument("--oy3d-config", default="configs/openyolo3d_nuscenes.yaml",
+                    help="OpenYolo3D (YOLO-World) config — required for detguided.")
+    ap.add_argument("--proposal-score-threshold", type=float, default=0.0,
+                    help="reliability gate: drop proposals with score below this "
+                         "(applied on read; cache stores the unfiltered set).")
     ap.add_argument("--m11-N", type=int, default=3)
     ap.add_argument("--m12-threshold", type=float, default=0.85)
     ap.add_argument("--m31-iou", type=float, default=0.5)
@@ -574,9 +739,19 @@ def main():
     print(f"  scenes={len(loader.nusc.scene)} samples={len(loader.nusc.sample)}", flush=True)
 
     cp = None
-    if not args.no_gpu:
+    if args.proposal_source == "gamma" and not args.no_gpu:
         print("Loading CenterPoint (γ, class-map fixed) ...", flush=True)
         cp = _build_cp(score_threshold=args.score_threshold)
+
+    oy3d = detg = text_prompts = None
+    if args.proposal_source == "detguided":
+        import yaml
+        with open(args.oy3d_config) as f:
+            text_prompts = list(yaml.safe_load(f)["network2d"]["text_prompts"])
+        if not args.no_gpu:
+            print("Loading OpenYolo3D (YOLO-World) + DetectionGuidedClusterer ...", flush=True)
+            oy3d = _build_oy3d(args.oy3d_config)
+            detg = _build_detguided_generator()
 
     if args.scenes:
         scenes = list(args.scenes)
@@ -586,14 +761,17 @@ def main():
         scenes = [s["token"] for s in loader.nusc.scene]
     if args.scene_limit and args.scene_limit > 0:
         scenes = scenes[: args.scene_limit]
-    print(f"  axes={args.axes} scenes={len(scenes)} split={args.scene_split} "
-          f"score_thr={args.score_threshold}", flush=True)
+    print(f"  source={args.proposal_source} axes={args.axes} scenes={len(scenes)} "
+          f"split={args.scene_split} score_thr={args.score_threshold}", flush=True)
 
     ev = NativeTemporalNuScenesEvaluator(
         loader=loader, cp_proposals=cp,
         association_threshold_m=args.association_threshold_m,
         association_max_age=args.association_max_age,
-        cp_cache_dir=args.cp_cache_dir)
+        cp_cache_dir=args.cp_cache_dir,
+        proposal_source=args.proposal_source,
+        oy3d=oy3d, detguided_generator=detg, text_prompts=text_prompts,
+        proposal_score_threshold=args.proposal_score_threshold)
 
     # Baseline mAP anchor for the fire-audit delta (read if a sibling baseline
     # axis was already written in this run dir).

@@ -1,0 +1,51 @@
+#!/bin/bash
+#PBS -N t25_native_sanity
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=02:00:00
+#PBS -j oe
+
+# Task 2.5 Stage 3 (reduced scope) — native CenterPoint mAP sanity.
+# Decisive checkpoint-health test: native CenterPoint label+score → nuScenes
+# devkit eval (YOLO-World bypassed), single-sweep vs 10-sweep on the val
+# scenes whose LiDAR sweeps are actually on disk (~4 of 150). Answers:
+# does multi-sweep restore CenterPoint to ~0.5+ mAP?
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+EXP=outdoor_centerpoint_fixed
+N=$(printf '%02d' $(($(ls -d ${PROJECT_ROOT}/results/${DATE}_${EXP}_v* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+mkdir -p "$RUN_DIR"
+cp configs/nuscenes_trainval_multisweep.yaml "$RUN_DIR/nuscenes_config_multisweep.yaml"
+
+LOG="$RUN_DIR/run_native_sanity.log"
+exec >"$LOG" 2>&1
+
+echo "=== Task 2.5 native CenterPoint mAP sanity ==="
+echo "=== Run directory: $RUN_DIR ==="
+echo "=== Date: $(date) ==="
+hostname
+nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+python -u scripts/centerpoint_native_map_sanity.py \
+  --nuscenes-config configs/nuscenes_trainval.yaml \
+  --output          "$RUN_DIR" \
+  --num-sweeps      10 \
+  --scenes-mode     covered \
+  --sweep-mode      both \
+  --score-threshold 0.0
+
+EXIT=$?
+echo "=== exit code: $EXIT ==="
+exit $EXIT

@@ -34,14 +34,20 @@ CONFIGS = [
 ]
 
 
-def run_config(oy3d, cfg, cache_dir, scenes, has_m22, m22_kw, has_m32, m32_kw):
+def run_config(oy3d, cfg, cache_dir, scenes, has_m22, m22_kw, has_m32, m32_kw,
+               idsw_iou=0.5):
     from method_scannet.streaming.wrapper import StreamingScanNetEvaluator
     from method_scannet.streaming.hooks_streaming import (
         install_method_22, install_method_32, uninstall_all_streaming)
-    from method_scannet.streaming.metrics import label_switch_count
+    from method_scannet.streaming.metrics import (
+        label_switch_count, time_to_confirm, id_switch_count)
+    from method_scannet.streaming import gt_matching as _gtm
 
     preds_full = {}
     lsc_total = 0
+    ttc_values = []          # flat list of per-instance TTC across all scenes
+    idsw_total = 0           # Σ ID switches over GT instances, all scenes
+    n_gt_total = 0           # Σ GT instances, all scenes (ID Sw / Obj denom)
     for sc in scenes:
         scene_dir = PROJECT_ROOT / "data" / "scannet200" / sc
         ev = StreamingScanNetEvaluator(
@@ -68,8 +74,30 @@ def run_config(oy3d, cfg, cache_dir, scenes, has_m22, m22_kw, has_m32, m32_kw):
             "pred_classes": preds["pred_classes"],
             "pred_scores": np.ones_like(preds["pred_scores"]),
         }
-        lsc_total += int(label_switch_count(list(ev.pred_history)))
-    return preds_full, lsc_total
+        pred_history = list(ev.pred_history)
+        lsc_total += int(label_switch_count(pred_history))
+        # TTC (K=3) — same metric the main ablation runner records.
+        ttc_values.extend(time_to_confirm(pred_history, K=3).values())
+        # ID switches per GT instance (Task 3.2).
+        gt_txt = PROJECT_ROOT / "data" / "scannet200" / "ground_truth" / f"{sc}.txt"
+        try:
+            gmatch, n_gt = _gtm.gt_matching_for_scene(
+                pred_history, ev.instance_vertex_masks, str(gt_txt),
+                iou_threshold=idsw_iou)
+            idsw_total += int(id_switch_count(pred_history, gmatch))
+            n_gt_total += int(n_gt)
+        except Exception as exc:
+            print(f"  [id_switch] {sc} failed: {exc!r}", flush=True)
+    temporal = {
+        "ttc_n_instances": len(ttc_values),
+        "ttc_mean": float(np.mean(ttc_values)) if ttc_values else None,
+        "ttc_median": float(np.median(ttc_values)) if ttc_values else None,
+        "id_switch_total": idsw_total,
+        "n_gt_instances": n_gt_total,
+        "id_sw_per_obj": (idsw_total / n_gt_total) if n_gt_total else None,
+        "idsw_iou_threshold": idsw_iou,
+    }
+    return preds_full, lsc_total, temporal
 
 
 def main():
@@ -82,6 +110,9 @@ def main():
                     help="subset of config names to run (default: all).")
     ap.add_argument("--tag", default="m22_m32_fix_ablation",
                     help="output JSON basename (results/m22_m32_fix/<tag>.json).")
+    ap.add_argument("--idsw-iou", type=float, default=0.5,
+                    help="Full-scene IoU threshold for GT↔pred matching in "
+                         "the id_switch_count metric (default 0.5).")
     args = ap.parse_args()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -112,15 +143,21 @@ def main():
     rows = []
     for name, has22, kw22, has32, kw32 in configs:
         print(f"\n[{name}] m22={kw22 if has22 else '-'} m32={kw32 if has32 else '-'}", flush=True)
-        preds_full, lsc = run_config(oy3d, cfg, cache_dir, scenes, has22, kw22, has32, kw32)
+        preds_full, lsc, temporal = run_config(
+            oy3d, cfg, cache_dir, scenes, has22, kw22, has32, kw32,
+            idsw_iou=args.idsw_iou)
         avgs, _ar, _rc, _pc = evaluate_scannet200(
             preds_full, GT_DIR, output_file="/tmp/_m22m32_eval.txt",
             dataset="scannet200", pretrained_on_scannet200=True)
         n_pred = int(sum(v["pred_classes"].shape[0] for v in preds_full.values()))
         row = {"config": name, "AP": float(avgs["all_ap"]),
-               "AP_50": float(avgs["all_ap_50%"]), "lsc_total": lsc, "n_pred": n_pred}
+               "AP_50": float(avgs["all_ap_50%"]), "lsc_total": lsc, "n_pred": n_pred,
+               **temporal}
         rows.append(row)
-        print(f"[{name}] AP={row['AP']:.5f} AP50={row['AP_50']:.5f} lsc={lsc} n_pred={n_pred}", flush=True)
+        print(f"[{name}] AP={row['AP']:.5f} AP50={row['AP_50']:.5f} lsc={lsc} "
+              f"n_pred={n_pred} ttc_mean={temporal['ttc_mean']} "
+              f"idsw={temporal['id_switch_total']} "
+              f"id_sw_per_obj={temporal['id_sw_per_obj']}", flush=True)
 
     report = {"n_scenes": len(scenes), "scenes": scenes, "rows": rows}
     out_path = OUT_DIR / f"{args.tag}.json"

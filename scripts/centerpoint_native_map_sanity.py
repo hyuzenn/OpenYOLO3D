@@ -194,9 +194,16 @@ def main():
     ap.add_argument("--score-threshold", type=float, default=0.0,
                     help="0.0 keeps all head outputs (best for AP recall)")
     ap.add_argument("--num-sweeps", type=int, default=10)
-    ap.add_argument("--covered-only", action="store_true", default=True,
-                    help="restrict to val scenes whose LiDAR sweeps are on disk")
+    ap.add_argument("--scenes-mode", choices=["covered", "all"], default="covered",
+                    help="'covered' = only val scenes with LiDAR sweeps on disk (for "
+                         "multi-sweep); 'all' = full 150-scene val (single-sweep safe).")
+    ap.add_argument("--sweep-mode", choices=["single", "multi", "both"], default="both",
+                    help="which passes to run. 'multi'/'both' require sweep-covered scenes.")
     args = ap.parse_args()
+
+    if args.sweep_mode in ("multi", "both") and args.scenes_mode == "all":
+        raise SystemExit("multi-sweep over 'all' val scenes would crash on the 146 "
+                         "keyframe-only scenes; use --scenes-mode covered for multi.")
 
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
@@ -204,17 +211,18 @@ def main():
     print("Loading nuScenes ...", flush=True)
     loader = NuScenesLoader(config_path=args.nuscenes_config)
     val = _list_val_scenes(loader)
-    if args.covered_only:
+    if args.scenes_mode == "covered":
         scenes = _covered_val_scenes(loader, args.num_sweeps)
         names = [loader.nusc.get("scene", s)["name"] for s in scenes]
         print(f"  val scenes total {len(val)}; sweep-covered: {len(scenes)} {names}",
               flush=True)
     else:
         scenes = val
+        print(f"  val scenes total {len(val)}; using ALL (single-sweep)", flush=True)
     if args.scene_limit and args.scene_limit > 0:
         scenes = scenes[: args.scene_limit]
     if not scenes:
-        raise SystemExit("No sweep-covered val scenes found — cannot run multi-sweep sanity.")
+        raise SystemExit("No scenes selected — check --scenes-mode / data.")
     print(f"  using {len(scenes)} scenes", flush=True)
 
     print("Loading CenterPoint ...", flush=True)
@@ -229,23 +237,23 @@ def main():
                                       device="cuda:0")
 
     results = {}
-    # Controlled comparison: single variable = sweep count.
-    loader.multi_sweep = False
-    loader.num_sweeps = 1
-    results["single_sweep"] = _eval_pass(loader, cp, scenes, out, "single_sweep")
-
-    loader.multi_sweep = True
-    loader.num_sweeps = args.num_sweeps
-    results["multi_sweep"] = _eval_pass(loader, cp, scenes, out, "multi_sweep")
+    if args.sweep_mode in ("single", "both"):
+        loader.multi_sweep = False
+        loader.num_sweeps = 1
+        results["single_sweep"] = _eval_pass(loader, cp, scenes, out, "single_sweep")
+    if args.sweep_mode in ("multi", "both"):
+        loader.multi_sweep = True
+        loader.num_sweeps = args.num_sweeps
+        results["multi_sweep"] = _eval_pass(loader, cp, scenes, out, "multi_sweep")
 
     (out / "native_map_sanity.json").write_text(json.dumps(results, indent=2))
-    print("\n=== NATIVE CenterPoint mAP sanity ===")
-    print(f"single-sweep : mAP={results['single_sweep']['mAP']:.4f} "
-          f"NDS={results['single_sweep']['NDS']:.4f} "
-          f"pts={results['single_sweep']['mean_points_per_sample']:.0f}")
-    print(f"multi-sweep  : mAP={results['multi_sweep']['mAP']:.4f} "
-          f"NDS={results['multi_sweep']['NDS']:.4f} "
-          f"pts={results['multi_sweep']['mean_points_per_sample']:.0f}")
+    print("\n=== NATIVE CenterPoint mAP ===")
+    for k in ("single_sweep", "multi_sweep"):
+        if k in results:
+            r = results[k]
+            print(f"{k:13s}: mAP={r['mAP']:.4f} NDS={r['NDS']:.4f} "
+                  f"pts={r['mean_points_per_sample']:.0f} "
+                  f"n_samples={r['n_samples']} n_scenes={r['n_scenes']}")
     print(f"wrote {out / 'native_map_sanity.json'}")
 
 

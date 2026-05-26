@@ -1,0 +1,67 @@
+#!/bin/bash
+#PBS -N indoor_idsw_base
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=10:00:00
+#PBS -j oe
+
+# Task 3.2 — recompute temporal metrics (lsc + TTC + NEW id_switch / GT obj)
+# for the indoor base axes via the patched eval_streaming_ablation.
+#
+# Params (pass with: qsub -N <name> -v AXES="baseline M11",OUTTAG=base_a ...):
+#   AXES   : space-separated axis names (default "baseline M11 M21 M31")
+#   OUTTAG : suffix for the output dir (default "all")
+#
+# Output: results/<DATE>_indoor_temporal_idsw_<OUTTAG>/axis_*/temporal_metrics.json
+#   -> the NEW field is temporal_metrics.json["id_switch"]["per_obj"].
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+AXES="${AXES:-baseline M11 M21 M31}"
+OUTTAG="${OUTTAG:-all}"
+CACHE="${PROJECT_ROOT}/results/2026-05-13_mask3d_cache"
+DATE=$(date +%F)
+OUT="${PROJECT_ROOT}/results/${DATE}_indoor_temporal_idsw_${OUTTAG}"
+mkdir -p "$OUT"
+LOG="${OUT}/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Task 3.2 indoor id_switch base axes ==="
+echo "Date: $(date) | AXES=[$AXES] | OUT=$OUT"
+hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+# ---- SMOKE GATE: 2 scenes, fail fast if the new metric path is broken -----
+echo; echo "########## SMOKE (2 scenes) ##########"
+SMOKE="${OUT}/_smoke"
+python -u -m method_scannet.streaming.eval_streaming_ablation \
+    --cache-dir "$CACHE" --output "$SMOKE" --axes $AXES --limit 2 --idsw-iou 0.5
+export SMOKE
+python -u -c "
+import glob, json, os, sys
+files = glob.glob(os.path.join(os.environ['SMOKE'], 'axis_*', 'temporal_metrics.json'))
+assert files, 'no smoke temporal_metrics.json produced'
+for f in files:
+    d = json.load(open(f))
+    assert 'id_switch' in d, 'id_switch key missing in ' + f
+    assert d['id_switch']['n_gt_instances'] > 0, 'n_gt==0 in ' + f
+    print('  OK', os.path.basename(os.path.dirname(f)),
+          'idsw_total=%s n_gt=%s per_obj=%s' % (
+              d['id_switch']['total'], d['id_switch']['n_gt_instances'],
+              d['id_switch']['per_obj']))
+print('SMOKE OK (%d axes)' % len(files))
+" || { echo '!!! SMOKE FAILED — aborting full run (no GPU hours wasted)'; exit 1; }
+
+# ---- FULL RUN: all 312 scenes --------------------------------------------
+echo; echo "########## FULL 312-scene run ##########"
+python -u -m method_scannet.streaming.eval_streaming_ablation \
+    --cache-dir "$CACHE" --output "$OUT" --axes $AXES --idsw-iou 0.5
+echo "=== exit: $? ($(date)) ==="

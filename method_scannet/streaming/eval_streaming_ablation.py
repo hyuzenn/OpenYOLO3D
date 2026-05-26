@@ -30,9 +30,11 @@ from method_scannet.streaming.hooks_streaming import (
     uninstall_all_streaming,
 )
 from method_scannet.streaming.metrics import (
+    id_switch_count,
     label_switch_count,
     time_to_confirm,
 )
+from method_scannet.streaming import gt_matching as _gtm
 from method_scannet.streaming.wrapper import StreamingScanNetEvaluator
 from utils import OpenYolo3D
 from utils.utils_2d import load_yaml
@@ -98,6 +100,7 @@ def run_one_axis(
     cache_dir: Path,
     out_root: Path,
     scenes: list[str],
+    idsw_iou: float = 0.5,
 ) -> dict:
     out_dir = out_root / f"axis_{name}"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -146,11 +149,30 @@ def run_one_axis(
         pred_history = list(evaluator.pred_history)
         lsc = int(label_switch_count(pred_history))
         ttc = time_to_confirm(pred_history, K=3)
+
+        # Task 3.2 — ID switches per GT instance. Build the per-frame GT↔pred
+        # matching from this scene's history + fixed proposal/GT masks, then
+        # run the (previously unused) metrics.id_switch_count over it.
+        gt_txt = Path("data/scannet200/ground_truth") / f"{scene_name}.txt"
+        try:
+            gmatch, n_gt = _gtm.gt_matching_for_scene(
+                pred_history,
+                evaluator.instance_vertex_masks,
+                str(gt_txt),
+                iou_threshold=idsw_iou,
+            )
+            idsw = int(id_switch_count(pred_history, gmatch))
+        except Exception as exc:  # never let id-switch sink the whole axis
+            print(f"  [id_switch] {scene_name} failed: {exc!r}", flush=True)
+            idsw, n_gt = 0, 0
+
         temporal_per_scene[scene_name] = {
             "n_frames": len(pred_history),
             "n_unique_instances": len(set().union(*[h.keys() for h in pred_history])) if pred_history else 0,
             "label_switch_count": lsc,
             "time_to_confirm": dict(ttc),  # {iid: frames_to_confirm}
+            "id_switch_count": idsw,
+            "n_gt_instances": n_gt,
         }
 
         if (s_idx + 1) % 25 == 0 or s_idx == len(scenes) - 1:
@@ -187,10 +209,19 @@ def run_one_axis(
     for v in temporal_per_scene.values():
         ttc_values.extend(v["time_to_confirm"].values())
     n_inst_total = int(sum(v["n_unique_instances"] for v in temporal_per_scene.values()))
+    idsw_total = int(sum(v.get("id_switch_count", 0) for v in temporal_per_scene.values()))
+    n_gt_total = int(sum(v.get("n_gt_instances", 0) for v in temporal_per_scene.values()))
     temporal_axis = {
         "axis": name,
         "n_scenes": len(temporal_per_scene),
         "n_unique_instances_total": n_inst_total,
+        "id_switch": {
+            "total": idsw_total,
+            "n_gt_instances": n_gt_total,
+            # primary reported metric: ID switches per GT object.
+            "per_obj": (idsw_total / n_gt_total) if n_gt_total else None,
+            "iou_threshold": idsw_iou,
+        },
         "label_switch_count": {
             "total": int(sum(lsc_values)),
             "mean_per_scene": float(np.mean(lsc_values)) if lsc_values else 0.0,
@@ -219,6 +250,8 @@ def run_one_axis(
                         float(np.mean(list(v["time_to_confirm"].values())))
                         if v["time_to_confirm"] else None
                     ),
+                    "id_switch_count": v.get("id_switch_count", 0),
+                    "n_gt_instances": v.get("n_gt_instances", 0),
                 }
                 for s, v in temporal_per_scene.items()
             },
@@ -229,7 +262,9 @@ def run_one_axis(
     print(f"[axis {name}] AP={summary['AP']:.4f} AP_50={summary['AP_50']:.4f}  "
           f"lsc_total={temporal_axis['label_switch_count']['total']} "
           f"ttc_n={temporal_axis['time_to_confirm']['n_instances']} "
-          f"ttc_mean={temporal_axis['time_to_confirm']['mean']}",
+          f"ttc_mean={temporal_axis['time_to_confirm']['mean']} "
+          f"idsw_total={temporal_axis['id_switch']['total']} "
+          f"idsw_per_obj={temporal_axis['id_switch']['per_obj']}",
           flush=True)
     return summary
 
@@ -250,6 +285,9 @@ def main():
     )
     parser.add_argument("--limit", type=int, default=None,
                         help="Optional: only evaluate the first N scenes.")
+    parser.add_argument("--idsw-iou", type=float, default=0.5,
+                        help="Full-scene IoU threshold for GT↔pred matching "
+                             "in the id_switch_count metric (default 0.5).")
     parser.add_argument(
         "--scenes",
         nargs="*",
@@ -290,7 +328,8 @@ def main():
         method_id = method_id_map.get(name, name if name in list_method_ids() else name)
         try:
             summaries.append(run_one_axis(
-                name, method_id, kw, oy3d, cfg, cache_dir, out_root, scenes
+                name, method_id, kw, oy3d, cfg, cache_dir, out_root, scenes,
+                idsw_iou=args.idsw_iou,
             ))
         except Exception as exc:
             print(f"[axis {name}] FAILED: {exc!r}", flush=True)
