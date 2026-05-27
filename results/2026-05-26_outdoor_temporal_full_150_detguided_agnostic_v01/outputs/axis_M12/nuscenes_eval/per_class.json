@@ -1,0 +1,122 @@
+{
+  "car": {
+    "AP@0.5": 0.0,
+    "AP@1.0": 0.0,
+    "AP@2.0": 0.0,
+    "AP@4.0": 0.0,
+    "AP_mean": 0.0,
+    "trans_err": 1.0,
+    "scale_err": 1.0,
+    "orient_err": 1.0,
+    "vel_err": 1.0,
+    "attr_err": 1.0
+  },
+  "truck": {
+    "AP@0.5": 0.0,
+    "AP@1.0": 0.0,
+    "AP@2.0": 0.0,
+    "AP@4.0": 0.007004285215968532,
+    "AP_mean": 0.001751071303992133,
+    "trans_err": 1.0,
+    "scale_err": 1.0,
+    "orient_err": 1.0,
+    "vel_err": 1.0,
+    "attr_err": 1.0
+  },
+  "bus": {
+    "AP@0.5": 0.0,
+    "AP@1.0": 0.0,
+    "AP@2.0": 0.0,
+    "AP@4.0": 0.0006990407744260547,
+    "AP_mean": 0.00017476019360651367,
+    "trans_err": 1.0,
+    "scale_err": 1.0,
+    "orient_err": 1.0,
+    "vel_err": 1.0,
+    "attr_err": 1.0
+  },
+  "trailer": {
+    "AP@0.5": 0.0,
+    "AP@1.0": 0.0,
+    "AP@2.0": 0.0,
+    "AP@4.0": 0.0,
+    "AP_mean": 0.0,
+    "trans_err": 1.0,
+    "scale_err": 1.0,
+    "orient_err": 1.0,
+    "vel_err": 1.0,
+    "attr_err": 1.0
+  },
+  "construction_vehicle": {
+    "AP@0.5": 0.0,
+    "AP@1.0": 0.0,
+    "AP@2.0": 0.0,
+    "AP@4.0": 0.0,
+    "AP_mean": 0.0,
+    "trans_err": 1.0,
+    "scale_err": 1.0,
+    "orient_err": 1.0,
+    "vel_err": 1.0,
+    "attr_err": 1.0
+  },
+  "pedestrian": {
+    "AP@0.5": 0.0,
+    "AP@1.0": 0.0,
+    "AP@2.0": 0.0,
+    "AP@4.0": 0.0,
+    "AP_mean": 0.0,
+    "trans_err": 1.0,
+    "scale_err": 1.0,
+    "orient_err": 1.0,
+    "vel_err": 1.0,
+    "attr_err": 1.0
+  },
+  "motorcycle": {
+    "AP@0.5": 0.0,
+    "AP@1.0": 0.0,
+    "AP@2.0": 0.0,
+    "AP@4.0": 0.0,
+    "AP_mean": 0.0,
+    "trans_err": 1.0,
+    "scale_err": 1.0,
+    "orient_err": 1.0,
+    "vel_err": 1.0,
+    "attr_err": 1.0
+  },
+  "bicycle": {
+    "AP@0.5": 0.0,
+    "AP@1.0": 0.0,
+    "AP@2.0": 0.0,
+    "AP@4.0": 0.0,
+    "AP_mean": 0.0,
+    "trans_err": 1.0,
+    "scale_err": 1.0,
+    "orient_err": 1.0,
+    "vel_err": 1.0,
+    "attr_err": 1.0
+  },
+  "traffic_cone": {
+    "AP@0.5": 0.0,
+    "AP@1.0": 0.0,
+    "AP@2.0": 0.0,
+    "AP@4.0": 0.0,
+    "AP_mean": 0.0,
+    "trans_err": 1.0,
+    "scale_err": 1.0,
+    "orient_err": NaN,
+    "vel_err": NaN,
+    "attr_err": NaN
+  },
+  "barrier": {
+    "AP@0.5": 0.0,
+    "AP@1.0": 0.0,
+    "AP@2.0": 0.0014680822357530517,
+    "AP@4.0": 0.0069058174817562545,
+    "AP_mean": 0.0020934749293773265,
+    "trans_err": 0.9496247838341899,
+    "scale_err": 0.8018478819055223,
+    "orient_err": 0.19848192307215687,
+    "vel_err": NaN,
+    "attr_err": NaN
+  }
+}

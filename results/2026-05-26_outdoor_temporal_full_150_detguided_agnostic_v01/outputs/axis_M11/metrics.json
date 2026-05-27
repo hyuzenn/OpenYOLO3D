@@ -1,0 +1,30 @@
+{
+  "n_samples": 6019,
+  "n_pred_boxes_total": 39687,
+  "n_gt_boxes_total": 187528,
+  "axis_walltime_s": 37.42740726470947,
+  "mAP": 0.00017476448025989847,
+  "NDS": 0.011632143947062332,
+  "mAP_minus_baseline": -0.0018630245540011408,
+  "temporal": {
+    "n_samples": 6019,
+    "label_switch_count_total": 1224,
+    "time_to_confirm": {
+      "n_instances": 4159,
+      "mean": 3.440730944938687,
+      "median": 3.0,
+      "p90": 6.0,
+      "max": 17
+    }
+  },
+  "fire_audit": {
+    "n_proposals_total": 109694,
+    "n_emitted_total": 39687,
+    "n_suppressed_by_gate": 67527,
+    "n_m21_weighted_votes": 0,
+    "n_relabeled_by_m21": 0,
+    "n_merged_by_m31": 0,
+    "n_merged_by_m32": 0,
+    "n_samples": 6019
+  }
+}

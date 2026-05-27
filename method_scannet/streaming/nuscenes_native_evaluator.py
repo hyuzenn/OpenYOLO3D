@@ -80,6 +80,50 @@ NUM_CLASSES = len(CLASS_NAMES)
 DEFAULT_ASSOC_DIST_M = 2.0
 
 
+class ClassAgnosticAssociator(CentroidAssociator):
+    """Counterfactual associator — identical to :class:`CentroidAssociator`
+    with the ``st["cls"] != cls`` class gate removed (the only change).
+
+    Used to expose proposal-level label flicker that the class-aware default
+    structurally hides at ``lsc=0`` (every track is single-class by
+    construction). See ``results/2026-05-21_task_3_1_lsc_diagnosis_v01``.
+    """
+
+    def step(self, proposals: list[dict]) -> list[int]:
+        for gid in list(self._active.keys()):
+            self._active[gid]["age"] += 1
+            if self._active[gid]["age"] > self.max_age:
+                self._active.pop(gid, None)
+        if not proposals:
+            return []
+        gid_assignments: list[Optional[int]] = [None] * len(proposals)
+        used: set[int] = set()
+        order = sorted(range(len(proposals)),
+                       key=lambda i: -proposals[i].get("score", 0.0))
+        for j in order:
+            p = proposals[j]
+            c = np.asarray(p["centroid_ego"], dtype=np.float64)
+            best_gid, best_d = None, self.threshold_m + 1e-9
+            for gid, st in self._active.items():
+                if gid in used:
+                    continue
+                # class gate intentionally omitted — only change vs base.
+                d = float(np.linalg.norm(c[:2] - st["centroid"][:2]))
+                if d < best_d:
+                    best_d, best_gid = d, gid
+            if best_gid is not None:
+                gid_assignments[j] = best_gid
+                used.add(best_gid)
+                self._active[best_gid]["centroid"] = c
+                self._active[best_gid]["age"] = 0
+            else:
+                new_gid = self._next_id
+                self._next_id += 1
+                gid_assignments[j] = new_gid
+                self._active[new_gid] = {"cls": p["cls_name"], "centroid": c, "age": 0}
+        return [int(g) for g in gid_assignments]  # type: ignore
+
+
 # ---------------------------------------------------------------------------
 # Geometry helpers for the M31 box→vertex-set IoU realization.
 # ---------------------------------------------------------------------------
@@ -129,6 +173,7 @@ class NativeTemporalNuScenesEvaluator:
         detguided_generator=None,            # DetectionGuidedClusterer | None (cache-only)
         text_prompts: Optional[list] = None,  # YOLO-World class names (detguided)
         proposal_score_threshold: float = 0.0,  # reliability gate (applied on read)
+        class_agnostic_association: bool = False,  # task_3_1 counterfactual
     ) -> None:
         self.loader = loader
         self.cp = cp_proposals
@@ -136,6 +181,7 @@ class NativeTemporalNuScenesEvaluator:
         self.proposal_score_threshold = float(proposal_score_threshold)
         self.oy3d = oy3d
         self.detguided = detguided_generator
+        self.class_agnostic_association = bool(class_agnostic_association)
         self.text_prompts = list(text_prompts) if text_prompts is not None else None
         if (self.proposal_source == "detguided" and self.detguided is None
                 and not cp_cache_dir):
@@ -220,7 +266,9 @@ class NativeTemporalNuScenesEvaluator:
 
     # -- per-scene --------------------------------------------------------
     def setup_scene(self, scene_offset: int) -> None:
-        self.associator = CentroidAssociator(
+        Associator = (ClassAgnosticAssociator if self.class_agnostic_association
+                      else CentroidAssociator)
+        self.associator = Associator(
             threshold_m=self.association_threshold_m,
             max_age=self.association_max_age,
             id_offset=scene_offset)
@@ -727,6 +775,11 @@ def main():
                          "at 2.0 m); same-class centroids are never <0.42 m apart.")
     ap.add_argument("--no-gpu", action="store_true",
                     help="skip CenterPoint init (requires a complete cp-cache).")
+    ap.add_argument("--association-class-agnostic", action="store_true",
+                    help="Drop the class gate in the proposal tracker "
+                         "(ClassAgnosticAssociator). Exposes proposal-level "
+                         "label flicker that the class-aware default "
+                         "structurally hides at lsc=0 (task_3_1 finding).")
     args = ap.parse_args()
 
     out_root = Path(args.output)
@@ -771,7 +824,8 @@ def main():
         cp_cache_dir=args.cp_cache_dir,
         proposal_source=args.proposal_source,
         oy3d=oy3d, detguided_generator=detg, text_prompts=text_prompts,
-        proposal_score_threshold=args.proposal_score_threshold)
+        proposal_score_threshold=args.proposal_score_threshold,
+        class_agnostic_association=args.association_class_agnostic)
 
     # Baseline mAP anchor for the fire-audit delta (read if a sibling baseline
     # axis was already written in this run dir).

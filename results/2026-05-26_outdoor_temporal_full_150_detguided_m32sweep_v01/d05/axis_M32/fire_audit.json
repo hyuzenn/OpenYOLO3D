@@ -1,0 +1,10 @@
+{
+  "n_proposals_total": 109694,
+  "n_emitted_total": 100435,
+  "n_suppressed_by_gate": 0,
+  "n_m21_weighted_votes": 0,
+  "n_relabeled_by_m21": 0,
+  "n_merged_by_m31": 0,
+  "n_merged_by_m32": 2202,
+  "n_samples": 6019
+}

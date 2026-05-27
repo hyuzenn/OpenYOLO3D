@@ -1,0 +1,33 @@
+[
+  {
+    "axis": "M32",
+    "n_samples": 6019,
+    "n_pred_boxes_total": 95157,
+    "n_gt_boxes_total": 187528,
+    "axis_walltime_s": 26.981364250183105,
+    "mAP": 0.00214149655903022,
+    "NDS": 0.04617015379231339,
+    "mAP_minus_baseline": null,
+    "temporal": {
+      "n_samples": 6019,
+      "label_switch_count_total": 0,
+      "time_to_confirm": {
+        "n_instances": 7517,
+        "mean": 3.4245044565651193,
+        "median": 3.0,
+        "p90": 6.0,
+        "max": 10
+      }
+    },
+    "fire_audit": {
+      "n_proposals_total": 109694,
+      "n_emitted_total": 95157,
+      "n_suppressed_by_gate": 0,
+      "n_m21_weighted_votes": 0,
+      "n_relabeled_by_m21": 0,
+      "n_merged_by_m31": 0,
+      "n_merged_by_m32": 7480,
+      "n_samples": 6019
+    }
+  }
+]

@@ -1,0 +1,106 @@
+#!/bin/bash
+#PBS -N nusc_m32_sweep_150
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=96gb:Qlist=agpu
+#PBS -l walltime=04:00:00
+#PBS -j oe
+
+# ============================================================================
+# detguided × M32 distance-threshold sweep on nuScenes val 150 scenes
+# ----------------------------------------------------------------------------
+# Open-vocab cluster centroids sit on the visible-surface mean and are offset
+# from GT box center (see project_outdoor_detguided_openvocab) — so the indoor
+# sweep optimum (0.5 m) may not transfer. This sweeps M32 distance ∈
+# {0.3, 1.0, 0.5} on the detguided source to pick the outdoor optimum. 0.5 m
+# is included as a sanity reproduction of the v01 M32 axis (n_merged=2202).
+#
+# Cache : results/outdoor_detguided_cpcache_thr000_full150 (warm, 6019 pkls)
+# Walltime budget : 4h (cache-replay, expected ~15 min wall total for 3 runs)
+# ============================================================================
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+EXP=outdoor_temporal_full_150_detguided_m32sweep
+N=$(printf '%02d' $(($(ls -d ${PROJECT_ROOT}/results/${DATE}_${EXP}_v* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+mkdir -p "$RUN_DIR"
+
+CACHE_DIR="${PROJECT_ROOT}/results/outdoor_detguided_cpcache_thr000_full150"
+N_CACHED=$(ls "$CACHE_DIR" 2>/dev/null | wc -l)
+
+cp configs/nuscenes_trainval.yaml          "$RUN_DIR/nuscenes_trainval.yaml"
+cp configs/openyolo3d_nuscenes_nusc10.yaml "$RUN_DIR/openyolo3d_nuscenes_nusc10.yaml"
+cp "$0"                                     "$RUN_DIR/submitted.pbs"
+
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "==========================================================================="
+echo " M32 Distance Sweep — detguided × 150 val × dist ∈ {0.3, 0.5, 1.0}"
+echo "==========================================================================="
+echo " Run dir   : $RUN_DIR"
+echo " Cache     : $CACHE_DIR  (pre-seeded = ${N_CACHED} pkls — MUST be 6019)"
+echo " Date      : $(date)"
+echo " Host      : $(hostname)"
+nvidia-smi -L || true
+echo "==========================================================================="
+
+if [ "$N_CACHED" -lt 6019 ]; then
+    echo "FATAL: detguided cache incomplete (${N_CACHED}/6019). Aborting."
+    exit 3
+fi
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+for DIST in 0.3 0.5 1.0; do
+    TAG=$(printf 'd%s' "$(echo "$DIST" | tr -d '.')")    # 0.3 -> d03, 1.0 -> d10
+    OUT_DIR="$RUN_DIR/$TAG"
+    mkdir -p "$OUT_DIR"
+    echo
+    echo "########## M32 distance_threshold = ${DIST} m  →  $TAG ##########"
+    python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+      --nuscenes-config           configs/nuscenes_trainval.yaml \
+      --oy3d-config               configs/openyolo3d_nuscenes_nusc10.yaml \
+      --output                    "$OUT_DIR" \
+      --axes                      M32 \
+      --scene-split               val \
+      --proposal-source           detguided \
+      --cp-cache-dir              "$CACHE_DIR" \
+      --no-gpu \
+      --score-threshold           0.0 \
+      --proposal-score-threshold  0.0 \
+      --association-threshold-m   2.0 \
+      --association-max-age       5 \
+      --m32-distance              "$DIST"
+    echo "---- M32 dist=${DIST} exit: $? ----"
+done
+
+echo
+echo "=== M32 sweep summary (detguided × 150 val) ==="
+python - "$RUN_DIR" <<'PY'
+import json, os, sys
+P = sys.argv[1]
+print("{:>8s} {:>9s} {:>9s} {:>8s} {:>16s} {:>10s}".format(
+    "dist_m","mAP","NDS","merged","emit/prop","wall_s"))
+for d, tag in (("0.3","d03"), ("0.5","d05"), ("1.0","d10")):
+    f = os.path.join(P, tag, "axis_M32", "metrics.json")
+    if not os.path.exists(f):
+        print(f"{d:>8s}  (missing: {f})"); continue
+    m = json.load(open(f)); a = m.get("fire_audit", {})
+    print("{:>8s} {:>9.5f} {:>9.5f} {:>8d} {:>16s} {:>10.0f}".format(
+        d, m.get("mAP", 0.0), m.get("NDS", 0.0),
+        int(a.get("n_merged_by_m32", 0)),
+        f"{a.get('n_emitted_total',0)}/{a.get('n_proposals_total',0)}",
+        float(m.get("axis_walltime_s", 0.0))))
+PY
+
+echo
+echo "=== done: $(date) ==="
