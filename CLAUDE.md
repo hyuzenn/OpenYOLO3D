@@ -1,8 +1,46 @@
 CLAUDE.md
 
 🛠 Quick Start (Commands)
-  Environment: conda activate openyolo3d (Python 3.10 based on pycache)
-  GPU 할당: coss_agpu -g 1 (A100 강제로 할당)
+  Environment: conda activate openyolo3d-dev  (Python 3.10)
+  CPU/GPU heavy 작업은 절대 util 노드에서 직접 실행 금지 — watchdog가 죽임.
+  반드시 PBS batch(qsub)로 coss_agpu A100 컨테이너에 제출할 것.
+
+  PBS 헤더 표준 (scripts/*.pbs 참고, 예: run_task_2_6_native_temporal_pbs_a.pbs):
+    #PBS -q coss_agpu
+    #PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+    #PBS -l walltime=08:00:00
+    #PBS -j oe
+
+  스크립트 본문 환경 셋업:
+    cd /home/rintern16/OpenYOLO3D
+    source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+    conda activate openyolo3d-dev
+    export CUDA_HOME=/tools/cuda/cuda11.7
+    export PATH=$CUDA_HOME/bin:$PATH
+    export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+    exec >"$LOG" 2>&1            # 출력은 스크립트 내부에서 파일 리다이렉트
+
+🧪 평가 워크플로 (nuScenes native evaluator)
+  진입점: python -u -m method_scannet.streaming.nuscenes_native_evaluator
+  (소스: method_scannet/streaming/nuscenes_native_evaluator.py — 7-axis)
+
+  주요 인자:
+    --output <dir>                     (필수) 결과 출력 경로
+    --axes baseline m11 m12 ...        평가할 axis 선택
+    --scene-split {val,all}            기본 val
+    --scene-limit N / --scenes ...     스모크용 씬 제한
+    --proposal-source {gamma,detguided,hybrid}   proposal 소스
+        · gamma     : closed nuScenes-10 anchor
+        · detguided : open-vocab capability (GT-free)
+    --association-class-agnostic       class-agnostic 연관
+    --association-frame {ego,global}   기본 ego
+    --m32-distance <m>                 outdoor 최적 1.0 (indoor 0.5)
+    --score-threshold / --proposal-score-threshold
+
+  예 (detguided open-vocab, val 전체):
+    python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+      --output "$RUN_DIR/outputs" --axes baseline \
+      --proposal-source detguided --association-class-agnostic
 
 📂 실험 로그 저장 규칙 (results/)
   포맷: results/<YYYY-MM-DD>_<experiment>_v<NN>/
