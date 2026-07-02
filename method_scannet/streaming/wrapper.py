@@ -508,6 +508,10 @@ class StreamingScanNetEvaluator:
         if boxes_2d is None or len(boxes_2d) == 0:
             return
         boxes_2d_long = boxes_2d.long() if hasattr(boxes_2d, "long") else torch.as_tensor(boxes_2d).long()
+        # YOLO 2D detection scores for the per-frame bboxes; forwarded as the
+        # EMA `confidence` so confidence-aware / OV-TCS-aware modes work in the
+        # streaming path (None when absent → modes fall back to c=1.0).
+        scores_2d = bbox_pred.get("scores")
         try:
             image = imageio.imread(color_path)
         except Exception:
@@ -522,6 +526,7 @@ class StreamingScanNetEvaluator:
 
         crop_bboxes: list[list[int]] = []
         crop_prop_ids: list[int] = []
+        crop_scores: list = []
         for prop_idx in confirmed_visible:
             visible_pts = inside_mask & instance_masks[int(prop_idx)]
             n_v = int(visible_pts.sum())
@@ -548,6 +553,16 @@ class StreamingScanNetEvaluator:
                 continue
             crop_bboxes.append([x1, y1, x2, y2])
             crop_prop_ids.append(int(prop_idx))
+            # Score of the matched YOLO bbox (same iou_argmax index), coerced to
+            # float; None if scores are missing / index out of range.
+            s_val = None
+            if scores_2d is not None and iou_argmax < len(scores_2d):
+                try:
+                    s_elt = scores_2d[iou_argmax]
+                    s_val = float(s_elt.item()) if hasattr(s_elt, "item") else float(s_elt)
+                except Exception:
+                    s_val = None
+            crop_scores.append(s_val)
 
         if not crop_bboxes:
             return
@@ -556,8 +571,8 @@ class StreamingScanNetEvaluator:
             embeddings = self.method_22_encoder.encode_cropped_bboxes(image, bboxes_arr)
         except Exception:
             return
-        for prop_idx, emb in zip(crop_prop_ids, embeddings):
-            self.method_22.update_instance_feature(prop_idx, emb)
+        for prop_idx, emb, conf in zip(crop_prop_ids, embeddings, crop_scores):
+            self.method_22.update_instance_feature(prop_idx, emb, confidence=conf)
 
     # ------------------------------------------------------------------
     # Method-axis finalize

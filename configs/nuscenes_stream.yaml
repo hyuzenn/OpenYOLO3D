@@ -1,0 +1,25 @@
+# Hybrid streaming loader config: heavy pixels/lidar over the network,
+# calibration/pose/GT from local nuScenes metadata tables.
+nuscenes:
+  # Only the metadata tables (<version>/*.json) need to exist here; the heavy
+  # samples/ and sweeps/ blobs come from the stream and may be deleted locally.
+  dataroot: data/nuscenes
+  version: v1.0-trainval
+
+  cameras:
+    - CAM_FRONT
+    - CAM_FRONT_LEFT
+    - CAM_FRONT_RIGHT
+    - CAM_BACK
+    - CAM_BACK_LEFT
+    - CAM_BACK_RIGHT
+
+  multi_sweep: false        # streaming supports keyframe LIDAR_TOP only
+  num_sweeps: 1
+  scene_filter: null
+
+stream:
+  # Reverse-tunnel endpoint serving the .tar shards (see test_wds_loader.py).
+  url_base: http://localhost:8000
+  num_shards: 57
+  shard_pattern: "nuscenes-{:06d}.tar"
