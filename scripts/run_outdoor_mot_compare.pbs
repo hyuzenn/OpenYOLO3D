@@ -28,10 +28,11 @@ export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 WORKTREE=/home/rintern16/OpenYOLO3D/.claude/worktrees/claude-md-update
 export PYTHONPATH=$WORKTREE:${PYTHONPATH:-}
 
-DATE=$(date +%F)
-EXP=outdoor_mot_compare
-N=$(printf '%02d' $(($(ls -d results/${DATE}_${EXP}_v* 2>/dev/null | wc -l) + 1)))
-RUN_DIR=results/${DATE}_${EXP}_v${N}
+# Self-contained E1 artifact dir (integration into STATE.md/tracker deferred —
+# per instruction, this run touches nothing outside its own run dir).
+EXP=e1_outdoor_mot_compare
+N=$(printf '%02d' $(($(ls -d results/${EXP}_v* 2>/dev/null | wc -l) + 1)))
+RUN_DIR=results/${EXP}_v${N}
 mkdir -p "$RUN_DIR/outputs"
 LOG="$RUN_DIR/run.log"
 exec >"$LOG" 2>&1
