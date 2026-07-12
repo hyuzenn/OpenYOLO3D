@@ -1,0 +1,59 @@
+#!/bin/bash
+#PBS -N outdoor_mot_compare
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=08:00:00
+#PBS -j oe
+
+# =============================================================================
+# E1 — MOT-metric comparison for OV-TCS validation (nuScenes val, cache replay).
+#
+# Replays the gravity-corrected CenterPoint cache through the frozen baseline
+# pipeline (class-agnostic association, ego + global arms) and computes
+# HOTA/DetA/AssA + IDF1/IDP/IDR + MOTA/MOTP per scene against nuScenes GT
+# instance tokens, plus the official devkit AMOTA/AMOTP (full runs only).
+# No new GPU inference; no existing pipeline code modified (the new evaluator
+# lives in the claude-md-update worktree and is injected via PYTHONPATH).
+#
+# Smoke:  qsub -v SCENE_LIMIT=5,DEVKIT=0 scripts/run_outdoor_mot_compare.pbs
+# Full:   qsub -v SCENE_LIMIT=0,DEVKIT=1 scripts/run_outdoor_mot_compare.pbs
+# =============================================================================
+
+cd /home/rintern16/OpenYOLO3D
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+WORKTREE=/home/rintern16/OpenYOLO3D/.claude/worktrees/claude-md-update
+export PYTHONPATH=$WORKTREE:${PYTHONPATH:-}
+
+DATE=$(date +%F)
+EXP=outdoor_mot_compare
+N=$(printf '%02d' $(($(ls -d results/${DATE}_${EXP}_v* 2>/dev/null | wc -l) + 1)))
+RUN_DIR=results/${DATE}_${EXP}_v${N}
+mkdir -p "$RUN_DIR/outputs"
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+SCENE_LIMIT=${SCENE_LIMIT:-0}
+DEVKIT=${DEVKIT:-1}
+EXTRA=""
+[ "$SCENE_LIMIT" -gt 0 ] && EXTRA="--scene-limit $SCENE_LIMIT"
+[ "$DEVKIT" = "1" ] && EXTRA="$EXTRA --devkit-eval"
+
+echo "E1 outdoor_mot_compare  scene_limit=$SCENE_LIMIT devkit=$DEVKIT"
+echo "worktree rev: $(git -C $WORKTREE rev-parse HEAD)"
+cp configs/nuscenes_trainval.yaml "$RUN_DIR/config.yaml"
+cp "$WORKTREE/method_scannet/streaming/eval_mot_compare_outdoor.py" \
+   "$RUN_DIR/evaluator_snapshot.py"
+
+python -u -m method_scannet.streaming.eval_mot_compare_outdoor \
+  --cp-cache-dir results/outdoor_native_temporal_cpcache_thr000_single_gravity \
+  --output "$RUN_DIR/outputs" \
+  --proposal-source gamma \
+  --arms ego global \
+  $EXTRA
+
+python -u "$WORKTREE/scripts/aggregate_outdoor_mot_compare.py" "$RUN_DIR"
+echo "DONE $RUN_DIR"
