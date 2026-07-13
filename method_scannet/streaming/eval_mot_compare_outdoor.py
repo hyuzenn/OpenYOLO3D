@@ -369,8 +369,11 @@ def main():
         sub_path = out / f"tracking_submission_{arm}.json"
         sub_path.write_text(json.dumps(sub))
         # Format check so a smoke run catches submission problems the devkit
-        # would only surface at full scale.
+        # would only surface at full scale. NB: TRACKING_NAMES is empty until
+        # a TrackingConfig has been constructed (devkit quirk).
+        from nuscenes.eval.common.config import config_factory
         from nuscenes.eval.tracking.data_classes import TrackingBox
+        config_factory("tracking_nips_2019")
         for bx in list(sub["results"].values())[:3]:
             for b in bx[:5]:
                 TrackingBox.deserialize(b)
