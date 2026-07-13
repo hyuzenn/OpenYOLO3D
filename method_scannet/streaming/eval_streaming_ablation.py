@@ -54,6 +54,30 @@ DEFAULT_AXES: tuple[tuple[str, dict], ...] = (
     ("phase2", {}),     # M12 + M22 + M32
     ("M21+M31", {}),    # label + merge (no registration)
     ("M22+M32", {}),    # Phase 2 label + merge (no registration)
+    # OV-TCS-aware EMA ablation (2026-06-23): both arms are M22 with confidence
+    # plumbed; baseline is plain confidence-weighted EMA, the scaling arm scales
+    # the incoming weight by the causal online OV-TCS_C. record_feature_trace is
+    # enabled on BOTH so the OVTCS<->drift / OVTCS<->stability correlation is
+    # read off the baseline arm (where drift is independent of OVTCS).
+    ("M22_base_weighted", {"conf_mode": "weighted", "record_feature_trace": True}),
+    ("M22_ovtcs_scale", {"conf_mode": "ovtcs_scale", "record_feature_trace": True}),
+    # Attribution control: matched-average step-shrink (w=α·c·k, k=mean OVTCS)
+    # with no per-update OV-TCS variation. ovtcs_scale > const_scale ⇒ OV-TCS
+    # carries real per-update signal; ≈ ⇒ the gain is just a smaller effective α.
+    ("M22_const_scale", {"conf_mode": "const_scale", "const_k": 0.335,
+                         "record_feature_trace": True}),
+    # Pure EMA incoming-weight sweep (2026-06-23, H1: over-update hypothesis).
+    # w = α·c·k with a FIXED k — NO OV-TCS. k=1.0 is byte-identical to the
+    # w=α·c baseline (α,c∈[0,1] ⇒ clamp is a no-op). record_feature_trace
+    # gives feature-drift + applied-update count via ovtcs_diagnostics(); the
+    # online_ovtcs column is diagnostic only and never enters the EMA math.
+    # const_scale never DROPS updates, so applied-count is k-invariant by
+    # design — drift / effective-α (=α·k) is the real step-size signal.
+    *(
+        (f"M22_emak_{k:g}",
+         {"conf_mode": "const_scale", "const_k": k, "record_feature_trace": True})
+        for k in (1.0, 0.75, 0.50, 0.335, 0.25, 0.10)
+    ),
 )
 
 
@@ -91,6 +115,85 @@ def _dump_aggregate_metrics(out_dir: Path, avgs, ar_avgs, rc_avgs, pcdc_avgs) ->
     (out_dir / "metrics.json").write_text(json.dumps(out, indent=2))
 
 
+def _rankdata(a: np.ndarray) -> np.ndarray:
+    """Average-rank of a 1D array (ties averaged) — scipy-free Spearman helper."""
+    order = np.argsort(a, kind="mergesort")
+    ranks = np.empty(len(a), dtype=np.float64)
+    ranks[order] = np.arange(1, len(a) + 1, dtype=np.float64)
+    # average tied ranks
+    sa = a[order]
+    i = 0
+    n = len(a)
+    while i < n:
+        j = i
+        while j + 1 < n and sa[j + 1] == sa[i]:
+            j += 1
+        if j > i:
+            ranks[order[i:j + 1]] = (i + 1 + j + 1) / 2.0
+        i = j + 1
+    return ranks
+
+
+def _corr(x: list, y: list) -> dict:
+    """Pearson + Spearman of two equal-length sequences (numpy only)."""
+    xa = np.asarray(x, dtype=np.float64)
+    ya = np.asarray(y, dtype=np.float64)
+    n = int(xa.size)
+    if n < 3 or np.std(xa) == 0 or np.std(ya) == 0:
+        return {"n": n, "pearson": None, "spearman": None}
+    pear = float(np.corrcoef(xa, ya)[0, 1])
+    rx, ry = _rankdata(xa), _rankdata(ya)
+    spear = float(np.corrcoef(rx, ry)[0, 1])
+    return {"n": n, "pearson": pear, "spearman": spear}
+
+
+def _aggregate_ovtcs(scenes_diag: list[dict], axis_name: str) -> dict:
+    """Pool per-scene FeatureFusionEMA.ovtcs_diagnostics() into one axis summary
+    (scalar means + pooled OVTCS<->drift / OVTCS<->cos_to_final correlations)."""
+    valid = [d for d in scenes_diag if d.get("n_instances", 0) > 0]
+    total_inst = sum(int(d["n_instances"]) for d in valid)
+    total_applied = sum(int(d["n_updates_applied_total"]) for d in valid)
+    total_obs = sum(int(d["n_observations_total"]) for d in valid)
+
+    def _wmean(key: str) -> float | None:
+        num = 0.0
+        den = 0
+        for d in valid:
+            s = d.get(key) or {}
+            if s.get("mean") is not None and s.get("n"):
+                num += s["mean"] * s["n"]
+                den += s["n"]
+        return float(num / den) if den else None
+
+    tr_o: list = []
+    tr_d: list = []
+    tr_c: list = []
+    for d in valid:
+        tr = d.get("trace")
+        if tr:
+            tr_o.extend(tr["ovtcs"])
+            tr_d.extend(tr["drift"])
+            tr_c.extend(tr["cos_to_final"])
+
+    return {
+        "axis": axis_name,
+        "n_scenes": len(valid),
+        "n_instances_total": total_inst,
+        "updates_applied_total": total_applied,
+        "observations_total": total_obs,
+        "updates_applied_per_track": (total_applied / total_inst) if total_inst else None,
+        "observations_per_track": (total_obs / total_inst) if total_inst else None,
+        # applied/observed → relative update-rate reduction is computed vs the
+        # baseline arm by the aggregator script.
+        "applied_fraction": (total_applied / total_obs) if total_obs else None,
+        "feature_drift_mean": _wmean("feature_drift"),
+        "online_ovtcs_mean": _wmean("online_ovtcs"),
+        "trace_n": len(tr_o),
+        "corr_ovtcs_drift": _corr(tr_o, tr_d),
+        "corr_ovtcs_cos_to_final": _corr(tr_o, tr_c),
+    }
+
+
 def run_one_axis(
     name: str,
     method_id: str,
@@ -107,6 +210,7 @@ def run_one_axis(
     log_lines: list[str] = []
     preds_full: dict[str, dict] = {}
     temporal_per_scene: dict[str, dict] = {}
+    ovtcs_scenes: list[dict] = []  # per-scene FeatureFusionEMA.ovtcs_diagnostics()
 
     print(f"\n[axis {name}] method_id={method_id} kwargs={method_kwargs}", flush=True)
     t_axis = time.time()
@@ -144,6 +248,15 @@ def run_one_axis(
             "pred_classes": preds["pred_classes"],
             "pred_scores": np.ones_like(preds["pred_scores"]),
         }
+
+        # OV-TCS diagnostics — harvest the scene's FeatureFusionEMA before the
+        # evaluator (and its per-scene M22 state) is discarded next iteration.
+        m22 = getattr(evaluator, "method_22", None)
+        if m22 is not None and hasattr(m22, "ovtcs_diagnostics"):
+            try:
+                ovtcs_scenes.append({"scene": scene_name, **m22.ovtcs_diagnostics()})
+            except Exception as exc:
+                print(f"  [ovtcs] {scene_name} diag failed: {exc!r}", flush=True)
 
         # Task 1.3 — temporal metrics from the running labeler's history.
         pred_history = list(evaluator.pred_history)
@@ -259,6 +372,18 @@ def run_one_axis(
         )
     )
 
+    # ---- OV-TCS diagnostics aggregation (only when an M22-OVTCS arm ran) ----
+    if any(d.get("n_instances", 0) > 0 for d in ovtcs_scenes):
+        ovtcs_axis = _aggregate_ovtcs(ovtcs_scenes, name)
+        (out_dir / "ovtcs_diagnostics.json").write_text(json.dumps(ovtcs_axis, indent=2))
+        cdr = ovtcs_axis["corr_ovtcs_drift"]
+        ccf = ovtcs_axis["corr_ovtcs_cos_to_final"]
+        print(f"[axis {name}] ovtcs: upd/track={ovtcs_axis['updates_applied_per_track']} "
+              f"drift_mean={ovtcs_axis['feature_drift_mean']} "
+              f"ovtcs_mean={ovtcs_axis['online_ovtcs_mean']} "
+              f"corr(ovtcs,drift)={cdr['pearson']}/{cdr['spearman']} "
+              f"corr(ovtcs,cos2final)={ccf['pearson']}/{ccf['spearman']}", flush=True)
+
     print(f"[axis {name}] AP={summary['AP']:.4f} AP_50={summary['AP_50']:.4f}  "
           f"lsc_total={temporal_axis['label_switch_count']['total']} "
           f"ttc_n={temporal_axis['time_to_confirm']['n_instances']} "
@@ -321,11 +446,20 @@ def main():
 
     summaries: list[dict] = []
     for name, kwargs in axes:
-        method_id_map = {"M31_iou07": "M31"}
+        method_id_map = {
+            "M31_iou07": "M31",
+            "M22_base_weighted": "M22",
+            "M22_ovtcs_scale": "M22",
+            "M22_const_scale": "M22",
+        }
         kw = dict(kwargs)
         if name == "M31_iou07":
             kw.setdefault("iou_threshold", 0.7)
-        method_id = method_id_map.get(name, name if name in list_method_ids() else name)
+        # All M22_* variants (weighted/ovtcs/const/emak sweep) install plain M22
+        # and differ only by kwargs; anything else falls back to its own name.
+        method_id = method_id_map.get(name) or (
+            "M22" if name.startswith("M22_") else name
+        )
         try:
             summaries.append(run_one_axis(
                 name, method_id, kw, oy3d, cfg, cache_dir, out_root, scenes,

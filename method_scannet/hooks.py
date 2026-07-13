@@ -388,10 +388,28 @@ _method22_state: dict = {
     "n_inference_classes": None,
     "min_match_iou": 0.05,
     "topk_per_inst": 15,      # frames per instance for fusion (vs. config topk=40)
+    # Task 1 / professor-feedback C variant — confidence-guarded EMA update.
+    # conf_mode="none" + tau_skip=0.0 is bit-identical to the pre-Task-1 path.
+    "conf_mode": "none",
+    "tau_skip": 0.0,
+    # Fail-Loud retrofit. Active ONLY when conf_mode == "skip". With
+    # conf_strict=True the matched-score plumbing is asserted at three
+    # checkpoints (preds_2d schema, length-match, per-element coercion);
+    # any defect raises immediately instead of silently falling back to
+    # confidence=None. Default False preserves the original Fail-Silent
+    # behaviour so existing sweep results stay reproducible.
+    "conf_strict": False,
 }
 
 
-def _ensure_method22_resources(prompt_embeddings_path: str, ema_alpha: float, use_inference_subset: bool):
+def _ensure_method22_resources(
+    prompt_embeddings_path: str,
+    ema_alpha: float,
+    use_inference_subset: bool,
+    conf_mode: str = "none",
+    tau_skip: float = 0.0,
+    conf_strict: bool = False,
+):
     """Lazy-load CLIP encoder and prompt embeddings; cache module-level so we
     don't reload on every scene. Builds a fresh FeatureFusionEMA instance.
     """
@@ -423,9 +441,15 @@ def _ensure_method22_resources(prompt_embeddings_path: str, ema_alpha: float, us
         ema_alpha=ema_alpha,
         prompt_embeddings=embeddings,
         prompt_class_names=class_names,
+        conf_mode=conf_mode,
+        tau_skip=tau_skip,
+        conf_strict=conf_strict,
     )
     _method22_state["fusion"] = fusion
     _method22_state["n_inference_classes"] = len(class_names)
+    _method22_state["conf_mode"] = str(conf_mode)
+    _method22_state["tau_skip"] = float(tau_skip)
+    _method22_state["conf_strict"] = bool(conf_strict)
 
     if _method22_state["image_encoder"] is None:
         _method22_state["image_encoder"] = CLIPImageEncoder(variant=pdata["clip_variant"])
@@ -449,6 +473,12 @@ def _apply_method_22(self, scene_name: str, is_gt: bool):
     n_classes = state["n_inference_classes"]
     min_iou = state["min_match_iou"]
     topk_per_inst = state["topk_per_inst"]
+    # Fail-Loud activates only under conf_mode=="skip" + conf_strict=True.
+    # All other paths leave the original Fail-Silent behaviour untouched so
+    # the v2 baseline (--conf-mode none) stays byte-identical.
+    conf_strict_active = bool(
+        state.get("conf_mode") == "skip" and state.get("conf_strict", False)
+    )
 
     # Run original to populate self.preds_2d, self.preds_3d, self.mesh_projections
     # (predict() already populated those before label_3d_masks_from_2d_bboxes
@@ -539,6 +569,30 @@ def _apply_method_22(self, scene_name: str, is_gt: bool):
         bboxes_2d_t = bbox_per_frame[f_idx]["bbox"].long()
         if len(bboxes_2d_t) == 0:
             continue
+        # YOLO-World scores ride along with bbox/labels in `preds_2d`
+        # (utils.OpenYolo3D.predict). They are NOT consumed by the EMA in
+        # default mode — `confidence=None` is forwarded which preserves
+        # baseline behaviour bit-identically. The skip-mode path uses them.
+        if conf_strict_active:
+            # Strict path: assert the production schema (utils/utils_2d.py
+            # always populates the "scores" key alongside bbox/labels). Any
+            # absence is a real bug, not a fallback condition.
+            if "scores" not in bbox_per_frame[f_idx]:
+                raise KeyError(
+                    f"FAIL-LOUD: conf_mode=='skip', conf_strict=True but "
+                    f"preds_2d[frame={f_idx}] is missing the 'scores' key. "
+                    f"Inspect utils/utils_2d.get_bounding_boxes — this should "
+                    f"never happen in production."
+                )
+            scores_t = bbox_per_frame[f_idx]["scores"]
+            if len(scores_t) != len(bboxes_2d_t):
+                raise AssertionError(
+                    f"FAIL-LOUD: conf_mode=='skip', conf_strict=True but "
+                    f"len(scores)={len(scores_t)} mismatches "
+                    f"len(bbox)={len(bboxes_2d_t)} for frame={f_idx}."
+                )
+        else:
+            scores_t = bbox_per_frame[f_idx].get("scores")
 
         try:
             image = imageio.imread(color_paths[f_idx])
@@ -550,6 +604,7 @@ def _apply_method_22(self, scene_name: str, is_gt: bool):
         # For each (prop_idx, depth_aabb) in this frame, find best 2D bbox match
         matched_bboxes = []
         matched_prop_ids = []
+        matched_scores: list = []  # YOLO score of the matched 2D bbox (or None)
         for prop_idx, (x_l, y_t, x_r, y_b) in items:
             # Depth coords → image coords
             box_img = torch.tensor(
@@ -565,6 +620,27 @@ def _apply_method_22(self, scene_name: str, is_gt: bool):
                 continue
             matched_bboxes.append([x1, y1, x2, y2])
             matched_prop_ids.append(prop_idx)
+            if conf_strict_active:
+                # Strict per-element coercion: indices are already bounds-
+                # checked by the length assertion above; the YOLO-World
+                # scores are emitted as torch.Tensor (utils_2d.py:103) so
+                # `.item()` must succeed. Any TypeError is a true defect.
+                elt = scores_t[iou_argmax]
+                if hasattr(elt, "item"):
+                    s_val = float(elt.item())
+                else:
+                    s_val = float(elt)
+                matched_scores.append(s_val)
+            elif scores_t is not None and iou_argmax < len(scores_t):
+                try:
+                    s_val = float(scores_t[iou_argmax].item()) \
+                        if hasattr(scores_t[iou_argmax], "item") \
+                        else float(scores_t[iou_argmax])
+                except Exception:
+                    s_val = None
+                matched_scores.append(s_val)
+            else:
+                matched_scores.append(None)
 
         if not matched_bboxes:
             continue
@@ -575,8 +651,8 @@ def _apply_method_22(self, scene_name: str, is_gt: bool):
         except Exception:
             continue
 
-        for prop_idx, emb in zip(matched_prop_ids, embs):
-            fusion.update_instance_feature(prop_idx, emb)
+        for prop_idx, emb, conf in zip(matched_prop_ids, embs, matched_scores):
+            fusion.update_instance_feature(prop_idx, emb, confidence=conf)
 
     # Build (n_proposals × n_inference_classes) cosine distribution.
     # Proposals with no fusion feature get an all-zeros row → won't make top-k.
@@ -667,11 +743,20 @@ def install_method_22_only(
     use_inference_subset: bool = True,
     min_match_iou: float = 0.05,
     topk_per_inst: int = 15,
+    conf_mode: str = "none",
+    tau_skip: float = 0.0,
+    conf_strict: bool = False,
 ) -> None:
     """METHOD_22 (FeatureFusionEMA) replaces text-prompt label decision.
 
     METHOD_31 / METHOD_32 are NOT installed. Refuses to install if another
     label_3d_masks_from_2d_bboxes patch is already active.
+
+    `conf_mode`/`tau_skip` opt in to the Task 1 (professor-feedback C variant)
+    confidence-skip EMA path. Default ``conf_mode="none"`` preserves the
+    pre-Task-1 baseline byte-for-byte. `conf_strict` (default False) enables
+    Fail-Loud assertions on the YOLO-World score plumbing under conf_mode==
+    "skip"; never activates under conf_mode=="none".
     """
     if hasattr(OpenYolo3D, "_original_label_3d_masks_from_2d_bboxes"):
         raise RuntimeError(
@@ -679,7 +764,14 @@ def install_method_22_only(
             "METHOD_22 already installed). Uninstall first."
         )
 
-    _ensure_method22_resources(prompt_embeddings_path, ema_alpha, use_inference_subset)
+    _ensure_method22_resources(
+        prompt_embeddings_path,
+        ema_alpha,
+        use_inference_subset,
+        conf_mode=conf_mode,
+        tau_skip=tau_skip,
+        conf_strict=conf_strict,
+    )
     _method22_state["min_match_iou"] = float(min_match_iou)
     _method22_state["topk_per_inst"] = int(topk_per_inst)
 
@@ -936,14 +1028,30 @@ def install_phase2(
     distance_threshold: float = 2.0,
     semantic_threshold: float = 0.3,
     class_aware: bool = True,
+    conf_mode: str = "none",
+    tau_skip: float = 0.0,
+    conf_strict: bool = False,
 ) -> None:
-    """METHOD_22 (label) + METHOD_32 (merge) with shared CLIP features."""
+    """METHOD_22 (label) + METHOD_32 (merge) with shared CLIP features.
+
+    `conf_mode`/`tau_skip` default to the pre-Task-1 baseline; passing
+    ``conf_mode="skip"`` engages the confidence-guarded EMA update path.
+    `conf_strict` activates Fail-Loud assertions on the YOLO-World score
+    plumbing under conf_mode=="skip"; ignored under conf_mode=="none".
+    """
     if hasattr(OpenYolo3D, "_original_label_3d_masks_from_2d_bboxes"):
         raise RuntimeError(
             "label_3d_masks_from_2d_bboxes is already patched. Uninstall first."
         )
 
-    _ensure_method22_resources(prompt_embeddings_path, ema_alpha, use_inference_subset)
+    _ensure_method22_resources(
+        prompt_embeddings_path,
+        ema_alpha,
+        use_inference_subset,
+        conf_mode=conf_mode,
+        tau_skip=tau_skip,
+        conf_strict=conf_strict,
+    )
     _method22_state["min_match_iou"] = float(min_match_iou)
     _method22_state["topk_per_inst"] = int(topk_per_inst)
 
