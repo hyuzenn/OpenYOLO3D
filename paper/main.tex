@@ -166,7 +166,12 @@ boxes, or labels.
 CLEAR-MOT~\cite{clearmot} (MOTA/MOTP), IDF1~\cite{idf1},
 HOTA~\cite{hota}, and nuScenes AMOTA~\cite{nuscenes_tracking} measure
 association quality against annotated GT trajectories over a closed category
-set. They are the right tools when GT identities exist. OV-TCS is not a
+set. Video segmentation has analogous consistency metrics --- STQ for
+segmenting-and-tracking-every-pixel~\cite{step}, VPQ for video panoptic
+segmentation~\cite{vpq}, and TETA's decomposed tracking
+evaluation~\cite{teta} --- but all of them likewise require dense GT tube
+identities over a fixed taxonomy. They are the right tools when GT identities
+exist. OV-TCS is not a
 competitor in that regime: it is a GT-free, vocabulary-free measurement for
 settings where those requirements fail. Empirically, it aligns with the
 association-sensitive components of MOT metrics (HOTA's AssA, IDF1) rather
@@ -223,6 +228,21 @@ therefore cannot detect identity \emph{transfer} between two objects of the
 same class, a limitation we discuss in Sec.~\ref{sec:limitations}); and it is
 not a per-scene quality score (Sec.~\ref{sec:beyond_length}).
 
+\subsection{Reporting rule and gameability}
+\label{sec:gaming}
+Because the system-level score averages over the track population it is
+computed on ($L\ge2$), any intervention that filters that population can move
+the score without improving temporal quality: in our own sweep, raising the
+proposal-score threshold to $0.3$ lifts mean OV-TCS ($0.136\!\to\!0.160$)
+while \emph{lowering} mAP ($0.341\!\to\!0.310$) --- it simply deletes weak,
+unstable tracks. Similarly, two systems can differ in population size
+(Tab.~\ref{tab:main}: 341{,}663 vs.\ 266{,}623 tracks). We therefore require
+OV-TCS to be reported jointly with (i) the number of scored tracks, (ii) the
+detection metric at the same operating point, and (iii) a fixed, stated
+associator setting. OV-TCS is a companion column to mAP, and comparisons that
+raise OV-TCS while shrinking the scored population or the detection metric
+must be read as filtering, not improvement.
+
 \section{Experimental Setup}
 \label{sec:setup}
 
@@ -250,6 +270,18 @@ are swept in Sec.~\ref{sec:sensitivity}.
 
 \section{Validating the Metric}
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figs/fig_fragdecomp_instance.png}
+\caption{Controlled fragmentation ($p=0\!\to\!0.5$, nuScenes val150,
+$\sim$20k tracks per level; detections frozen). mAP is constant by
+construction and measurement. OV-TCS falls monotonically, and the
+decomposition shows the drop is carried entirely by $\lnorm$ while the
+stability factor $(1-\csr)$ \emph{rises} --- the case that breaks
+stability-only metrics (Sec.~\ref{sec:product}).}
+\label{fig:fragdecomp}
+\end{figure}
+
 \subsection{mAP is blind to temporal degradation}
 \label{sec:apblind}
 
@@ -257,9 +289,10 @@ We corrupt track topology while provably leaving detections untouched:
 with probability $p$, a track is severed between adjacent frames
 (fragmentation injection), acting purely on associator output. mAP is
 constant across all $p$ --- confirmed by measurement, not only by
-construction --- while OV-TCS falls monotonically. On the open-vocabulary
-stream, fragmentation $0\!\to\!0.5$ moves mean OV-TCS $0.476\!\to\!0.438$
-while mAP does not move at all. As a positive control, corrupting association
+construction --- while OV-TCS falls monotonically
+(Fig.~\ref{fig:fragdecomp}). On the open-vocabulary stream, fragmentation
+$0\!\to\!0.5$ moves mean OV-TCS $0.476\!\to\!0.438$ while mAP does not move
+at all. As a positive control, corrupting association
 \emph{itself} (max-age $5\!\to\!1$, which interrupts tracks and changes what
 is emitted over time in a tracking-aware evaluation) degrades both families
 of temporal metrics; and in the E4 sweep (Sec.~\ref{sec:sensitivity}) mAP is
@@ -333,14 +366,20 @@ fragmentation as an \emph{improvement}. Decomposing the product's response,
 the $\lnorm$ factor carries the entire degradation (contribution $-0.058$
 vs.\ net $-0.037$) against a $+0.025$ opposing contribution from stability.
 
-\noindent\textbf{Conclusion.} Each factor exclusively owns one real failure
-mode; dropping either factor makes the metric \emph{directionally wrong} on
-the other axis, and tunable additive forms empirically collapse to a single
-factor. Among the two-factor forms that remain correct on both axes (product,
-min, geometric, harmonic), the product is the simplest and carries the most
-flicker-axis signal. We do not claim the product is uniquely optimal; we
-claim it is the minimal form that is never directionally wrong on an
-observed failure mode.
+\noindent\textbf{Conclusion, stated precisely.} Each factor exclusively owns
+one failure mode; dropping either factor makes the metric \emph{directionally
+wrong} on the other axis, and tunable additive forms empirically collapse to
+a single factor. Among the two-factor forms that remain correct on both axes
+(product, min, geometric, harmonic), the product is the simplest and carries
+the most flicker-axis signal. Two honesty notes bound this claim. First, the
+fragmentation axis is established by \emph{controlled injection}; on the real
+method pair of Tab.~\ref{tab:main}, fragmentation and flicker happen to
+improve together, so a stability-only score produces the same ranking there
+--- the injected case is precisely the trade-off regime a metric must not get
+wrong, but we have not yet observed that regime between two deployed methods.
+Second, we do not claim the product is uniquely optimal; we claim it is the
+minimal form that is never directionally wrong on either observed failure
+mode.
 
 \subsection{Agreement with GT-based MOT metrics}
 \label{sec:mot}
@@ -370,13 +409,22 @@ and global-association arms with the official tracking toolkits
 and AMOTA, and the identity-switch count falls by $2.8\times$ where OV-TCS
 improves.
 
-Per-scene ($n{=}150$ per arm), OV-TCS correlates strongly with the
-association-driven metrics --- HOTA $r{=}0.87$ (ego arm; pooled $0.78$), AssA
-$0.77$ pooled, IDF1 $0.71$ pooled --- and only weakly with the
+Per-scene ($n{=}150$ per arm, Fig.~\ref{fig:mot}), OV-TCS correlates strongly
+with the association-driven metrics --- HOTA $r{=}0.87$ (ego arm; pooled
+$0.78$), AssA $0.77$ pooled, IDF1 $0.71$ pooled --- and only weakly with the
 detection-driven ones (DetA $0.40$, MOTA $0.27$, MOTP $0.23$). This
 dissociation is the desired one: OV-TCS is a GT-free surrogate for the
 association/identity axis of tracking quality, not for detection quality,
 which mAP already covers.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figs/fig_ovtcs_vs_mot.pdf}
+\caption{Per-scene OV-TCS vs.\ GT-based MOT metrics (nuScenes val, 150
+scenes per arm). OV-TCS, computed without any ground-truth identities, tracks
+the association-quality axis (HOTA/AssA/IDF1) and not the detection axis.}
+\label{fig:mot}
+\end{figure}
 
 \subsection{Robustness to evaluator hyperparameters}
 \label{sec:sensitivity}
@@ -405,7 +453,18 @@ OV-TCS is computed on tracks produced by an associator with hyperparameters;
 a reviewer should ask whether our conclusions are an artifact of one setting.
 We sweep the association gate, max-age, and proposal-score threshold
 one-at-a-time around the production point --- 30 full-set replays
-(Tab.~\ref{tab:sensitivity}). Three findings. (1)~\emph{Rankings are
+(Tab.~\ref{tab:sensitivity}, Fig.~\ref{fig:sweep}).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figs/oat_ovtcs_C.png}\\[2pt]
+\includegraphics[width=0.8\linewidth]{figs/sensitivity_bars.png}
+\caption{Associator sensitivity. Top: OV-TCS vs.\ each association parameter
+(others at default); curves shift levels but never cross --- the method
+ordering is invariant. Bottom: normalized sensitivity per metric; association
+parameters move OV-TCS strongly and mAP not at all.}
+\label{fig:sweep}
+\end{figure} Three findings. (1)~\emph{Rankings are
 invariant}: at all 10 settings, the OV-TCS ordering (Global $>$ Fusion $\ge$
 Ego) and the mAP ordering (Fusion $>$ Ego $=$ Global, an exact tie) are
 unchanged; no swept region reverses any conclusion in this paper.
@@ -453,7 +512,10 @@ mAP spread is $0.022$ and two of which are \emph{exactly} tied. OV-TCS and
 its diagnostic companions decompose the tie: global-frame association
 improves OV-TCS by $24\%$ ($0.136\!\to\!0.168$), cuts fragmentation by
 $58\%$ ($10.70\!\to\!4.49$), and lowers the switch rate ($0.718\!\to\!0.580$)
-at bit-identical detection quality. Conversely, the merge and fusion axes
+at bit-identical detection quality. The improvement is not driven by a few
+scenes: a scene-level paired bootstrap over the 150 validation scenes gives a
+mean per-scene OV-TCS gain of $+0.049$ with $95\%$ CI $[0.045, 0.052]$
+($10^4$ resamples), and $96.7\%$ of scenes improve individually. Conversely, the merge and fusion axes
 move only detection metrics, leaving track structure untouched (verified to
 5 decimals over 341{,}663 tracks). The evaluation cleanly factorizes into a
 detection axis (mAP/NDS) and a temporal axis (OV-TCS), and real design
@@ -464,7 +526,9 @@ The flagship comparison above uses the closed CenterPoint label stream. On a
 fully open-vocabulary stream (2D open-vocabulary detections lifted to 3D,
 15-class prompt vocabulary), the same associator change reproduces the same
 signature: OV-TCS $0.216\!\to\!0.231$ ($+6.8\%$), fragmentation $-35\%$, CSR
-$-0.021$, at unchanged detection metrics. Restricting the vocabulary to the
+$-0.021$, at unchanged detection metrics (as in Tab.~\ref{tab:main},
+footnote~$b$: association neither adds nor removes boxes, so mAP/NDS are
+quoted from the shared cached evaluation of the frozen proposal set). Restricting the vocabulary to the
 10 nuScenes classes leaves the deltas essentially unchanged ($+5.5\%$,
 $-35\%$), so the improvement is not carried by non-benchmark ``stuff''
 classes. The effect is smaller than on the closed stream --- open-vocabulary
@@ -508,8 +572,16 @@ for temporal label aggregation (EMA weighting) did not improve detection
 quality in our experiments (aggregation-off beat all EMA settings); we
 therefore position OV-TCS strictly as a metric.
 \textbf{Scope of systems.} All validation uses our indoor (Mask3D-tracked)
-and outdoor (LiDAR-proposal) pipelines; breadth across third-party streaming
-systems is future work.
+and outdoor (LiDAR-proposal) pipelines, whose absolute tracking quality is
+modest (AMOTA $0.03$--$0.16$); agreement with MOT metrics in a
+high-performance tracking regime, and breadth across third-party streaming
+systems, are untested and are the most important future validations. The two
+domains also validate complementary properties (correctness prediction
+indoor; MOT agreement and sensitivity outdoor), so each individual claim is
+currently single-domain.
+\textbf{Gameability.} The score can be inflated by filtering the scored track
+population; Sec.~\ref{sec:gaming} defines the joint reporting rule that makes
+such filtering visible.
 
 \section{Conclusion}
 Per-frame detection metrics are blind --- provably and measurably --- to the
@@ -553,6 +625,10 @@ tracking performance: The CLEAR MOT metrics. EURASIP JIVP 2008.
 multi-target, multi-camera tracking. ECCV Workshops 2016.
 \bibitem{hota} J.~Luiten et al. HOTA: A higher order metric for evaluating
 multi-object tracking. IJCV 2021.
+\bibitem{step} M.~Weber et al. STEP: Segmenting and tracking every pixel.
+NeurIPS Datasets and Benchmarks 2021.
+\bibitem{vpq} D.~Kim et al. Video panoptic segmentation. CVPR 2020.
+\bibitem{teta} S.~Li et al. Tracking every thing in the wild. ECCV 2022.
 \end{thebibliography}
 }
 

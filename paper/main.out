@@ -1,0 +1,20 @@
+\BOOKMARK [1][-]{section.1}{Introduction}{}% 1
+\BOOKMARK [1][-]{section.2}{Related Work}{}% 2
+\BOOKMARK [1][-]{section.3}{OV-TCS}{}% 3
+\BOOKMARK [2][-]{subsection.3.1}{Setting}{section.3}% 4
+\BOOKMARK [2][-]{subsection.3.2}{Definition}{section.3}% 5
+\BOOKMARK [2][-]{subsection.3.3}{What OV-TCS is not}{section.3}% 6
+\BOOKMARK [2][-]{subsection.3.4}{Reporting rule and gameability}{section.3}% 7
+\BOOKMARK [1][-]{section.4}{Experimental Setup}{}% 8
+\BOOKMARK [1][-]{section.5}{Validating the Metric}{}% 9
+\BOOKMARK [2][-]{subsection.5.1}{mAP is blind to temporal degradation}{section.5}% 10
+\BOOKMARK [2][-]{subsection.5.2}{Beyond track length}{section.5}% 11
+\BOOKMARK [2][-]{subsection.5.3}{Why the product: two failure modes, two factors}{section.5}% 12
+\BOOKMARK [2][-]{subsection.5.4}{Agreement with GT-based MOT metrics}{section.5}% 13
+\BOOKMARK [2][-]{subsection.5.5}{Robustness to evaluator hyperparameters}{section.5}% 14
+\BOOKMARK [1][-]{section.6}{Using the Metric}{}% 15
+\BOOKMARK [2][-]{subsection.6.1}{Methods mAP cannot distinguish}{section.6}% 16
+\BOOKMARK [2][-]{subsection.6.2}{The effect survives an open-vocabulary label stream}{section.6}% 17
+\BOOKMARK [2][-]{subsection.6.3}{Class-aware label fusion}{section.6}% 18
+\BOOKMARK [1][-]{section.7}{Limitations}{}% 19
+\BOOKMARK [1][-]{section.8}{Conclusion}{}% 20
