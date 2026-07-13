@@ -19,14 +19,17 @@
 # Full:   qsub -v SCENE_LIMIT=0,DEVKIT=1 scripts/run_outdoor_mot_compare.pbs
 # =============================================================================
 
-# Run from the WORKTREE so `python -m` resolves the method_scannet package that
-# contains the new evaluator (cwd precedes PYTHONPATH in sys.path — running from
-# the main checkout shadows it). Data/cache/output are absolute into the main
-# checkout, so all artifacts still land in results/e1_*.
+# The production pipeline (global associator, association_frame, ...) lives as
+# UNCOMMITTED state in the main checkout — the frozen numbers came from it, so
+# E1 must run against exactly that code. We therefore run FROM the main
+# checkout, but invoke the new evaluator BY PATH from the worktree (script
+# invocation puts the script's own dir on sys.path, not the cwd, so
+# PYTHONPATH=$MAIN resolves method_scannet to the live main-checkout package
+# and nothing in the user's checkout is modified or shadowed).
 MAIN=/home/rintern16/OpenYOLO3D
 WORKTREE=$MAIN/.claude/worktrees/claude-md-update
-cd "$WORKTREE"
-[ -e data ] || ln -s "$MAIN/data" data
+cd "$MAIN"
+export PYTHONPATH=$MAIN:${PYTHONPATH:-}
 source /home/rintern16/miniconda3/etc/profile.d/conda.sh
 conda activate openyolo3d-dev
 export CUDA_HOME=/tools/cuda/cuda11.7
@@ -50,11 +53,12 @@ EXTRA=""
 
 echo "E1 outdoor_mot_compare  scene_limit=$SCENE_LIMIT devkit=$DEVKIT"
 echo "worktree rev: $(git -C $WORKTREE rev-parse HEAD)"
+echo "main checkout rev: $(git -C $MAIN rev-parse HEAD) (+$(git -C $MAIN status --short | wc -l) uncommitted files — the live pipeline)"
 cp configs/nuscenes_trainval.yaml "$RUN_DIR/config.yaml"
 cp "$WORKTREE/method_scannet/streaming/eval_mot_compare_outdoor.py" \
    "$RUN_DIR/evaluator_snapshot.py"
 
-python -u -m method_scannet.streaming.eval_mot_compare_outdoor \
+python -u "$WORKTREE/method_scannet/streaming/eval_mot_compare_outdoor.py" \
   --cp-cache-dir "$MAIN/results/outdoor_native_temporal_cpcache_thr000_single_gravity" \
   --output "$RUN_DIR/outputs" \
   --proposal-source gamma \
