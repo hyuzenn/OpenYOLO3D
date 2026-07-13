@@ -19,20 +19,25 @@
 # Full:   qsub -v SCENE_LIMIT=0,DEVKIT=1 scripts/run_outdoor_mot_compare.pbs
 # =============================================================================
 
-cd /home/rintern16/OpenYOLO3D
+# Run from the WORKTREE so `python -m` resolves the method_scannet package that
+# contains the new evaluator (cwd precedes PYTHONPATH in sys.path — running from
+# the main checkout shadows it). Data/cache/output are absolute into the main
+# checkout, so all artifacts still land in results/e1_*.
+MAIN=/home/rintern16/OpenYOLO3D
+WORKTREE=$MAIN/.claude/worktrees/claude-md-update
+cd "$WORKTREE"
+[ -e data ] || ln -s "$MAIN/data" data
 source /home/rintern16/miniconda3/etc/profile.d/conda.sh
 conda activate openyolo3d-dev
 export CUDA_HOME=/tools/cuda/cuda11.7
 export PATH=$CUDA_HOME/bin:$PATH
 export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
-WORKTREE=/home/rintern16/OpenYOLO3D/.claude/worktrees/claude-md-update
-export PYTHONPATH=$WORKTREE:${PYTHONPATH:-}
 
 # Self-contained E1 artifact dir (integration into STATE.md/tracker deferred —
 # per instruction, this run touches nothing outside its own run dir).
 EXP=e1_outdoor_mot_compare
-N=$(printf '%02d' $(($(ls -d results/${EXP}_v* 2>/dev/null | wc -l) + 1)))
-RUN_DIR=results/${EXP}_v${N}
+N=$(printf '%02d' $(($(ls -d $MAIN/results/${EXP}_v* 2>/dev/null | wc -l) + 1)))
+RUN_DIR=$MAIN/results/${EXP}_v${N}
 mkdir -p "$RUN_DIR/outputs"
 LOG="$RUN_DIR/run.log"
 exec >"$LOG" 2>&1
@@ -50,7 +55,7 @@ cp "$WORKTREE/method_scannet/streaming/eval_mot_compare_outdoor.py" \
    "$RUN_DIR/evaluator_snapshot.py"
 
 python -u -m method_scannet.streaming.eval_mot_compare_outdoor \
-  --cp-cache-dir results/outdoor_native_temporal_cpcache_thr000_single_gravity \
+  --cp-cache-dir "$MAIN/results/outdoor_native_temporal_cpcache_thr000_single_gravity" \
   --output "$RUN_DIR/outputs" \
   --proposal-source gamma \
   --arms ego global \
