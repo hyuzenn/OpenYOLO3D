@@ -1,0 +1,559 @@
+% OV-TCS — ICCV submission draft (rewritten from experimental evidence, 2026-07-14)
+% Compile: pdflatex main.tex (drop in the official ICCV style; falls back to a
+% plain two-column article so the draft builds standalone).
+\IfFileExists{iccv.sty}{%
+  \documentclass[10pt,twocolumn,letterpaper]{article}
+  \usepackage{iccv}
+}{%
+  \documentclass[10pt,twocolumn,letterpaper]{article}
+  \usepackage[margin=2cm]{geometry}
+}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage[pagebackref,breaklinks,colorlinks]{hyperref}
+
+\newcommand{\ovtcs}{\mathrm{OV\text{-}TCS}}
+\newcommand{\csr}{\mathrm{CSR}}
+\newcommand{\lnorm}{L_{\mathrm{norm}}}
+
+\begin{document}
+
+\title{OV-TCS: Measuring Temporal Label Consistency in Streaming
+Open-Vocabulary 3D Perception}
+
+\author{Anonymous ICCV submission\\Paper ID 0000}
+\maketitle
+
+\begin{abstract}
+Streaming open-vocabulary 3D perception systems assign open-vocabulary labels
+to 3D instances online, frame by frame. The field evaluates them almost
+exclusively with per-frame detection metrics (mAP/NDS), which cannot measure
+whether the \emph{same} physical object keeps a consistent identity and label
+over time; classical multi-object-tracking (MOT) metrics require ground-truth
+track identities and a closed label set, neither of which the open-vocabulary
+streaming setting provides. We introduce OV-TCS, a per-track temporal
+label-consistency score, $\ovtcs = \lnorm\cdot(1-\csr)$, computed only from a
+system's own predicted labels grouped by its own associator tracks. We
+validate the metric rather than assert it: (i)~under controlled fragmentation
+that leaves detections untouched, mAP is constant while OV-TCS degrades
+monotonically; (ii)~on ScanNet200 (6{,}202 instances) OV-TCS predicts label
+correctness beyond track length ($\Delta R^2{=}0.014$, $F{=}89.9$,
+$p{=}3.5{\times}10^{-21}$); (iii)~its two factors are each \emph{necessary}:
+semantic flicker is captured only by $(1-\csr)$, while fragmentation is
+captured only by $\lnorm$ --- a stability-only score misreports fragmentation
+as an \emph{improvement}; (iv)~on nuScenes, OV-TCS agrees with GT-based
+HOTA/IDF1/AMOTA at the system and scene level (per-scene $r$ up to $0.87$ with
+HOTA) despite using no ground-truth identities; and (v)~its method rankings
+are invariant across a $30$-run sweep of associator hyperparameters. Applied
+to real systems, OV-TCS separates methods that mAP collapses to an exact tie:
+switching ego- to global-frame association leaves mAP bit-identical while
+improving OV-TCS by 24\% and reducing fragmentation by 58\%, an effect that
+replicates on a fully open-vocabulary detection stream. Code and evaluation
+protocols will be released.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+
+Open-vocabulary 3D perception has moved rapidly from offline,
+per-scene labeling~\cite{openscene,openmask3d,openyolo3d} toward
+\emph{streaming} systems that build semantic 3D maps online for embodied
+agents~\cite{conceptfusion}. In the streaming setting, the same physical
+object is observed in many frames, and the system must maintain both its
+identity (via data association) and its open-vocabulary label over time. A
+semantic map whose labels flicker between frames, or whose objects shatter
+into short-lived fragments, is of limited use downstream regardless of how
+accurate each individual frame is.
+
+Yet the community evaluates these systems almost exclusively with per-frame
+detection metrics --- mAP and, on nuScenes, NDS~\cite{nuscenes}. These metrics
+score each frame independently and are structurally blind to cross-frame
+behavior. We show this blindness is not hypothetical: on nuScenes, replacing
+the associator's ego-frame matching with global-frame matching leaves mAP and
+NDS \emph{bit-identical} (association adds or removes no boxes at this
+operating point), while every temporal quality we can measure changes
+substantially (Sec.~\ref{sec:real_methods}). A practitioner choosing between
+these two systems by mAP would see no difference at all.
+
+The natural alternative --- MOT metrics such as MOTA~\cite{clearmot},
+IDF1~\cite{idf1}, HOTA~\cite{hota}, or nuScenes AMOTA~\cite{nuscenes_tracking}
+--- does not transfer to this setting: all of them require ground-truth track
+identities and a fixed, closed category set. Open-vocabulary streaming systems
+produce labels outside any annotated taxonomy, and most target environments
+(e.g., ScanNet-style indoor scans) have no GT track annotations at all. What
+is missing is a metric that measures temporal label consistency
+\emph{intrinsically}: from the system's own tracks and labels, without GT
+identities, and without restricting the vocabulary.
+
+We propose \textbf{OV-TCS} (Open-Vocabulary Temporal Consistency Score). For
+each track produced by the system's associator, we take the per-frame argmax
+open-vocabulary labels along the track and score the track by
+$\ovtcs = \lnorm\cdot(1-\csr)$, where $\lnorm = 1-1/L$ measures track
+integrity (fragmentation axis) and $1-\csr$, with $\csr$ the fraction of
+adjacent-frame label switches, measures semantic stability (flicker axis).
+The metric is deliberately simple; the contribution of this paper is not the
+formula but its \emph{validation}: we treat "is this a valid metric?" as an
+experimental question and answer it with controlled corruptions, predictive
+tests against ground truth, agreement tests against GT-based MOT metrics, and
+robustness analyses.
+
+Concretely, we establish five properties:
+
+\noindent\textbf{(1) It measures what mAP cannot.} Injecting track
+fragmentation \emph{after} detection leaves mAP fixed by construction and
+measurement, while OV-TCS degrades monotonically; interrupting association
+(reducing track max-age) degrades both --- a positive control
+(Sec.~\ref{sec:apblind}).
+
+\noindent\textbf{(2) It is not track length renamed.} On ScanNet200
+(6{,}202 instances), OV-TCS predicts per-instance label correctness after
+controlling for track length ($\Delta R^2{=}0.014$, $F{=}89.9$,
+$p{=}3.5{\times}10^{-21}$); track length alone is nearly useless (partial
+$r{=}-0.05$) (Sec.~\ref{sec:beyond_length}).
+
+\noindent\textbf{(3) Both factors are necessary, and the product is the
+minimal correct combination.} Flicker moves only $(1-\csr)$; fragmentation
+moves only $\lnorm$ --- and pushes $(1-\csr)$ \emph{up} (shattered tracks look
+internally stable), so a stability-only metric scores fragmentation as an
+improvement. Additive combinations collapse onto one factor when tuned
+($\lambda^*{=}0$) (Sec.~\ref{sec:product}).
+
+\noindent\textbf{(4) It agrees with GT-based MOT metrics without using GT.}
+On nuScenes val (150 scenes), OV-TCS ranks systems consistently with HOTA,
+IDF1, and AMOTA, and correlates per-scene with HOTA up to $r{=}0.87$
+(Sec.~\ref{sec:mot}).
+
+\noindent\textbf{(5) Its conclusions are robust to evaluator
+hyperparameters.} Across a 30-run sweep of association gate, max-age, and
+score threshold, no method ordering flips (Sec.~\ref{sec:sensitivity}).
+
+With the metric validated, we use it. It exposes temporal-quality differences
+between real methods that mAP scores as exact ties (ego- vs.\ global-frame
+association: OV-TCS $+24\%$, fragmentation $-58\%$ at bit-identical mAP), and
+the effect replicates when the label stream is fully open-vocabulary rather
+than a closed detector's (Sec.~\ref{sec:real_methods}). As a secondary
+contribution, we describe a class-aware 2D$\to$3D label-fusion scheme that
+improves detection mAP ($0.3407\to0.3420$) while leaving track topology
+unchanged --- the two contributions move orthogonal axes of the evaluation,
+which is itself a demonstration of why both axes must be measured
+(Sec.~\ref{sec:fusion}).
+
+We are explicit about scope. OV-TCS is validated at \emph{instance}
+granularity; aggregated per-scene it does not predict per-scene AP (partial
+$r{=}-0.03$, $p{=}0.61$), and we report this. Absolute OV-TCS values depend on
+the association operating point and are comparable only at a fixed, stated
+setting; what is robust is the induced ordering of methods. We view OV-TCS as
+a necessary complement to mAP for streaming open-vocabulary 3D perception,
+not a replacement.
+
+\section{Related Work}
+\label{sec:related}
+
+\noindent\textbf{Open-vocabulary 3D perception.}
+Distilling 2D vision--language features into 3D
+representations~\cite{openscene,lerf} and querying 3D instance masks with
+open vocabularies~\cite{openmask3d,openyolo3d} established the offline
+setting; ConceptFusion~\cite{conceptfusion} and successors brought
+open-vocabulary features into online mapping. Evaluation in all of these
+works is per-frame or per-scene (AP, mIoU); the temporal consistency of the
+predicted \emph{labels} over a stream is not measured. Our metric targets
+exactly this gap and is agnostic to how the underlying system produces masks,
+boxes, or labels.
+
+\noindent\textbf{Tracking metrics.}
+CLEAR-MOT~\cite{clearmot} (MOTA/MOTP), IDF1~\cite{idf1},
+HOTA~\cite{hota}, and nuScenes AMOTA~\cite{nuscenes_tracking} measure
+association quality against annotated GT trajectories over a closed category
+set. They are the right tools when GT identities exist. OV-TCS is not a
+competitor in that regime: it is a GT-free, vocabulary-free measurement for
+settings where those requirements fail. Empirically, it aligns with the
+association-sensitive components of MOT metrics (HOTA's AssA, IDF1) rather
+than the detection-sensitive ones (DetA, MOTP) --- Sec.~\ref{sec:mot} --- which
+is the alignment one would want from a GT-free surrogate.
+
+\noindent\textbf{Metric validation.}
+HOTA~\cite{hota} argued that tracking metrics must be decomposable along the
+failure modes they claim to measure. We adopt the same philosophy for the
+open-vocabulary streaming setting: each factor of OV-TCS is tied to one
+controlled corruption axis (flicker, fragmentation), and the combination rule
+is selected by which forms remain correct on \emph{both} axes, not by which
+maximizes a single regression score.
+
+\section{OV-TCS}
+\label{sec:metric}
+
+\subsection{Setting}
+A streaming system consumes a sensor stream and, at each frame $t$, outputs a
+set of localized instances with open-vocabulary labels. An associator links
+instances across frames into tracks. We make no assumption about the
+detector, the vocabulary, or the associator beyond this interface: OV-TCS is
+computed from (i) the track membership the system itself produces and (ii)
+the per-frame argmax label of each tracked instance. No ground truth of any
+kind is used to compute the metric.
+
+\subsection{Definition}
+Let a track observe labels $\ell_1,\dots,\ell_L$ over $L$ frames. Define
+\begin{align}
+\csr &= \frac{1}{L-1}\sum_{t=1}^{L-1}\mathbb{1}[\ell_t \neq \ell_{t+1}],
+\qquad L \ge 2,\\
+\lnorm &= 1 - \tfrac{1}{L},\\
+\ovtcs &= \lnorm\cdot(1-\csr).
+\end{align}
+$\csr$ (class-switch rate) measures \emph{semantic flicker}: how often the
+label changes between adjacent observations. $\lnorm$ measures \emph{track
+integrity}: a system that fragments an object into many short tracks
+populates the evaluation with low-$\lnorm$ pieces. The system-level score is
+the mean over tracks with $L\ge2$; we report the per-track distribution,
+track length, fragmentation (number of predicted tracks matched to one GT
+instance, used only for \emph{diagnosis} where GT boxes exist), and $\csr$
+alongside it.
+
+Both factors are bounded in $[0,1]$, so $\ovtcs\in[0,1]$, with 1 attained by
+an unbroken track that never changes its label. Section~\ref{sec:product}
+justifies the product form empirically; here we note only the design intent:
+a metric for streaming label quality must fail a system for either failure
+mode, and multiplication is the simplest form with that property.
+
+\subsection{What OV-TCS is not}
+It is not a detection metric (it never inspects localization quality --- mAP
+remains necessary); it is not an MOT metric (it uses no GT identities and
+therefore cannot detect identity \emph{transfer} between two objects of the
+same class, a limitation we discuss in Sec.~\ref{sec:limitations}); and it is
+not a per-scene quality score (Sec.~\ref{sec:beyond_length}).
+
+\section{Experimental Setup}
+\label{sec:setup}
+
+\noindent\textbf{Indoor.} ScanNet200~\cite{scannet200} validation (312
+scenes). Instances are tracked by projecting Mask3D~\cite{mask3d} 3D
+instance masks through the RGB-D stream; per-frame open-vocabulary labels
+come from a CLIP-based labeler over the 200-class prompt set. This yields
+6{,}202 tracked instances with GT semantic labels, used for predictive
+validation (does OV-TCS predict whether the track's majority label is
+correct?).
+
+\noindent\textbf{Outdoor.} nuScenes~\cite{nuscenes} validation, 150 scenes,
+single sweep. Proposals come from CenterPoint~\cite{centerpoint} (closed
+10-class stream; the ``native'' anchor, mAP $0.3407$/NDS $0.3145$) and from a
+detection-guided open-vocabulary pipeline (YOLO-World~\cite{yoloworld} 2D
+detections lifted to 3D clusters; 15-class prompt vocabulary). All temporal
+experiments are cache replays over frozen proposals, so detection content is
+held exactly constant while association and labeling vary; mAP/NDS are
+computed with the official devkit.
+
+\noindent\textbf{Associators.} A class-agnostic centroid associator
+(BEV gate $2.0$\,m, max-age 5) in either ego frame (no ego-motion
+compensation; the production configuration) or global frame. All parameters
+are swept in Sec.~\ref{sec:sensitivity}.
+
+\section{Validating the Metric}
+
+\subsection{mAP is blind to temporal degradation}
+\label{sec:apblind}
+
+We corrupt track topology while provably leaving detections untouched:
+with probability $p$, a track is severed between adjacent frames
+(fragmentation injection), acting purely on associator output. mAP is
+constant across all $p$ --- confirmed by measurement, not only by
+construction --- while OV-TCS falls monotonically. On the open-vocabulary
+stream, fragmentation $0\!\to\!0.5$ moves mean OV-TCS $0.476\!\to\!0.438$
+while mAP does not move at all. As a positive control, corrupting association
+\emph{itself} (max-age $5\!\to\!1$, which interrupts tracks and changes what
+is emitted over time in a tracking-aware evaluation) degrades both families
+of temporal metrics; and in the E4 sweep (Sec.~\ref{sec:sensitivity}) mAP is
+bit-identical across every association gate and max-age setting, isolating
+detection from association exactly. Per-frame detection metrics cannot see
+the axis OV-TCS measures.
+
+\subsection{Beyond track length}
+\label{sec:beyond_length}
+
+A fair worry is that OV-TCS is track length with extra notation. We test
+whether OV-TCS predicts \emph{label correctness} (majority label of the track
+equals the GT class of its instance) on 6{,}202 ScanNet200 instances,
+controlling for length. OV-TCS retains a significant partial correlation
+given length ($r{=}0.12$, $p{=}3.5{\times}10^{-21}$), and adding OV-TCS to a
+length-only model yields $\Delta R^2{=}0.014$ ($F{=}89.9$). Length alone is
+nearly useless (partial $r{=}-0.05$; $\Delta R^2{\approx}0.003$). The effect
+size is honest: OV-TCS is a coarse topological signal, not a calibrated
+correctness predictor; what the test establishes is that it carries
+information beyond length, in the direction it claims.
+
+The signal lives at instance granularity. Aggregated per scene ($n{=}312$)
+and regressed against per-scene AP$_{50}$, OV-TCS has no predictive power
+(partial $r{=}-0.03$, $p{=}0.61$). We therefore never use OV-TCS as a scene
+score, and report it as a per-track distribution or its mean over a fixed
+large track population.
+
+\subsection{Why the product: two failure modes, two factors}
+\label{sec:product}
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{lcc}
+\toprule
+Formulation & flicker axis $\Delta R^2$ & fragmentation axis \\
+\midrule
+$(1-\csr)$ only (stability) & \textbf{0.023} & \emph{misreports} ($\uparrow$) \\
+$\lnorm\cdot(1-\csr)$ (product) & 0.014 & correct ($\downarrow$) \\
+$\min(\lnorm, 1-\csr)$ & 0.012 & correct \\
+geometric mean & 0.011 & correct \\
+harmonic mean & 0.010 & correct \\
+$\lnorm$ only (length) & 0.003 & correct ($\downarrow$) \\
+weighted sum (tuned) & $\lambda^*{=}0$ $\Rightarrow$ stability & misreports \\
+\bottomrule
+\end{tabular}
+\caption{Formulation analysis. Left: explanatory power for label correctness
+under real flicker (ScanNet200, $n{=}6202$). Right: qualitative behavior
+under controlled fragmentation (nuScenes, $\sim$20k tracks per level). Only
+forms that keep both factors respond correctly on both axes; the product is
+the simplest of them and the strongest on the flicker axis among them.}
+\label{tab:formulation}
+\end{table}
+
+Why $\lnorm\cdot(1-\csr)$, and not stability alone, length alone, or a sum?
+We answer with two independent corruption axes (Tab.~\ref{tab:formulation}).
+
+\noindent\textbf{Flicker axis.} On real indoor flicker, explanatory power for
+label correctness is owned by the stability factor: stability-only achieves
+$\Delta R^2{=}0.023$, the product $0.014$, and length-only $0.003$. A
+validation-tuned weighted sum collapses to stability-only
+($\lambda^*{=}0.00$). If flicker were the only failure mode, $(1-\csr)$ alone
+would win.
+
+\noindent\textbf{Fragmentation axis.} It is not the only failure mode. Under
+controlled fragmentation $0\!\to\!0.5$ on nuScenes ($\sim$19--22k tracks per
+level), mean track length falls $4.28\!\to\!2.53$ and $\lnorm$
+$0.648\!\to\!0.569$, but mean $(1-\csr)$ \emph{rises} $0.731\!\to\!0.769$:
+shattering a track leaves fewer within-track transitions, so each fragment
+looks internally stable. A stability-only metric therefore scores
+fragmentation as an \emph{improvement}. Decomposing the product's response,
+the $\lnorm$ factor carries the entire degradation (contribution $-0.058$
+vs.\ net $-0.037$) against a $+0.025$ opposing contribution from stability.
+
+\noindent\textbf{Conclusion.} Each factor exclusively owns one real failure
+mode; dropping either factor makes the metric \emph{directionally wrong} on
+the other axis, and tunable additive forms empirically collapse to a single
+factor. Among the two-factor forms that remain correct on both axes (product,
+min, geometric, harmonic), the product is the simplest and carries the most
+flicker-axis signal. We do not claim the product is uniquely optimal; we
+claim it is the minimal form that is never directionally wrong on an
+observed failure mode.
+
+\subsection{Agreement with GT-based MOT metrics}
+\label{sec:mot}
+
+\begin{table}[t]
+\centering\small
+\setlength{\tabcolsep}{3.4pt}
+\begin{tabular}{lccccccc}
+\toprule
+Arm & $\ovtcs$ & HOTA & AssA & IDF1 & AMOTA & IDS & Frag \\
+\midrule
+Ego    & 0.136 & 0.126 & 0.161 & 0.087 & 0.034 & 87{,}003 & 9{,}376 \\
+Global & \textbf{0.188} & \textbf{0.199} & \textbf{0.400} & \textbf{0.183} & \textbf{0.158} & \textbf{30{,}608} & 9{,}452 \\
+\bottomrule
+\end{tabular}
+\caption{System-level agreement on nuScenes val150 (cache replay;
+class-agnostic association, 2.0\,m gate). OV-TCS, computed without GT
+identities, ranks the two systems identically to HOTA, IDF1, and AMOTA
+(official devkit).}
+\label{tab:mot_system}
+\end{table}
+
+If OV-TCS measures temporal quality, it should agree with GT-based MOT
+metrics where those are computable. On nuScenes val150 we evaluate the ego-
+and global-association arms with the official tracking toolkits
+(Tab.~\ref{tab:mot_system}). OV-TCS ranks the arms identically to HOTA, IDF1
+and AMOTA, and the identity-switch count falls by $2.8\times$ where OV-TCS
+improves.
+
+Per-scene ($n{=}150$ per arm), OV-TCS correlates strongly with the
+association-driven metrics --- HOTA $r{=}0.87$ (ego arm; pooled $0.78$), AssA
+$0.77$ pooled, IDF1 $0.71$ pooled --- and only weakly with the
+detection-driven ones (DetA $0.40$, MOTA $0.27$, MOTP $0.23$). This
+dissociation is the desired one: OV-TCS is a GT-free surrogate for the
+association/identity axis of tracking quality, not for detection quality,
+which mAP already covers.
+
+\subsection{Robustness to evaluator hyperparameters}
+\label{sec:sensitivity}
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{lccc}
+\toprule
+ & Ego & Global & Fusion \\
+\midrule
+mAP CV over grid & 0.027 & 0.027 & 0.027 \\
+$\ovtcs$ CV over grid & 0.220 & 0.167 & 0.220 \\
+ordering flips (mAP) & \multicolumn{3}{c}{0 / 10 settings} \\
+ordering flips ($\ovtcs$) & \multicolumn{3}{c}{0 / 10 settings} \\
+\bottomrule
+\end{tabular}
+\caption{Associator-sensitivity sweep (30 full val150 replays): association
+gate $\in\{1,1.5,2,3,4\}$\,m, max-age $\in\{1,3,5,10\}$, score threshold
+$\in\{0,0.1,0.3\}$, one-at-a-time around the production point. Method
+orderings never flip. Grid-level Spearman(mAP, $\ovtcs$) $=-0.018$: the two
+metrics respond to disjoint parameter axes.}
+\label{tab:sensitivity}
+\end{table}
+
+OV-TCS is computed on tracks produced by an associator with hyperparameters;
+a reviewer should ask whether our conclusions are an artifact of one setting.
+We sweep the association gate, max-age, and proposal-score threshold
+one-at-a-time around the production point --- 30 full-set replays
+(Tab.~\ref{tab:sensitivity}). Three findings. (1)~\emph{Rankings are
+invariant}: at all 10 settings, the OV-TCS ordering (Global $>$ Fusion $\ge$
+Ego) and the mAP ordering (Fusion $>$ Ego $=$ Global, an exact tie) are
+unchanged; no swept region reverses any conclusion in this paper.
+(2)~\emph{Levels are operating-point dependent}: OV-TCS CV is
+$0.17$--$0.22$ vs.\ $0.027$ for mAP; permissive gates lengthen tracks and
+raise $\lnorm$. Absolute OV-TCS values must therefore be reported at a fixed,
+stated association setting; only orderings transfer across settings.
+(3)~\emph{Decoupling}: mAP is bit-identical across all gates and max-ages and
+moves only with the score threshold, while OV-TCS moves only with the gate and
+max-age (grid-level Spearman $-0.018$) --- an independent, 30-point
+confirmation of Sec.~\ref{sec:apblind} on real (non-injected) parameter
+perturbations.
+
+\section{Using the Metric}
+\label{sec:real_methods}
+
+\begin{table}[t]
+\centering\small
+\setlength{\tabcolsep}{3.2pt}
+\begin{tabular}{lcccccc}
+\toprule
+Method & mAP & NDS & $\ovtcs$ & Len & Frag & $\csr$ \\
+\midrule
+Per-frame baseline & \textbf{0.3407} & \textbf{0.3145} & ---$^a$ & --- & --- & --- \\
+Ego assoc. & 0.3407$^b$ & 0.3145$^b$ & 0.136 & 3.01 & 10.70 & 0.718 \\
+Global assoc. & 0.3407$^b$ & 0.3145$^b$ & \textbf{0.168} & \textbf{3.24} & \textbf{4.49} & \textbf{0.580} \\
+Label fusion & \textbf{0.3420} & \textbf{0.3159} & 0.136$^d$ & 3.01 & 10.70 & 0.718 \\
+M31 (IoU merge) & 0.3407 & 0.3145 & 0.136$^c$ & 3.01 & 10.70 & 0.718 \\
+M32 (Hungarian) & 0.3198 & 0.3028 & 0.136$^c$ & 3.01 & 10.70 & 0.718 \\
+\bottomrule
+\end{tabular}
+\caption{nuScenes val150 main table (closed CenterPoint stream, cache
+replay). $^a$class-aware baseline association pins $\csr{=}0$ structurally
+(degenerate). $^b$association is detection-invariant: mAP/NDS unchanged.
+$^c$merge axes act after association; track metrics equal ego by construction
+and reproduce it to 5 decimals ($n$\,=\,341{,}663 tracks). $^d$fusion relabels
+two rare classes; aggregate track metrics unchanged to the 4th decimal.}
+\label{tab:main}
+\end{table}
+
+\subsection{Methods mAP cannot distinguish}
+Table~\ref{tab:main} is the central use case. Three pipeline decisions ---
+association frame, IoU merging, label fusion --- produce four systems whose
+mAP spread is $0.022$ and two of which are \emph{exactly} tied. OV-TCS and
+its diagnostic companions decompose the tie: global-frame association
+improves OV-TCS by $24\%$ ($0.136\!\to\!0.168$), cuts fragmentation by
+$58\%$ ($10.70\!\to\!4.49$), and lowers the switch rate ($0.718\!\to\!0.580$)
+at bit-identical detection quality. Conversely, the merge and fusion axes
+move only detection metrics, leaving track structure untouched (verified to
+5 decimals over 341{,}663 tracks). The evaluation cleanly factorizes into a
+detection axis (mAP/NDS) and a temporal axis (OV-TCS), and real design
+decisions live on each.
+
+\subsection{The effect survives an open-vocabulary label stream}
+The flagship comparison above uses the closed CenterPoint label stream. On a
+fully open-vocabulary stream (2D open-vocabulary detections lifted to 3D,
+15-class prompt vocabulary), the same associator change reproduces the same
+signature: OV-TCS $0.216\!\to\!0.231$ ($+6.8\%$), fragmentation $-35\%$, CSR
+$-0.021$, at unchanged detection metrics. Restricting the vocabulary to the
+10 nuScenes classes leaves the deltas essentially unchanged ($+5.5\%$,
+$-35\%$), so the improvement is not carried by non-benchmark ``stuff''
+classes. The effect is smaller than on the closed stream --- open-vocabulary
+proposals are noisier and shorter-lived --- but its direction and structure
+replicate in the regime the metric is designed for.
+
+\subsection{Class-aware label fusion}
+\label{sec:fusion}
+As a secondary, method-level contribution we fuse 2D open-vocabulary
+detections into the 3D stream with class- and source-aware gating (per-class
+IoU and score thresholds; here instantiated for the two classes where the 2D
+detector is reliably stronger, bicycle and motorcycle). Fusion raises mAP
+$0.3407\!\to\!0.3420$ and NDS $0.3145\!\to\!0.3159$ against the CenterPoint
+anchor while provably not touching track topology (Tab.~\ref{tab:main}).
+We report its honest boundaries: a naive global score gate for fusion
+\emph{fails} (it cannot beat the anchor), and the open-vocabulary proposal
+stream itself remains far below the closed anchor on closed-set mAP
+($0.002$ vs.\ $0.341$) because its bottleneck is 3D localization, not
+labeling. Fusion is evidence that the 2D$\to$3D label pathway carries
+exploitable signal when gated per class --- not a claim of state-of-the-art
+detection.
+
+\section{Limitations}
+\label{sec:limitations}
+
+\textbf{No identity-transfer detection.} Without GT identities, OV-TCS cannot
+see a track that drifts from one object to another of the same class; MOT
+metrics remain necessary where GT tracks exist (our MOT agreement results
+suggest OV-TCS is a reasonable surrogate where they do not).
+\textbf{Granularity.} The validated granularity is per-instance/per-track;
+per-scene aggregation does not predict per-scene AP ($p{=}0.61$) and should
+not be used.
+\textbf{Effect size.} The beyond-length effect is significant but small
+($\Delta R^2{=}0.014$); OV-TCS is a topological consistency signal, not a
+correctness estimator.
+\textbf{Operating-point dependence.} Absolute values are comparable only at a
+fixed association setting (levels vary with gate/max-age; orderings did not
+flip anywhere we swept, but the sweep is one-at-a-time, not exhaustive).
+\textbf{Aggregation is not a method.} Feeding OV-TCS back as a control signal
+for temporal label aggregation (EMA weighting) did not improve detection
+quality in our experiments (aggregation-off beat all EMA settings); we
+therefore position OV-TCS strictly as a metric.
+\textbf{Scope of systems.} All validation uses our indoor (Mask3D-tracked)
+and outdoor (LiDAR-proposal) pipelines; breadth across third-party streaming
+systems is future work.
+
+\section{Conclusion}
+Per-frame detection metrics are blind --- provably and measurably --- to the
+temporal degradation that determines whether a streaming open-vocabulary 3D
+map is usable. OV-TCS measures that axis intrinsically, needs no ground-truth
+identities or closed vocabulary, and passes the validations a metric should
+pass: sensitivity to exactly the corruptions it claims to measure, predictive
+signal beyond track length, factor-level necessity of its two components,
+agreement with GT-based MOT metrics where they exist, and ranking stability
+across evaluator hyperparameters. Used on real systems, it separates design
+decisions that mAP scores as exact ties. We hope it becomes a standard
+companion column to mAP in streaming open-vocabulary 3D perception.
+
+{\small
+\begin{thebibliography}{00}
+\bibitem{openscene} S.~Peng et al. OpenScene: 3D scene understanding with
+open vocabularies. CVPR 2023.
+\bibitem{lerf} J.~Kerr et al. LERF: Language embedded radiance fields.
+ICCV 2023.
+\bibitem{openmask3d} A.~Takmaz et al. OpenMask3D: Open-vocabulary 3D
+instance segmentation. NeurIPS 2023.
+\bibitem{openyolo3d} M.~E.~A.~Boudjoghra et al. Open-YOLO 3D: Towards fast
+and accurate open-vocabulary 3D instance segmentation. NeurIPS 2024.
+\bibitem{conceptfusion} K.~Jatavallabhula et al. ConceptFusion:
+Open-set multimodal 3D mapping. RSS 2023.
+\bibitem{mask3d} J.~Schult et al. Mask3D: Mask transformer for 3D semantic
+instance segmentation. ICRA 2023.
+\bibitem{centerpoint} T.~Yin, X.~Zhou, P.~Kr\"ahenb\"uhl. Center-based 3D
+object detection and tracking. CVPR 2021.
+\bibitem{yoloworld} T.~Cheng et al. YOLO-World: Real-time open-vocabulary
+object detection. CVPR 2024.
+\bibitem{nuscenes} H.~Caesar et al. nuScenes: A multimodal dataset for
+autonomous driving. CVPR 2020.
+\bibitem{nuscenes_tracking} H.~Caesar et al. nuScenes tracking benchmark
+(AMOTA/AMOTP), 2019.
+\bibitem{scannet200} D.~Rozenberszki, O.~Litany, A.~Dai. Language-grounded
+indoor 3D semantic segmentation in the wild (ScanNet200). ECCV 2022.
+\bibitem{clearmot} K.~Bernardin, R.~Stiefelhagen. Evaluating multiple object
+tracking performance: The CLEAR MOT metrics. EURASIP JIVP 2008.
+\bibitem{idf1} E.~Ristani et al. Performance measures and a data set for
+multi-target, multi-camera tracking. ECCV Workshops 2016.
+\bibitem{hota} J.~Luiten et al. HOTA: A higher order metric for evaluating
+multi-object tracking. IJCV 2021.
+\end{thebibliography}
+}
+
+\end{document}
