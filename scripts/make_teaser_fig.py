@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 ego, glob = '#8f8f8f', '#0072B2'
 panels = [
     ("mAP", [0.3407, 0.3407], "bit-identical", "%.4f", (0, 0.50)),
-    ("OV-TCS", [0.136, 0.168], "+24%", "%.3f", (0, 0.23)),
-    ("Fragmentation (lower better)", [10.70, 4.49], "−58%", "%.2f", (0, 14.5)),
+    ("OV-TCS", [0.136, 0.188], "+38%", "%.3f", (0, 0.26)),
+    ("Fragmentation (lower better)", [10.64, 4.45], "−58%", "%.2f", (0, 14.5)),
 ]
 fig, axes = plt.subplots(1, 3, figsize=(6.9, 2.1))
 for ax, (title, vals, note, fmt, ylim) in zip(axes, panels):

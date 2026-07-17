@@ -44,9 +44,12 @@ to $0.87$ with HOTA), with rankings invariant across a 30-run sweep of
 associator hyperparameters. The practical payoff: OV-TCS separates real
 design decisions that mAP scores as exact ties. Switching from ego- to
 global-frame association leaves mAP bit-identical while improving OV-TCS by
-24\% (mean per-scene gain $+0.049$, 95\% CI $[0.045, 0.052]$) and reducing
-fragmentation by 58\%, an effect that replicates on a fully open-vocabulary
-detection stream. Code and evaluation protocols will be released.
+38\% ($0.136\!\to\!0.188$; pooled gain $+0.052$, 95\% CI $[0.049, 0.055]$)
+and reducing fragmentation by 58\%. The gain survives the metric's own
+anti-gaming audit --- including a GT-instance-paired comparison ($+0.147$,
+95\% CI $[0.142, 0.152]$ over 8{,}046 instances) --- and its direction
+replicates on a fully open-vocabulary detection stream. Code and evaluation
+protocols will be released.
 \end{abstract}
 
 \begin{figure}[t]
@@ -55,8 +58,8 @@ detection stream. Code and evaluation protocols will be released.
 \caption{\textbf{Why a temporal axis is needed.} Two real systems that differ
 only in their association frame (ego vs.\ global) are \emph{bit-identical} in
 mAP --- a practitioner comparing them by detection metrics sees no difference
-at all --- yet differ substantially in temporal label quality: OV-TCS $+24\%$
-(mean per-scene gain $+0.049$, 95\% CI $[0.045,0.052]$, $96.7\%$ of scenes
+at all --- yet differ substantially in temporal label quality: OV-TCS $+38\%$
+(pooled gain $+0.052$, 95\% CI $[0.049,0.055]$, $96.7\%$ of scenes
 improve) and $58\%$ less fragmentation. nuScenes val150, frozen proposals,
 cache replay; values from Tab.~\ref{tab:main}.}
 \label{fig:teaser}
@@ -150,7 +153,7 @@ score threshold, no method ordering flips (Sec.~\ref{sec:sensitivity}).
 
 With the metric validated, we use it. It exposes temporal-quality differences
 between real methods that mAP scores as exact ties (Fig.~\ref{fig:teaser}:
-ego- vs.\ global-frame association, OV-TCS $+24\%$, fragmentation $-58\%$ at
+ego- vs.\ global-frame association, OV-TCS $+38\%$, fragmentation $-58\%$ at
 bit-identical mAP), and the effect replicates when the label stream is fully
 open-vocabulary rather than a closed detector's
 (Sec.~\ref{sec:real_methods}). The label-fusion contribution moves the
@@ -228,11 +231,16 @@ Let a track observe labels $\ell_1,\dots,\ell_L$ over $L$ frames. Define
 $\csr$ (class-switch rate) measures \emph{semantic flicker}: how often the
 label changes between adjacent observations. $\lnorm$ measures \emph{track
 integrity}: a system that fragments an object into many short tracks
-populates the evaluation with low-$\lnorm$ pieces. The system-level score is
-the mean over tracks with $L\ge2$; we report the per-track distribution,
-track length, fragmentation (number of predicted tracks matched to one GT
-instance, used only for \emph{diagnosis} where GT boxes exist), and $\csr$
-alongside it.
+populates the evaluation with low-$\lnorm$ pieces. For a singleton track
+($L{=}1$), $\csr$ is undefined but $\ovtcs$ is $0$ by construction
+($\lnorm{=}0$). The system-level score is the mean over \emph{all} tracks:
+singletons enter at exactly $0$, so a system that shatters objects into
+single-frame fragments is penalized maximally rather than having those
+fragments silently dropped from the average. We report the per-track
+distribution, track length, fragmentation (number of predicted tracks matched
+to one GT instance, used only for \emph{diagnosis} where GT boxes exist), and
+$\csr$ alongside it (in diagnostic tables, singletons contribute $\csr{=}0$
+under the same convention).
 
 Both factors are bounded in $[0,1]$, so $\ovtcs\in[0,1]$, with 1 attained by
 an unbroken track that never changes its label. Section~\ref{sec:product}
@@ -250,17 +258,45 @@ not a per-scene quality score (Sec.~\ref{sec:beyond_length}).
 \subsection{Reporting rule and gameability}
 \label{sec:gaming}
 Because the system-level score averages over the track population it is
-computed on ($L\ge2$), any intervention that filters that population can move
+computed on, any intervention that filters that population can move
 the score without improving temporal quality: in our own sweep, raising the
 proposal-score threshold to $0.3$ lifts mean OV-TCS ($0.136\!\to\!0.160$)
-while \emph{lowering} mAP ($0.341\!\to\!0.310$) --- it simply deletes weak,
+while \emph{lowering} mAP ($0.341\!\to\!0.310$) and cutting the scored
+population from $341{,}663$ to $73{,}184$ tracks --- it simply deletes weak,
 unstable tracks. Similarly, two systems can differ in population size
 (Tab.~\ref{tab:main}: 341{,}663 vs.\ 266{,}623 tracks). We therefore require
 OV-TCS to be reported jointly with (i) the number of scored tracks, (ii) the
 detection metric at the same operating point, and (iii) a fixed, stated
 associator setting. OV-TCS is a companion column to mAP, and comparisons that
 raise OV-TCS while shrinking the scored population or the detection metric
-must be read as filtering, not improvement.
+must be treated as suspect until a population-controlled audit shows
+otherwise.
+
+\noindent\textbf{The rule applied to our own headline.} Our flagship
+comparison (Tab.~\ref{tab:main}) raises OV-TCS while reducing the track count
+by $22\%$ ($341{,}663\!\to\!266{,}623$), so our own rule demands an audit: is
+the gain merging, or filtering? Four population controls answer this
+(computed on the MOT-comparable 7-class tracking subset: $700{,}752$ boxes;
+$293{,}275$ vs.\ $230{,}644$ tracks). \emph{(i) Box conservation:} both arms
+contain exactly the same boxes, per-sample-equal in all $6{,}019$ samples
+($1{,}029{,}380$ boxes bit-identical on the full population) --- association
+regroups boxes but cannot delete them, so no track can be suppressed, only
+re-grouped. \emph{(ii) Scored coverage rises:} the fraction of boxes covered
+by multi-frame ($L\ge2$) tracks grows from $82.4\%$ to $87.3\%$; fewer tracks
+here means merging, which \emph{adds} former singletons to the scored
+population --- the opposite of filtering. \emph{(iii) Within-length-stratum
+gains:} global $\ge$ ego in every stratum from $L{=}2$ to $L{=}19$ (e.g.,
+$L{=}2$: $0.163$ vs.\ $0.138$), and reweighting global's per-length means to
+ego's exact length distribution retains a $+14.7\%$ gain with the length
+distribution frozen. \emph{(iv) GT-instance-paired:} over the $8{,}046$ GT
+instances matched in both arms (nearest-GT $\le 2$\,m BEV per frame, majority
+vote per track), per-instance OV-TCS rises $0.287\!\to\!0.434$ ($+0.147$,
+95\% CI $[0.142, 0.152]$, $10^4$-resample paired bootstrap; $70.9\%$ of
+instances improve, $11.5\%$ tie) and per-instance fragmentation falls
+$7.89\!\to\!4.65$. On a fixed set of physical objects the gain is
+\emph{larger} than the system-level delta. The headline gain is merging, not
+filtering --- and this audit is the template we prescribe for any comparison
+the reporting rule flags.
 
 \section{Experimental Setup}
 \label{sec:setup}
@@ -435,8 +471,9 @@ and AMOTA, and the identity-switch count falls by $2.8\times$ where OV-TCS
 improves.
 
 Per-scene ($n{=}150$ per arm, Fig.~\ref{fig:mot}), OV-TCS correlates strongly
-with the association-driven metrics --- HOTA $r{=}0.87$ (ego arm; pooled
-$0.78$), AssA $0.77$ pooled, IDF1 $0.71$ pooled --- and only weakly with the
+with the association-driven metrics --- HOTA $r{=}0.87$ in the ego arm,
+$0.60$ in the global arm, $0.78$ pooled; AssA $0.77$ pooled; IDF1 $0.71$
+pooled --- and only weakly with the
 detection-driven ones (DetA $0.40$, MOTA $0.27$, MOTP $0.23$). This
 dissociation is the desired one: OV-TCS is a GT-free surrogate for the
 association/identity axis of tracking quality, not for detection quality,
@@ -514,15 +551,18 @@ perturbations.
 Method & mAP & NDS & $\ovtcs$ & Len & Frag & $\csr$ \\
 \midrule
 Per-frame baseline & \textbf{0.3407} & \textbf{0.3145} & ---$^a$ & --- & --- & --- \\
-Ego assoc. & 0.3407$^b$ & 0.3145$^b$ & 0.136 & 3.01 & 10.70 & 0.718 \\
-Global assoc. & 0.3407$^b$ & 0.3145$^b$ & \textbf{0.168} & \textbf{3.24} & \textbf{4.49} & \textbf{0.580} \\
-Label fusion & \textbf{0.3420} & \textbf{0.3159} & 0.136$^d$ & 3.01 & 10.70 & 0.718 \\
-M31 (IoU merge) & 0.3407 & 0.3145 & 0.136$^c$ & 3.01 & 10.70 & 0.718 \\
-M32 (Hungarian) & 0.3198 & 0.3028 & 0.136$^c$ & 3.01 & 10.70 & 0.718 \\
+Ego assoc. & 0.3407$^b$ & 0.3145$^b$ & 0.136 & 3.01 & 10.64 & 0.507 \\
+Global assoc. & 0.3407$^b$ & 0.3145$^b$ & \textbf{0.188} & \textbf{3.86} & \textbf{4.45} & \textbf{0.457} \\
+Label fusion & \textbf{0.3420} & \textbf{0.3159} & 0.136$^d$ & 3.01 & 10.64 & 0.507 \\
+M31 (IoU merge) & 0.3407 & 0.3145 & 0.136$^c$ & 3.01 & 10.64 & 0.507 \\
+M32 (Hungarian) & 0.3198 & 0.3028 & 0.136$^c$ & 3.01 & 10.64 & 0.507 \\
 \bottomrule
 \end{tabular}
 \caption{nuScenes val150 main table (closed CenterPoint stream, cache
-replay). $^a$class-aware baseline association pins $\csr{=}0$ structurally
+replay). $\ovtcs$ and $\csr$ are means over all tracks (singletons contribute
+$0$; Sec.~\ref{sec:metric}); Frag is the mean number of predicted tracks per
+GT instance ($9{,}690$ instances, diagnosis only).
+$^a$class-aware baseline association pins $\csr{=}0$ structurally
 (degenerate). $^b$association is detection-invariant: mAP/NDS unchanged.
 $^c$merge axes act after association; track metrics equal ego by construction
 and reproduce it to 5 decimals ($n$\,=\,341{,}663 tracks). $^d$fusion relabels
@@ -535,16 +575,32 @@ Table~\ref{tab:main} is the central use case. Three pipeline decisions ---
 association frame, IoU merging, label fusion --- produce four systems whose
 mAP spread is $0.022$ and two of which are \emph{exactly} tied. OV-TCS and
 its diagnostic companions decompose the tie: global-frame association
-improves OV-TCS by $24\%$ ($0.136\!\to\!0.168$), cuts fragmentation by
-$58\%$ ($10.70\!\to\!4.49$), and lowers the switch rate ($0.718\!\to\!0.580$)
-at bit-identical detection quality. The improvement is not driven by a few
-scenes: a scene-level paired bootstrap over the 150 validation scenes gives a
-mean per-scene OV-TCS gain of $+0.049$ with $95\%$ CI $[0.045, 0.052]$
-($10^4$ resamples), and $96.7\%$ of scenes improve individually. Conversely, the merge and fusion axes
-move only detection metrics, leaving track structure untouched (verified to
-5 decimals over 341{,}663 tracks). The evaluation cleanly factorizes into a
-detection axis (mAP/NDS) and a temporal axis (OV-TCS), and real design
-decisions live on each.
+improves OV-TCS by $38\%$ ($0.136\!\to\!0.188$), cuts fragmentation by
+$58\%$ ($10.64\!\to\!4.45$), lengthens tracks ($3.01\!\to\!3.86$), and lowers
+the switch rate ($0.507\!\to\!0.457$) at bit-identical detection quality. The
+improvement is not driven by a few scenes: the pooled (track-weighted) gain
+is $+0.052$ with $95\%$ CI $[0.049, 0.055]$ (scene-cluster bootstrap, $10^4$
+resamples; the statistic bootstrapped is the same all-track mean the metric
+defines), the scene-weighted mean gain is consistent at $+0.049$, and
+$96.7\%$ of the 150 scenes improve individually. Nor is it a population
+artifact: the audit of Sec.~\ref{sec:gaming} --- box conservation, rising
+scored coverage, within-stratum gains, GT-instance-paired $+0.147$ ---
+confirms the gain survives population control. Conversely, the merge and
+fusion axes move only detection metrics, leaving track structure untouched
+(verified to 5 decimals over 341{,}663 tracks). The evaluation cleanly
+factorizes into a detection axis (mAP/NDS) and a temporal axis (OV-TCS), and
+real design decisions live on each.
+
+\noindent\textbf{Provenance note.} An earlier draft of this comparison
+reported global-arm OV-TCS $0.168$ ($+24\%$). That value came from a
+since-retired variant of the global-frame associator. The production
+implementation --- used for every number in this paper --- yields $0.188$,
+reproduced independently by the MOT-agreement harness
+(Tab.~\ref{tab:mot_system}) and the sensitivity replay
+(Sec.~\ref{sec:sensitivity}); the ego arm is bit-identical across all runs.
+The difference is implementation provenance, not a scientific disagreement:
+both variants preserve every ordering and every conclusion, and only the
+magnitude of the global arm's gain changes.
 
 \subsection{The effect survives an open-vocabulary label stream}
 The flagship comparison above uses the closed CenterPoint label stream. On a
@@ -558,7 +614,10 @@ quoted from the shared cached evaluation of the frozen proposal set). Restrictin
 $-35\%$), so the improvement is not carried by non-benchmark ``stuff''
 classes. The effect is smaller than on the closed stream --- open-vocabulary
 proposals are noisier and shorter-lived --- but its direction and structure
-replicate in the regime the metric is designed for.
+replicate in the regime the metric is designed for. One provenance caveat:
+this replication was run with the earlier global-arm associator variant (see
+the provenance note above), so we read it strictly as direction-level
+evidence; both variants agree on direction wherever both were run.
 
 \subsection{Class-aware label fusion}
 \label{sec:fusion}
@@ -606,7 +665,8 @@ indoor; MOT agreement and sensitivity outdoor), so each individual claim is
 currently single-domain.
 \textbf{Gameability.} The score can be inflated by filtering the scored track
 population; Sec.~\ref{sec:gaming} defines the joint reporting rule that makes
-such filtering visible.
+such filtering visible, and demonstrates the corresponding
+population-controlled audit on our own headline comparison.
 
 \section{Conclusion}
 Streaming open-vocabulary 3D perception sits in an evaluation blind spot:
