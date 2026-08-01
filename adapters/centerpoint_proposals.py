@@ -132,6 +132,18 @@ class CenterPointProposalGenerator:
         scores = scores[keep]
         labels = labels[keep]
 
+        # mmdet3d LiDARInstance3DBoxes store the z coordinate at the box
+        # BOTTOM (origin (0.5, 0.5, 0): bottom_center == tensor[:, :3]). Every
+        # downstream consumer treats this value as the geometric centre, so we
+        # convert here to the gravity (geometric) centre exactly as
+        # LiDARInstance3DBoxes.gravity_center does: z_centre = z_bottom + h/2,
+        # where h == z_size == column 5. Only column 2 (z) changes; x, y,
+        # dims (3:6), yaw (6) and velocity (7:9) are left byte-identical. This
+        # single edit corrects both `centers_lidar` (centroid_ego) and the
+        # serialized `bbox_lidar`, since both derive from `bboxes_lidar`.
+        if len(bboxes_lidar):
+            bboxes_lidar[:, 2] += bboxes_lidar[:, 5] * 0.5
+
         # transform box centers lidar → ego
         if len(bboxes_lidar):
             centers_lidar = bboxes_lidar[:, :3]

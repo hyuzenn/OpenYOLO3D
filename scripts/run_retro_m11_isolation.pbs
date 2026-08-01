@@ -1,0 +1,57 @@
+#!/bin/bash
+#PBS -q coss_a6gpu
+#PBS -l select=1:ncpus=8:ngpus=0:mem=64gb:Qlist=a6000
+#PBS -l walltime=06:00:00
+#PBS -j oe
+#PBS -o /home/rintern16/OpenYOLO3D/results/pbs_logs/
+# ngpus=0 on purpose: this is a --no-gpu proposal-cache replay. Requesting a
+# GPU makes the job unschedulable while the agpu nodes are GPU-saturated.
+# Retro-emission patch validation (NOT an experiment -- reproduction only).
+#
+# Arms A-C use the frozen gate-sweep config (run_e2_gate_sweep.pbs: class-agnostic
+# association) and must reproduce results/2026-07-20_e2_gate_sweep/cells exactly.
+# Arms D-E use the E1-grid phase1 config (run_e1_grid.pbs: NO class-agnostic
+# flag) -- i.e. the exact E2c configuration -- on 10 scenes, so the retro path is
+# exercised where M21+M31 are live.
+#   A v_baseline       150  baseline            -> == frozen control, bit-for-bit
+#   B v_n1_retro       150  M11 N=1 + retro     -> == baseline, bit-for-bit
+#   C v_n3_streaming   150  M11 N=3             -> == frozen m11_N3, bit-for-bit
+#   D v_p1_retro_s10    10  phase1 N=3 + retro  -> retro fires with M21/M31 live
+#   E v_p1_stream_s10   10  phase1 N=3          -> D's order/schema reference
+cd /home/rintern16/OpenYOLO3D
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH=/home/rintern16/OpenYOLO3D:$PYTHONPATH
+RUN_DIR=results/2026-07-30_retro_m11_isolation_v01
+mkdir -p "$RUN_DIR/cells"
+exec >"$RUN_DIR/run.log" 2>&1
+CACHE=/home/rintern16/OpenYOLO3D/results/outdoor_native_temporal_cpcache_thr000_single_gravity
+
+# Check 0: state-machine self-check (runs here, not on the util node -- the
+# watchdog SIGTERMs the mmdet import chain). A failure aborts the whole job.
+echo "== [self-check] $(date)"
+python -u tests/test_retro_emission.py || { echo "== SELF-CHECK FAILED -- aborting"; exit 1; }
+
+# frozen args, copied verbatim from run_e2_gate_sweep.pbs (arms A-C)
+COMMON_SWEEP=(--proposal-source gamma --association-frame global --association-class-agnostic
+              --association-max-age 5 --score-threshold 0.0
+              --cp-cache-dir "$CACHE" --no-gpu --collect-track-metrics)
+# frozen args, copied verbatim from run_e1_grid.pbs gamma_global_p1 (arms D-E)
+COMMON_GRID=(--proposal-source gamma --association-frame global
+             --cp-cache-dir "$CACHE" --no-gpu --collect-track-metrics)
+
+run_arm () {  # $1=cell  $2=common-array-name  $3..=axis-specific args
+  local CELL="$RUN_DIR/cells/$1"; local -n COMMON=$2; shift 2
+  if compgen -G "$CELL"/axis_*/metrics.json >/dev/null; then echo "== $CELL done, skip"; return; fi
+  echo "== [$CELL] replay $(date)"
+  python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+    --output "$CELL" "${COMMON[@]}" "$@" \
+    || { echo "== [$CELL] REPLAY FAILED"; return 1; }
+}
+
+run_arm v_m11_retro_s10  COMMON_GRID  --axes M11 --m11-N 3 --retro-emission --scene-limit 10
+run_arm v_m11_stream_s10 COMMON_GRID  --axes M11 --m11-N 3 --scene-limit 10
+echo "== isolation smoke done $(date)"

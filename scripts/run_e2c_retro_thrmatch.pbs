@@ -1,0 +1,104 @@
+#!/bin/bash
+#PBS -q coss_a6gpu
+#PBS -l select=1:ncpus=8:ngpus=0:mem=64gb:Qlist=a6000
+#PBS -l walltime=12:00:00
+#PBS -j oe
+#PBS -o /home/rintern16/OpenYOLO3D/results/pbs_logs/
+# E2c: the ONLY change from E2 is the gate's emission policy.
+#
+# E2 compared phase1 (M11 gate N=3 + M21 + M31) against a score-threshold control
+# matched to the same emitted box count, and the control won on every axis. H1
+# says that verdict was distorted because the gate deleted each track's first N-1
+# frames outright. E2c re-runs the identical comparison with --retro-emission:
+# a track confirmed anywhere in the scene contributes ALL its observations.
+#
+# Held identical to E2 (results/2026-07-28_e2_thrmatch_v01):
+#   detector cache, GT, evaluator, axis=phase1 (M21+M31 live, same params),
+#   association frame ego+global, max_age 5, score-threshold 0, 150 val scenes,
+#   E1-grid flags (NB: the p1 cells do NOT pass --association-class-agnostic),
+#   threshold picker, count-match tolerance, report + stats protocol.
+# Changed: --retro-emission on the gate arm. Nothing else.
+#
+# Submit:  qsub scripts/run_e2c_retro_thrmatch.pbs
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH=/home/rintern16/OpenYOLO3D:$PYTHONPATH
+
+GRID="$PROJECT_ROOT/results/2026-07-18_e1_grid_v01/cells"
+CACHE="$PROJECT_ROOT/results/outdoor_native_temporal_cpcache_thr000_single_gravity"
+DATE=$(date +%F)
+EXP=e2c_retro_thrmatch
+N=$(printf '%02d' $(($(ls -d results/${DATE}_${EXP}_v* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${RUN_DIR:-$PROJECT_ROOT/results/${DATE}_${EXP}_v${N}}"
+mkdir -p "$RUN_DIR/cells" "$RUN_DIR/shim"
+exec >"$RUN_DIR/run.log" 2>&1
+
+# frozen args, verbatim from run_e1_grid.pbs gamma_*_p1
+COMMON=(--proposal-source gamma --cp-cache-dir "$CACHE" --no-gpu --collect-track-metrics)
+BASE_TRACKS="$GRID/gamma_ego/axis_baseline/tracks.json"   # emission is assoc-independent
+
+echo "== E2c retro-gate vs threshold-matched control  $(date)  host=$(hostname)"
+echo "== run_dir=$RUN_DIR"
+
+for FRAME in ego global; do
+  RETRO="$RUN_DIR/cells/retro_${FRAME}"
+  CTRL="$RUN_DIR/cells/ctrl_${FRAME}"
+
+  # ---- 1. retro gate arm (phase1 + retroactive emission) ----------------
+  if compgen -G "$RETRO"/axis_*/metrics.json >/dev/null; then
+    echo "== [retro_$FRAME] done, skip"
+  else
+    echo "== [retro_$FRAME] replay phase1 + --retro-emission  $(date)"
+    python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+      --output "$RETRO" --axes phase1 --m11-N 3 --retro-emission \
+      --association-frame "$FRAME" "${COMMON[@]}" \
+      || { echo "== [retro_$FRAME] REPLAY FAILED"; continue; }
+    python -u scripts/e1_gt_metrics.py --cell "$RETRO" \
+      || echo "== [retro_$FRAME] GT METRICS FAILED"
+  fi
+
+  # ---- 2. count-matched score-threshold control ------------------------
+  TARGET=$(python -c "
+import json,glob
+print(json.load(open(glob.glob('$RETRO/axis_*/metrics.json')[0]))['n_pred_boxes_total'])")
+  echo "== [ctrl_$FRAME] target=$TARGET boxes (from retro_$FRAME)  $(date)"
+  TJ="$RUN_DIR/threshold_${FRAME}.json"
+  python -u scripts/e2_thrmatch_pick.py --tracks "$BASE_TRACKS" \
+      --target "$TARGET" --out "$TJ" || { echo "== [ctrl_$FRAME] PICK FAILED"; continue; }
+  THR=$(python -c "import json;print(json.load(open('$TJ'))['threshold'])")
+
+  if compgen -G "$CTRL"/axis_*/metrics.json >/dev/null; then
+    echo "== [ctrl_$FRAME] done, skip"
+  else
+    echo "== [ctrl_$FRAME] replay baseline @ --proposal-score-threshold $THR  $(date)"
+    python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+      --output "$CTRL" --axes baseline --association-frame "$FRAME" \
+      --proposal-score-threshold "$THR" "${COMMON[@]}" \
+      || { echo "== [ctrl_$FRAME] REPLAY FAILED"; continue; }
+    python -u scripts/e1_gt_metrics.py --cell "$CTRL" \
+      || echo "== [ctrl_$FRAME] GT METRICS FAILED"
+  fi
+
+  # count-match audit: emitted boxes must land within +-1% of the retro arm
+  python -c "
+import json,glob,sys
+m=json.load(open(glob.glob('$CTRL/axis_*/metrics.json')[0]))
+n,t=m['n_pred_boxes_total'],$TARGET
+print(f'== [ctrl_$FRAME] MATCH emitted={n} target={t} rel_err={(n-t)/t:+.4%}')
+sys.exit(0 if abs(n-t)/t<=0.01 else 3)" || echo "== [ctrl_$FRAME] WARNING count match outside +-1%"
+
+  # e2_thrmatch_report expects gamma_<frame>{,_p1} under --grid; point _p1 at the
+  # retro arm so the existing stats/bootstrap path is reused unchanged.
+  ln -sfn "$GRID/gamma_${FRAME}"        "$RUN_DIR/shim/gamma_${FRAME}"
+  ln -sfn "$RETRO"                      "$RUN_DIR/shim/gamma_${FRAME}_p1"
+done
+
+echo "== E2c report  $(date)"
+python -u scripts/e2_thrmatch_report.py --run-dir "$RUN_DIR" --grid "$RUN_DIR/shim" \
+  || echo "== REPORT FAILED"
+echo "== E2c done  $(date)"

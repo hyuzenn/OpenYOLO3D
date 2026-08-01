@@ -41,9 +41,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import os.path as osp
 import pickle
+import random
 import time
 from pathlib import Path
 from typing import Optional
@@ -78,6 +80,12 @@ CLASS_NAMES = list(NUSC_10)                 # canonical 10-class index order
 NAME_TO_IDX = {n: i for i, n in enumerate(CLASS_NAMES)}
 NUM_CLASSES = len(CLASS_NAMES)
 DEFAULT_ASSOC_DIST_M = 2.0
+GT_FRAG_RADIUS_M = 2.0   # GT-anchored fragmentation match gate (global BEV)
+# Fragmentation-injection id space (controlled temporal-quality degradation):
+# minted ids live far above any associator/scene id (SCENE_ID_STRIDE x 150 scenes
+# << 8e9) so a broken sub-track never collides with a real track id.
+FRAG_ID_BASE = 8_000_000_000
+FRAG_SEED = 1234
 
 
 class ClassAgnosticAssociator(CentroidAssociator):
@@ -108,6 +116,64 @@ class ClassAgnosticAssociator(CentroidAssociator):
                 if gid in used:
                     continue
                 # class gate intentionally omitted — only change vs base.
+                d = float(np.linalg.norm(c[:2] - st["centroid"][:2]))
+                if d < best_d:
+                    best_d, best_gid = d, gid
+            if best_gid is not None:
+                gid_assignments[j] = best_gid
+                used.add(best_gid)
+                self._active[best_gid]["centroid"] = c
+                self._active[best_gid]["age"] = 0
+            else:
+                new_gid = self._next_id
+                self._next_id += 1
+                gid_assignments[j] = new_gid
+                self._active[new_gid] = {"cls": p["cls_name"], "centroid": c, "age": 0}
+        return [int(g) for g in gid_assignments]  # type: ignore
+
+
+class GlobalCentroidAssociator(ClassAgnosticAssociator):
+    """Ego-motion-compensated variant of :class:`ClassAgnosticAssociator`.
+
+    The matcher is byte-for-byte the same greedy / score-ordered / static /
+    max-age tracker; the *only* change is the frame in which the nearest-track
+    gate is evaluated. Each proposal centroid is lifted ego→global with the
+    current ego_pose (set via :meth:`set_ego_pose` before every ``step``), so a
+    stationary object keeps one id as the ego car drives past it — instead of
+    flowing out of the 2 m ego-frame gate. This is the single "frame" knob from
+    ``diagnosis/outdoor_associator_ablation_probe`` (``global_greedy_static_a5``),
+    here promoted into the production streaming pipeline as a method variant.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._ego_R: Optional[np.ndarray] = None
+        self._ego_t: Optional[np.ndarray] = None
+
+    def set_ego_pose(self, ego_pose: np.ndarray) -> None:
+        self._ego_R = np.asarray(ego_pose[:3, :3], dtype=np.float64)
+        self._ego_t = np.asarray(ego_pose[:3, 3], dtype=np.float64)
+
+    def step(self, proposals: list[dict]) -> list[int]:
+        assert self._ego_R is not None, "set_ego_pose() must precede step() in global frame"
+        for gid in list(self._active.keys()):
+            self._active[gid]["age"] += 1
+            if self._active[gid]["age"] > self.max_age:
+                self._active.pop(gid, None)
+        if not proposals:
+            return []
+        gid_assignments: list[Optional[int]] = [None] * len(proposals)
+        used: set[int] = set()
+        order = sorted(range(len(proposals)),
+                       key=lambda i: -proposals[i].get("score", 0.0))
+        for j in order:
+            p = proposals[j]
+            ce = np.asarray(p["centroid_ego"], dtype=np.float64)
+            c = self._ego_R @ ce[:3] + self._ego_t          # ego -> global
+            best_gid, best_d = None, self.threshold_m + 1e-9
+            for gid, st in self._active.items():
+                if gid in used:
+                    continue
                 d = float(np.linalg.norm(c[:2] - st["centroid"][:2]))
                 if d < best_d:
                     best_d, best_gid = d, gid
@@ -174,6 +240,13 @@ class NativeTemporalNuScenesEvaluator:
         text_prompts: Optional[list] = None,  # YOLO-World class names (detguided)
         proposal_score_threshold: float = 0.0,  # reliability gate (applied on read)
         class_agnostic_association: bool = False,  # task_3_1 counterfactual
+        association_frame: str = "ego",      # ego | global (ego-motion-compensated)
+        collect_track_metrics: bool = False,  # opt-in OV-TCS / frag / track-length probe
+        frag_inject_p: float = 0.0,           # controlled fragmentation injection rate
+        fuse_allow=None,                      # 2D->3D label-fusion overlay (None=off,
+                                              # frozenset()=native, "ALL"=global, set=allowlist)
+        fuse_tau_iou: float = 0.5,            # overlay: min match_iou to trust YOLO
+        fuse_tau_score: float = 0.4,          # overlay: min YOLO score to trust YOLO
     ) -> None:
         self.loader = loader
         self.cp = cp_proposals
@@ -182,6 +255,13 @@ class NativeTemporalNuScenesEvaluator:
         self.oy3d = oy3d
         self.detguided = detguided_generator
         self.class_agnostic_association = bool(class_agnostic_association)
+        self.association_frame = str(association_frame)
+        if self.association_frame not in ("ego", "global"):
+            raise ValueError(f"association_frame must be ego|global, got {association_frame!r}")
+        self.collect_track_metrics = bool(collect_track_metrics)
+        self.frag_inject_p = float(frag_inject_p)
+        if not (0.0 <= self.frag_inject_p < 1.0):
+            raise ValueError(f"frag_inject_p must be in [0, 1), got {frag_inject_p!r}")
         self.text_prompts = list(text_prompts) if text_prompts is not None else None
         if (self.proposal_source == "detguided" and self.detguided is None
                 and not cp_cache_dir):
@@ -213,13 +293,52 @@ class NativeTemporalNuScenesEvaluator:
         self.audit: dict[str, int] = {}
         self.last_axis_walltime_s: float = 0.0
 
+        # Opt-in method-variant probe buffers (only filled when
+        # collect_track_metrics): per-track native-label sequence (OV-TCS +
+        # track length) and per-GT-instance set of matched track ids (GT-anchored
+        # fragmentation). Native labels make OV-TCS a pure associator property,
+        # directly comparable to outdoor_ovtcs_assoc_compare_probe.
+        self._track_seq: dict[int, list[int]] = {}
+        self._gt_frag: dict[str, set] = {}
+        # per-track nearest-GT class votes (for per-track label correctness in
+        # the OV-TCS metric-validation harvest); name -> count per track id.
+        self._track_gt_cls: dict[int, dict] = {}
+
         # In-memory CP-proposal cache for this process (per sample_token).
         self._scene_cache: dict[str, list[dict]] = {}
 
+        # 2D->3D label-fusion overlay (read-time, hybrid source cache only). When
+        # active, the source cls_name (YOLO) is rewritten to the CP label unless
+        # the YOLO evidence is tight+confident AND the YOLO target class is in the
+        # allowlist; score becomes score_cp. No box dropped, geometry untouched.
+        #   None         -> overlay off (read source as-is, == variant Dp)
+        #   frozenset()  -> native CP labels (A0)
+        #   frozenset({..}) -> class-aware allowlist (override only into these)
+        #   "ALL"        -> global / class-agnostic fusion (arm F)
+        self.fuse_allow = fuse_allow
+        self.fuse_tau_iou = float(fuse_tau_iou)
+        self.fuse_tau_score = float(fuse_tau_score)
+        self._override_audit: dict[str, dict] = {}   # GT-matched conversion, per target class
+        self._override_pairs: dict[str, int] = {}    # raw cp->yolo override counts (no GT)
+
     # -- axis lifecycle ---------------------------------------------------
+    # Emission policy for the registration gate (M11/M12). False = streaming
+    # (prefix-deleting: a track's pre-confirmation frames are dropped for good).
+    # True = retroactive: each frame is parked and emitted at scene end at its OWN
+    # sample_token if its track confirmed anywhere in the scene, so the gate
+    # removes only tracks that never confirm — matching the indoor ConceptGraphs
+    # leg, which filters whole objects at finalize (streaming/wrapper.py
+    # apply_registration_filter). M21/M31/M32 and the box writer are unchanged and
+    # shared with the streaming arm; only the gate's emit set differs.
+    # Offline-only: costs N-1 frames of track-birth latency.
+    # See experiments/preregistration_2026-07-28.md.
+    retro_emission = False
+
     def install_axis(self, axis_name: str, *, m11_N: int = 3,
                      m12_threshold: float = 0.85, m31_iou: float = 0.5,
-                     m32_distance: float = 2.0) -> None:
+                     m32_distance: float = 2.0,
+                     retro_emission: bool = False) -> None:
+        self.retro_emission = bool(retro_emission)
         self.method_11 = self.method_12 = self.method_21 = None
         self.method_31 = self.method_32 = None
         members = self._axis_members(axis_name)
@@ -251,6 +370,7 @@ class NativeTemporalNuScenesEvaluator:
     def begin_axis(self) -> None:
         self.per_sample_pred_boxes = {}
         self.per_sample_gt_boxes = {}
+        self._sample_scene_idx = {}
         self.pred_history = []
         self.last_axis_walltime_s = 0.0
         self.audit = {
@@ -262,12 +382,41 @@ class NativeTemporalNuScenesEvaluator:
             "n_merged_by_m31": 0,        # M31
             "n_merged_by_m32": 0,        # M32
             "n_samples": 0,
+            # retroactive emission bookkeeping (all 0 unless retro_emission)
+            "n_retro_buffered": 0,       # records parked awaiting confirmation
+            "n_retro_flushed": 0,        # records released by a confirmation
+            "n_pending_dropped": 0,      # never-confirmed, dropped at scene end
+            "n_pending_at_axis_end": 0,  # leftover from the final scene
         }
+        self._track_seq = {}
+        self._gt_frag = {}
+        self._track_gt_cls = {}
+        self._override_audit = {}
+        self._override_pairs = {}
+        # Fragmentation injection: deterministic RNG + monotonic id minter, reset
+        # once per axis so a re-run of the same variant is byte-reproducible. The
+        # per-track alias map is reset per scene (tracks never cross scenes).
+        self._frag_rng = random.Random(FRAG_SEED)
+        self._frag_next = FRAG_ID_BASE
+        self._frag_alias: dict[int, int] = {}
 
     # -- per-scene --------------------------------------------------------
     def setup_scene(self, scene_offset: int) -> None:
-        Associator = (ClassAgnosticAssociator if self.class_agnostic_association
-                      else CentroidAssociator)
+        self._frag_alias = {}
+        # Retro-emission parking lot: token -> (ego_translation, records). Strictly
+        # per scene (gids are scene-offset, and run_scene drains it via
+        # _finalize_scene_emission before the next setup_scene), so a record can
+        # never be emitted into another scene's sample_token.
+        leftover = getattr(self, "_scene_records", None)
+        if leftover:
+            self.audit["n_pending_at_axis_end"] += sum(len(r) for _e, r in leftover.values())
+        self._scene_records: dict[str, tuple[np.ndarray, list[dict]]] = {}
+        if self.association_frame == "global":
+            Associator = GlobalCentroidAssociator
+        elif self.class_agnostic_association:
+            Associator = ClassAgnosticAssociator
+        else:
+            Associator = CentroidAssociator
         self.associator = Associator(
             threshold_m=self.association_threshold_m,
             max_age=self.association_max_age,
@@ -306,6 +455,7 @@ class NativeTemporalNuScenesEvaluator:
                 continue
             gts.append({
                 "sample_token": sample_token,
+                "instance_token": ann["instance_token"],
                 "translation": [float(x) for x in ann["translation"]],
                 "size": [float(x) for x in ann["size"]],
                 "rotation": [float(x) for x in ann["rotation"]],
@@ -325,10 +475,81 @@ class NativeTemporalNuScenesEvaluator:
         so one cache serves any threshold and the v02 cache is reused as-is.
         """
         props = self._proposals_raw(sample_token)
+        if self.fuse_allow is not None:
+            props = self._apply_fusion_overlay(props)
         if self.proposal_score_threshold > 0.0:
             props = [p for p in props
                      if float(p.get("score", 0.0)) >= self.proposal_score_threshold]
         return props
+
+    _BG_NAME = "__background__"
+
+    def _apply_fusion_overlay(self, props: list[dict]) -> list[dict]:
+        """2D->3D label-fusion overlay on the hybrid source cache (cls_name=YOLO,
+        cp_cls_name=CenterPoint, score=YOLO, score_cp=CP, match_iou>0 iff a YOLO
+        ROI matched this box). Rewrites cls_name->CP unless the YOLO evidence is
+        tight (match_iou>=tau_iou), confident (score>=tau_score), not background,
+        AND its target class is in the allowlist; score->score_cp. Nothing dropped,
+        geometry fixed. fuse_allow=='ALL' is the global (class-agnostic) arm F."""
+        allow = self.fuse_allow
+        out: list[dict] = []
+        for b in props:
+            cp = b.get("cp_cls_name", b["cls_name"])
+            yolo = b["cls_name"]
+            s_yolo = float(b.get("score", 0.0))
+            s_cp = float(b.get("score_cp", s_yolo))
+            trust = (float(b.get("match_iou", 0.0)) >= self.fuse_tau_iou
+                     and s_yolo >= self.fuse_tau_score and yolo != self._BG_NAME
+                     and (allow == "ALL" or yolo in allow))
+            new_cls = yolo if trust else cp
+            overridden = trust and (new_cls != cp)
+            if overridden:
+                k = f"{cp}->{yolo}"
+                self._override_pairs[k] = self._override_pairs.get(k, 0) + 1
+            nb = dict(b)
+            nb["cls_name"] = new_cls
+            nb["cls_idx"] = NAME_TO_IDX.get(new_cls, -1)
+            nb["score"] = s_cp
+            nb["_fuse_overridden"] = overridden
+            nb["_fuse_cp"] = cp
+            nb["_fuse_yolo"] = yolo
+            out.append(nb)
+        return out
+
+    def _audit_overrides(self, proposals: list[dict], records: list[dict],
+                         gt_records: list[dict]) -> None:
+        """GT-matched override-quality tally (overlay only). For each overridden
+        box, match to the nearest GT in the global BEV frame within 2 m (the
+        loosest nuScenes TP gate) and classify the override:
+          fp_to_tp      YOLO label == GT (override enables a TP; CP was wrong)
+          tp_to_fp      CP label   == GT (override broke a correct CP label)
+          neutral_wrong neither matches GT
+          no_gt         no GT within 2 m (override on a likely-FP region)
+        override precision == fp_to_tp / (overrides matched to a GT)."""
+        gts = [(g["detection_name"],
+                float(g["translation"][0]), float(g["translation"][1]))
+               for g in gt_records]
+        R2 = 2.0 * 2.0
+        for p, r in zip(proposals, records):
+            if not p.get("_fuse_overridden"):
+                continue
+            cp, yolo = p["_fuse_cp"], p["_fuse_yolo"]
+            cx, cy = float(r["centroid_global"][0]), float(r["centroid_global"][1])
+            best, bestd = None, R2
+            for name, gx, gy in gts:
+                d = (cx - gx) ** 2 + (cy - gy) ** 2
+                if d <= bestd:
+                    bestd, best = d, name
+            a = self._override_audit.setdefault(
+                yolo, {"fp_to_tp": 0, "tp_to_fp": 0, "neutral_wrong": 0, "no_gt": 0})
+            if best is None:
+                a["no_gt"] += 1
+            elif yolo == best:
+                a["fp_to_tp"] += 1
+            elif cp == best:
+                a["tp_to_fp"] += 1
+            else:
+                a["neutral_wrong"] += 1
 
     def _proposals_raw(self, sample_token: str) -> list[dict]:
         """Standard proposal dicts from the active source, cache or live.
@@ -351,6 +572,15 @@ class NativeTemporalNuScenesEvaluator:
             props = self._gamma_proposals(sample_token)
         elif self.proposal_source == "detguided":
             props = self._detguided_proposals(sample_token)
+        elif self.proposal_source == "hybrid":
+            # Hybrid Proposal v2 is cache-only: the boxes are CenterPoint
+            # geometry relabeled offline by scripts/build_hybrid_cache.py
+            # (YOLO-World per-camera + ROI->detection IoU transfer). There is
+            # no live generator here — a missing file is a build gap, not a
+            # recompute trigger.
+            raise RuntimeError(
+                f"hybrid is cache-only; missing {sample_token[:8]}.hybrid.pkl in "
+                f"{self.cp_cache_dir!r} (build it with scripts/build_hybrid_cache.py)")
         else:
             raise ValueError(f"unknown proposal_source={self.proposal_source!r}")
         self._scene_cache[sample_token] = props
@@ -484,7 +714,35 @@ class NativeTemporalNuScenesEvaluator:
         self.audit["n_samples"] += 1
 
         # --- association -> global ids ---------------------------------
+        if hasattr(self.associator, "set_ego_pose"):     # global-frame variant
+            self.associator.set_ego_pose(ego_pose)
         global_ids = self.associator.step(proposals)
+
+        # --- controlled fragmentation injection ------------------------
+        # Degrade ONLY the emitted track-id signal (the underlying matcher is
+        # untouched): each continuing track is broken into a fresh sub-track
+        # with probability p, persisting until the next break. A brand-new id
+        # cannot break (nothing to fragment yet). The remapped ids feed BOTH the
+        # OV-TCS/frag/track-length probe AND the temporal layer (M11 age gate,
+        # M21 voting, M31 merge), so p is a single monotone temporal-quality knob.
+        if self.frag_inject_p > 0.0 and global_ids:
+            remapped: list[int] = []
+            for g in global_ids:
+                g = int(g)
+                if g not in self._frag_alias:
+                    self._frag_alias[g] = g
+                elif self._frag_rng.random() < self.frag_inject_p:
+                    self._frag_alias[g] = self._frag_next
+                    self._frag_next += 1
+                remapped.append(self._frag_alias[g])
+            global_ids = remapped
+
+        # --- method-variant probe: per-track native-label sequence -----
+        if self.collect_track_metrics:
+            for p, gid in zip(proposals, global_ids):
+                nidx = NAME_TO_IDX.get(p["cls_name"], -1)
+                if nidx >= 0:
+                    self._track_seq.setdefault(int(gid), []).append(nidx)
 
         # --- per-proposal records + label votes ------------------------
         records: list[dict] = []
@@ -524,6 +782,10 @@ class NativeTemporalNuScenesEvaluator:
                                          float(global_q.y), float(global_q.z)],
             })
 
+        # --- 2D->3D override audit (GT-matched, overlay only) ----------
+        if self.fuse_allow is not None and gt_records:
+            self._audit_overrides(proposals, records, gt_records)
+
         # --- registration gate (M11 / M12) -----------------------------
         if self.method_11 is not None:
             confirmed = set(int(x) for x in self.method_11.gate(gids_present))
@@ -532,10 +794,25 @@ class NativeTemporalNuScenesEvaluator:
         else:
             confirmed = set(int(g) for g in gids_present)
         n_gated = len(records) - sum(1 for r in records if r["gid"] in confirmed)
+        # NOTE under retro_emission this stays a count of *per-frame* gate
+        # rejections, so it includes rows that are emitted later once their track
+        # confirms. The permanent retro loss is n_pending_dropped.
         self.audit["n_suppressed_by_gate"] += n_gated
 
         # --- build emission set (post-gate) ----------------------------
-        emit = [r for r in records if r["gid"] in confirmed and r["native_idx"] >= 0]
+        retro_active = (self.retro_emission
+                        and (self.method_11 is not None or self.method_12 is not None))
+        if retro_active:
+            # Retro defers only the GATE's verdict. Everything else still runs at
+            # this frame's own time: the M21 relabel below uses the vote state as
+            # of now (identical to the streaming arm, since votes are cast
+            # pre-gate for every proposal), and M31/M32 run per frame in
+            # _finalize_scene_emission over that frame's final emit set. The only
+            # difference from streaming is WHICH gids count as confirmed for this
+            # frame: "confirmed by end of scene" instead of "confirmed by now".
+            emit = [r for r in records if r["native_idx"] >= 0]
+        else:
+            emit = [r for r in records if r["gid"] in confirmed and r["native_idx"] >= 0]
 
         # --- M21 relabel (track-voted class) ---------------------------
         for r in emit:
@@ -547,32 +824,97 @@ class NativeTemporalNuScenesEvaluator:
             else:
                 r["emit_idx"] = r["native_idx"]
 
-        # --- spatial merge (M31 / M32) ---------------------------------
-        if self.method_31 is not None and emit:
-            emit = self._apply_m31(emit)
-        if self.method_32 is not None and emit:
-            emit = self._apply_m32(emit)
-
-        # --- emit detection boxes --------------------------------------
-        sample_preds = []
-        for r in emit:
-            cls_name = CLASS_NAMES[r["emit_idx"]]
-            if cls_name not in NUSC_10_SET:
-                continue
-            sample_preds.append(_detection_box_dict(
-                global_id=r["gid"], sample_token=sample_token,
-                bbox_lidar=r["bbox_lidar"], centroid_global=r["centroid_global"],
-                ego_translation=ego_translation,
-                rotation_global_wxyz=r["rotation_global_wxyz"],
-                detection_name=cls_name, score=r["native_score"]))
-        self.per_sample_pred_boxes[sample_token] = sample_preds
+        # Every frame gets a key, empty or not, so token insertion order stays
+        # chronological -- scripts/e1_gt_metrics.py reads dict order as the
+        # timeline, and the retro path fills these keys later in scene order.
+        self.per_sample_pred_boxes[sample_token] = []
         self.per_sample_gt_boxes[sample_token] = gt_records
-        self.audit["n_emitted_total"] += len(sample_preds)
+        if retro_active:
+            # Park the frame; the spatial merge + box writer run at scene end via
+            # the SAME _emit_frame() the streaming arm uses.
+            self._scene_records[sample_token] = (ego_translation, emit)
+            self.audit["n_retro_buffered"] += len(emit)
+        else:
+            self.audit["n_emitted_total"] += self._emit_frame(
+                sample_token, ego_translation, emit)
 
         # --- temporal-metric snapshot (running-mode labels) ------------
         self.pred_history.append(self.labeler.snapshot(confirmed))
 
+        # --- method-variant probe: GT-anchored fragmentation -----------
+        # Per GT instance, accumulate the set of distinct track ids assigned to
+        # the nearest proposal within GT_FRAG_RADIUS_M (global BEV). |set| over
+        # the scene == #fragments; matches outdoor_associator_ablation_probe.
+        if self.collect_track_metrics and records and gt_records:
+            prop_xy = np.asarray([r["centroid_global"][:2] for r in records],
+                                 dtype=np.float64)
+            prop_gid = [int(r["gid"]) for r in records]
+            for g in gt_records:
+                gxy = np.asarray(g["translation"][:2], dtype=np.float64)
+                d = np.linalg.norm(prop_xy - gxy, axis=1)
+                k = int(np.argmin(d))
+                if d[k] <= GT_FRAG_RADIUS_M:
+                    self._gt_frag.setdefault(g["instance_token"], set()).add(prop_gid[k])
+                    # vote the nearest GT's class onto that track (per-track
+                    # downstream-label target; majority resolved at harvest time).
+                    cls = self._track_gt_cls.setdefault(prop_gid[k], {})
+                    cls[g["detection_name"]] = cls.get(g["detection_name"], 0) + 1
+
     # -- mergers ----------------------------------------------------------
+    def _emit_frame(self, tok: str, ego_t: np.ndarray, emit: list[dict]) -> int:
+        """Spatial merge (M31/M32) + detection-box write for ONE frame.
+
+        Shared verbatim by the streaming and retroactive arms, so the two differ
+        only in the gate's emit set -- never in the merge or the export schema.
+        Returns the number of boxes written.
+        """
+        if self.method_31 is not None and emit:
+            emit = self._apply_m31(emit)
+        if self.method_32 is not None and emit:
+            emit = self._apply_m32(emit)
+        n = 0
+        for r in emit:
+            cls_name = CLASS_NAMES[r["emit_idx"]]
+            if cls_name not in NUSC_10_SET:
+                continue
+            d = _detection_box_dict(
+                global_id=r["gid"], sample_token=tok,
+                bbox_lidar=r["bbox_lidar"], centroid_global=r["centroid_global"],
+                ego_translation=ego_t,
+                rotation_global_wxyz=r["rotation_global_wxyz"],
+                detection_name=cls_name, score=r["native_score"])
+            # E1 GT-metric dump: DetectionBox.deserialize ignores extra keys.
+            d["tracking_id"] = int(r["gid"])
+            self.per_sample_pred_boxes[tok].append(d)
+            n += 1
+        return n
+
+    def _finalize_scene_emission(self) -> None:
+        """Retroactive emission: replay this scene's parked frames in order.
+
+        A track confirmed anywhere in the scene contributes ALL of its
+        observations; a track that never confirms contributes none -- the same
+        whole-object rule the indoor ConceptGraphs leg applies at finalize
+        (streaming/wrapper.py -> apply_registration_filter). Each frame keeps its
+        own sample_token and ego pose, and goes through the same _emit_frame() as
+        the streaming arm. Offline-only: a box is published up to N-1 frames
+        after it was observed.
+        """
+        if not self._scene_records:
+            return
+        if self.method_11 is not None:
+            confirmed = set(int(i) for i in self.method_11._confirmed)
+        elif self.method_12 is not None:
+            confirmed = set(int(i) for i in getattr(self.method_12, "_confirmed", set()))
+        else:                                    # pragma: no cover - guarded by caller
+            confirmed = None
+        for tok, (ego_t, recs) in self._scene_records.items():
+            keep = recs if confirmed is None else [r for r in recs if r["gid"] in confirmed]
+            self.audit["n_pending_dropped"] += len(recs) - len(keep)
+            self.audit["n_retro_flushed"] += len(keep)
+            self.audit["n_emitted_total"] += self._emit_frame(tok, ego_t, keep)
+        self._scene_records = {}
+
     def _apply_m31(self, emit: list[dict]) -> list[dict]:
         """Class-aware vertex-set IoU NMS via per-box interior-point masks."""
         K = len(emit)
@@ -651,7 +993,11 @@ class NativeTemporalNuScenesEvaluator:
         self.setup_scene(scene_offset=scene_idx * SCENE_ID_STRIDE)
         self._scene_cache = {}   # bound process memory to one scene at a time
         for tok in self._scene_sample_tokens(scene_token):
+            self._sample_scene_idx[tok] = scene_idx
             self.step_sample(tok)
+        # Retro arm only (no-op otherwise): emit this scene's parked frames now,
+        # while the gate's confirmed set is still this scene's.
+        self._finalize_scene_emission()
 
     # -- aggregation ------------------------------------------------------
     def aggregate_axis_metrics(self, out_dir: Path, baseline_map: Optional[float]) -> dict:
@@ -660,6 +1006,12 @@ class NativeTemporalNuScenesEvaluator:
         from diagnosis_beta_baseline.evaluate_nuscenes import evaluate as nu_evaluate
 
         out_dir.mkdir(parents=True, exist_ok=True)
+        # Must be 0: run_scene drains the parking lot per scene. Any nonzero value
+        # means a scene's records were never emitted (leak).
+        # Leak invariant: buffered == flushed + dropped + merged + at_axis_end.
+        leftover = getattr(self, "_scene_records", None)
+        if leftover:
+            self.audit["n_pending_at_axis_end"] += sum(len(r) for _e, r in leftover.values())
         pred_eb, gt_eb = EvalBoxes(), EvalBoxes()
         for tok, dicts in self.per_sample_pred_boxes.items():
             pred_eb.add_boxes(tok, [DetectionBox.deserialize(d) for d in dicts])
@@ -690,6 +1042,8 @@ class NativeTemporalNuScenesEvaluator:
         }
         mAP = eval_summary.get("mean_ap") if eval_summary else None
         nds = eval_summary.get("nd_score") if eval_summary else None
+        per_class_ap = eval_summary.get("label_aps") if eval_summary else None
+        tp_errors = eval_summary.get("tp_errors") if eval_summary else None
         delta = (None if (mAP is None or baseline_map is None)
                  else float(mAP - baseline_map))
         summary = {
@@ -697,13 +1051,133 @@ class NativeTemporalNuScenesEvaluator:
             "n_pred_boxes_total": sum(len(v) for v in self.per_sample_pred_boxes.values()),
             "n_gt_boxes_total": sum(len(v) for v in self.per_sample_gt_boxes.values()),
             "axis_walltime_s": self.last_axis_walltime_s,
+            "association_frame": self.association_frame,
+            "retro_emission": bool(self.retro_emission),
             "mAP": mAP, "NDS": nds, "mAP_minus_baseline": delta,
+            "per_class_AP": per_class_ap, "tp_errors": tp_errors,
             "temporal": temporal,
             "fire_audit": dict(self.audit),
         }
+        if self.fuse_allow is not None:
+            summary["override_audit"] = {
+                "fuse_allow": (sorted(self.fuse_allow)
+                               if isinstance(self.fuse_allow, (set, frozenset))
+                               else self.fuse_allow),
+                "tau_iou": self.fuse_tau_iou, "tau_score": self.fuse_tau_score,
+                "n_overrides_total": sum(self._override_pairs.values()),
+                "pairs": dict(sorted(self._override_pairs.items(),
+                                     key=lambda kv: -kv[1])),
+                "by_target": self._override_audit,
+            }
+        if self.collect_track_metrics:
+            summary["variant_metrics"] = self.compute_variant_metrics()
+            # E1: per-frame tracks for offline GT-based MOT metrics (HOTA etc.)
+            (out_dir / "tracks.json").write_text(json.dumps({
+                "sample_scene_idx": self._sample_scene_idx,
+                "pred": self.per_sample_pred_boxes,
+                "gt": self.per_sample_gt_boxes,
+            }))
         (out_dir / "metrics.json").write_text(json.dumps(summary, indent=2))
         (out_dir / "fire_audit.json").write_text(json.dumps(self.audit, indent=2))
         return summary
+
+    # -- method-variant probe aggregation ---------------------------------
+    def compute_variant_metrics(self) -> dict:
+        """OV-TCS (A/B/C), track-length, and GT-anchored fragmentation from the
+        per-track native-label sequences this axis recorded. OV-TCS uses native
+        labels grouped by associator track, so it is a pure associator property
+        (axis-independent) and directly comparable to
+        ``outdoor_ovtcs_assoc_compare_probe`` (ego 0.301/0.260/0.136,
+        global 0.263/0.241/0.168)."""
+        from collections import Counter
+
+        def _ovtcs(seq):
+            L = len(seq)
+            if L == 0:
+                return None
+            cnt = Counter(seq)
+            n = L
+            H = -sum((c / n) * math.log2(c / n) for c in cnt.values())
+            DR = max(cnt.values()) / L
+            sw = sum(1 for a, b in zip(seq[:-1], seq[1:]) if a != b)
+            CSR = (sw / (L - 1)) if L >= 2 else 0.0
+            Ln = 1.0 - 1.0 / L
+            Hn = H / math.log2(NUM_CLASSES) if NUM_CLASSES > 1 else 0.0
+            A = Ln * (1.0 - Hn)
+            B = Ln * DR
+            C = Ln * (1.0 - CSR)
+            return (A, B, C, L)
+
+        A_l, B_l, C_l, lengths = [], [], [], []
+        for seq in self._track_seq.values():
+            r = _ovtcs(seq)
+            if r is None:
+                continue
+            A_l.append(r[0]); B_l.append(r[1]); C_l.append(r[2]); lengths.append(r[3])
+        lengths_a = np.asarray(lengths, dtype=np.float64)
+        frags = np.asarray([len(s) for s in self._gt_frag.values()], dtype=np.float64)
+
+        def _stat(a):
+            if a.size == 0:
+                return None
+            return {
+                "n": int(a.size), "mean": float(a.mean()), "median": float(np.median(a)),
+                "p90": float(np.percentile(a, 90)), "max": float(a.max()),
+            }
+
+        return {
+            "n_tracks": len(self._track_seq),
+            "ov_tcs": {
+                "A_mean": float(np.mean(A_l)) if A_l else None,
+                "B_mean": float(np.mean(B_l)) if B_l else None,
+                "C_mean": float(np.mean(C_l)) if C_l else None,
+            },
+            "track_length": {
+                **(_stat(lengths_a) or {}),
+                "singleton_frac": (float(np.mean(lengths_a == 1)) if lengths_a.size else None),
+            },
+            "gt_fragmentation": {
+                "n_gt_instances": int(frags.size),
+                "mean_fragments": float(frags.mean()) if frags.size else None,
+                "median_fragments": float(np.median(frags)) if frags.size else None,
+                "p90_fragments": float(np.percentile(frags, 90)) if frags.size else None,
+            },
+        }
+
+    def build_track_records(self) -> list:
+        """Per-track rows for OV-TCS metric validation (needs
+        collect_track_metrics). Each row: gid, ovtcs_C, track_len, n_switches,
+        gt_frag (worst fragmentation of any GT the track touches), gt_matched,
+        correct (majority native label == nearest-GT class)."""
+        from collections import Counter
+
+        track_frag: dict[int, int] = {}
+        for gids in self._gt_frag.values():
+            f = len(gids)
+            for gid in gids:
+                track_frag[int(gid)] = max(track_frag.get(int(gid), 0), f)
+
+        rows = []
+        for gid, seq in self._track_seq.items():
+            L = len(seq)
+            if L == 0:
+                continue
+            sw = sum(1 for a, b in zip(seq[:-1], seq[1:]) if a != b)
+            csr = (sw / (L - 1)) if L >= 2 else 0.0
+            ov = (1.0 - 1.0 / L) * (1.0 - csr) if L >= 2 else None
+            votes = self._track_gt_cls.get(int(gid))
+            if votes:
+                gt_name = max(votes.items(), key=lambda kv: kv[1])[0]
+                pred_name = CLASS_NAMES[Counter(seq).most_common(1)[0][0]]
+                correct, matched = int(pred_name == gt_name), True
+            else:
+                correct, matched = None, False
+            rows.append({
+                "gid": int(gid), "ovtcs_C": ov, "track_len": int(L),
+                "n_switches": int(sw), "gt_frag": track_frag.get(int(gid)),
+                "gt_matched": matched, "correct": correct,
+            })
+        return rows
 
 
 # ---------------------------------------------------------------------------
@@ -757,15 +1231,25 @@ def main():
     ap.add_argument("--cp-cache-dir", default=None,
                     help="shared proposal cache (source-tagged: <token>.pkl for gamma, "
                          "<token>.detguided.pkl for detguided).")
-    ap.add_argument("--proposal-source", choices=["gamma", "detguided"], default="gamma",
+    ap.add_argument("--proposal-source", choices=["gamma", "detguided", "hybrid"],
+                    default="gamma",
                     help="gamma = native CenterPoint (0.3407 anchor); detguided = "
-                         "LiDAR-clustering open-vocab (YOLO-World frustum + HDBSCAN).")
+                         "LiDAR-clustering open-vocab (YOLO-World frustum + HDBSCAN); "
+                         "hybrid = CenterPoint geometry relabeled by YOLO-World per-camera "
+                         "(cache-only, built by scripts/build_hybrid_cache.py).")
     ap.add_argument("--oy3d-config", default="configs/openyolo3d_nuscenes.yaml",
                     help="OpenYolo3D (YOLO-World) config — required for detguided.")
     ap.add_argument("--proposal-score-threshold", type=float, default=0.0,
                     help="reliability gate: drop proposals with score below this "
                          "(applied on read; cache stores the unfiltered set).")
     ap.add_argument("--m11-N", type=int, default=3)
+    ap.add_argument("--retro-emission", action="store_true",
+                    help="registration gate (M11/M12) emits a confirmed track's "
+                         "pre-confirmation frames retroactively at their own "
+                         "sample_token instead of deleting them. Offline-only: "
+                         "adds N-1 frames (0.5 s per frame at 2 Hz) of "
+                         "track-birth latency; not real-time deployable. No "
+                         "effect on the baseline axis.")
     ap.add_argument("--m12-threshold", type=float, default=0.85)
     ap.add_argument("--m31-iou", type=float, default=0.5)
     ap.add_argument("--m32-distance", type=float, default=0.5,
@@ -780,7 +1264,39 @@ def main():
                          "(ClassAgnosticAssociator). Exposes proposal-level "
                          "label flicker that the class-aware default "
                          "structurally hides at lsc=0 (task_3_1 finding).")
+    ap.add_argument("--association-frame", choices=["ego", "global"], default="ego",
+                    help="Tracker matching frame. ego = production "
+                         "(no ego-motion compensation); global = "
+                         "GlobalCentroidAssociator (ego->global lift before the "
+                         "gate). The single 'frame' method-variant knob.")
+    ap.add_argument("--collect-track-metrics", action="store_true",
+                    help="Also measure OV-TCS (A/B/C), track length, and "
+                         "GT-anchored fragmentation on the pipeline's own tracks.")
+    ap.add_argument("--frag-inject-p", type=float, default=0.0,
+                    help="Controlled fragmentation-injection rate in [0,1): break "
+                         "each continuing track id with this probability per frame "
+                         "(degrades temporal quality without touching the matcher).")
+    ap.add_argument("--fuse-allow", default=None,
+                    help="2D->3D label-fusion overlay on the hybrid source cache. "
+                         "Comma list of YOLO target classes to override CP->YOLO "
+                         "into (e.g. 'bicycle,motorcycle'); 'none'=native CP labels; "
+                         "'all'=global (class-agnostic) fusion. Omit = overlay off.")
+    ap.add_argument("--fuse-tau-iou", type=float, default=0.5,
+                    help="Overlay: min ROI->box match_iou to trust the YOLO label.")
+    ap.add_argument("--fuse-tau-score", type=float, default=0.4,
+                    help="Overlay: min YOLO 2D score to trust the YOLO label.")
     args = ap.parse_args()
+
+    fuse_allow = None
+    if args.fuse_allow is not None:
+        v = args.fuse_allow.strip().lower()
+        if v in ("all", "*"):
+            fuse_allow = "ALL"
+        elif v in ("none", "native", ""):
+            fuse_allow = frozenset()
+        else:
+            fuse_allow = frozenset(s.strip() for s in args.fuse_allow.split(",")
+                                   if s.strip())
 
     out_root = Path(args.output)
     out_root.mkdir(parents=True, exist_ok=True)
@@ -825,7 +1341,13 @@ def main():
         proposal_source=args.proposal_source,
         oy3d=oy3d, detguided_generator=detg, text_prompts=text_prompts,
         proposal_score_threshold=args.proposal_score_threshold,
-        class_agnostic_association=args.association_class_agnostic)
+        class_agnostic_association=args.association_class_agnostic,
+        association_frame=args.association_frame,
+        collect_track_metrics=args.collect_track_metrics,
+        frag_inject_p=args.frag_inject_p,
+        fuse_allow=fuse_allow,
+        fuse_tau_iou=args.fuse_tau_iou,
+        fuse_tau_score=args.fuse_tau_score)
 
     # Baseline mAP anchor for the fire-audit delta (read if a sibling baseline
     # axis was already written in this run dir).
@@ -840,7 +1362,8 @@ def main():
     overall = []
     for axis in args.axes:
         print(f"\n[axis {axis}] installing ...", flush=True)
-        ev.install_axis(axis, m11_N=args.m11_N, m12_threshold=args.m12_threshold,
+        ev.install_axis(axis, m11_N=args.m11_N, retro_emission=args.retro_emission,
+                        m12_threshold=args.m12_threshold,
                         m31_iou=args.m31_iou, m32_distance=args.m32_distance)
         ev.begin_axis()
         t0 = time.time()

@@ -1,0 +1,85 @@
+#!/bin/bash
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=08:00:00
+#PBS -j oe
+# E1 preregistered 21-variant grid (results/2026-07-18_e1_prereg_v01/PREREGISTRATION.md §2).
+# Submit as 3 chunks:  for c in 1 2 3; do qsub -v CHUNK=$c,RUN_DIR=<run_dir> scripts/run_e1_grid.pbs; done
+# Each variant: CPU cache replay (--no-gpu) + offline GT metrics (e1_gt_metrics.py).
+# No-peeking rule: this script computes per-variant metrics only; cross-variant
+# statistics run once afterwards via e1_stats.py.
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
+RUN_DIR="${RUN_DIR:?pass -v RUN_DIR=results/...}"
+CHUNK="${CHUNK:?pass -v CHUNK=1|2|3}"
+mkdir -p "$RUN_DIR/cells"
+LOG="$RUN_DIR/run_chunk${CHUNK}.log"
+exec >"$LOG" 2>&1
+
+CACHE_GAMMA="$PROJECT_ROOT/results/outdoor_native_temporal_cpcache_thr000_single_gravity"
+CACHE_DETG="$PROJECT_ROOT/results/outdoor_detguided_cpcache_thr000_full150"
+CACHE_HYBRID="$PROJECT_ROOT/results/outdoor_hybrid_cpcache_gravity_nusc10"
+FUSE_ARGS="--fuse-allow bicycle,motorcycle,traffic_cone,pedestrian --fuse-tau-iou 0.3 --fuse-tau-score 0.3"
+
+# name|source|frame|axis|extra
+VARIANTS=(
+  "gamma_ego|gamma|ego|baseline|"
+  "gamma_global|gamma|global|baseline|"
+  "detg_ego|detguided|ego|baseline|"
+  "detg_global|detguided|global|baseline|"
+  "hybrid_ego|hybrid|ego|baseline|"
+  "hybrid_global|hybrid|global|baseline|"
+  "gamma_ego_a2|gamma|ego|baseline|--association-max-age 2"
+  "gamma_ego_a10|gamma|ego|baseline|--association-max-age 10"
+  "gamma_global_a2|gamma|global|baseline|--association-max-age 2"
+  "gamma_global_a10|gamma|global|baseline|--association-max-age 10"
+  "gamma_ego_ca|gamma|ego|baseline|--association-class-agnostic"
+  "gamma_global_ca|gamma|global|baseline|--association-class-agnostic"
+  "hybrid_ego_ca|hybrid|ego|baseline|--association-class-agnostic"
+  "hybrid_global_ca|hybrid|global|baseline|--association-class-agnostic"
+  "gamma_ego_p1|gamma|ego|phase1|"
+  "gamma_global_p1|gamma|global|phase1|"
+  "hybrid_ego_p1|hybrid|ego|phase1|"
+  "hybrid_global_p1|hybrid|global|phase1|"
+  "gamma_ego_m32|gamma|ego|M32|--m32-distance 1.0"
+  "gamma_global_m32|gamma|global|M32|--m32-distance 1.0"
+  "hybrid_global_fuse|hybrid|global|baseline|$FUSE_ARGS"
+)
+
+# Smoke knobs (unset for the real preregistered run):
+#   -v SCENE_LIMIT=2  -v ONLY=gamma_ego,hybrid_global_fuse  -v CHUNK=0 (0 = all)
+SMOKE_ARGS="${SCENE_LIMIT:+--scene-limit $SCENE_LIMIT}"
+ONLY="${ONLY//:/,}"   # qsub -v cannot pass commas; ONLY uses ':' separators
+
+echo "== E1 grid chunk $CHUNK  $(date)  host=$(hostname)  smoke='$SMOKE_ARGS' only='$ONLY'"
+for i in "${!VARIANTS[@]}"; do
+  if [ "$CHUNK" != "0" ] && [ $(( (i % 3) + 1 )) -ne "$CHUNK" ]; then continue; fi
+  IFS='|' read -r NAME SRC FRAME AXIS EXTRA <<< "${VARIANTS[$i]}"
+  if [ -n "$ONLY" ] && ! echo ",$ONLY," | grep -q ",$NAME,"; then continue; fi
+  CELL="$RUN_DIR/cells/$NAME"
+  if [ -f "$CELL"/axis_*/e1_metrics.json ] 2>/dev/null; then
+    echo "== [$NAME] already done, skip"; continue
+  fi
+  case "$SRC" in
+    gamma) CACHE="$CACHE_GAMMA" ;;
+    detguided) CACHE="$CACHE_DETG" ;;
+    hybrid) CACHE="$CACHE_HYBRID" ;;
+  esac
+  echo "== [$NAME] replay  src=$SRC frame=$FRAME axis=$AXIS extra='$EXTRA'  $(date)"
+  python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+    --output "$CELL" --axes "$AXIS" \
+    --proposal-source "$SRC" --association-frame "$FRAME" \
+    --cp-cache-dir "$CACHE" --no-gpu --collect-track-metrics $EXTRA $SMOKE_ARGS \
+    || { echo "== [$NAME] REPLAY FAILED"; continue; }
+  echo "== [$NAME] gt metrics  $(date)"
+  python -u scripts/e1_gt_metrics.py --cell "$CELL" \
+    || echo "== [$NAME] GT METRICS FAILED"
+done
+echo "== chunk $CHUNK done  $(date)"

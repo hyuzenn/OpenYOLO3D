@@ -1,0 +1,61 @@
+#!/bin/bash
+#PBS -q coss_a6gpu
+#PBS -l select=1:ncpus=8:ngpus=0:mem=64gb:Qlist=a6000
+#PBS -l walltime=12:00:00
+#PBS -j oe
+#PBS -o /home/rintern16/OpenYOLO3D/results/pbs_logs/
+# E2b: track-count-matched control for the retro-gate.
+# Pre-registration: experiments/preregistration_E2b_2026-07-31.md (frozen before run).
+#
+# Arm A (reused, no recompute): E2c retro cells (results/2026-07-30_e2c_retro_thrmatch_v01).
+# Arm B (new): baseline tracks filtered to exactly K_s track IDs per scene
+#   (K_s = retro-gate's distinct emitted IDs in scene s), top-K by mean score.
+#   NB: baseline is FRAME-MATCHED (gamma_ego / gamma_global) because track IDs
+#   depend on the association frame.
+# Secondary sanity: random-K over 5 seeds (trackeval only, --no-amota).
+#
+# Submit:  qsub scripts/run_e2b_trackmatch.pbs
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export PYTHONPATH=/home/rintern16/OpenYOLO3D:$PYTHONPATH
+
+E2C="$PROJECT_ROOT/results/2026-07-30_e2c_retro_thrmatch_v01"
+GRID="$PROJECT_ROOT/results/2026-07-18_e1_grid_v01/cells"
+DATE=$(date +%F)
+EXP=e2b_trackmatch
+N=$(printf '%02d' $(($(ls -d results/${DATE}_${EXP}_v* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${RUN_DIR:-$PROJECT_ROOT/results/${DATE}_${EXP}_v${N}}"
+mkdir -p "$RUN_DIR/cells"
+exec >"$RUN_DIR/run.log" 2>&1
+
+echo "== E2b track-count-matched control  $(date)  host=$(hostname)"
+echo "== run_dir=$RUN_DIR  e2c=$E2C"
+
+for FRAME in ego global; do
+  RETRO="$E2C/cells/retro_${FRAME}"
+  BASE="$GRID/gamma_${FRAME}/axis_baseline"
+  CTRL="$RUN_DIR/cells/trackctrl_${FRAME}"
+
+  echo "== [trackctrl_$FRAME] build top-K control  $(date)"
+  python -u scripts/e2b_trackmatch.py --retro-cell "$RETRO" --base-cell "$BASE" \
+      --out "$CTRL" --mode topk \
+      || { echo "== [trackctrl_$FRAME] BUILD FAILED"; continue; }
+  python -u scripts/e1_gt_metrics.py --cell "$CTRL" \
+      || echo "== [trackctrl_$FRAME] GT METRICS FAILED"
+
+  for S in 0 1 2 3 4; do
+    R="$RUN_DIR/cells/randctrl_${FRAME}_s${S}"
+    python -u scripts/e2b_trackmatch.py --retro-cell "$RETRO" --base-cell "$BASE" \
+        --out "$R" --mode random --seed $((20260718 + S)) \
+        || { echo "== [randctrl_${FRAME}_s${S}] BUILD FAILED"; continue; }
+    python -u scripts/e1_gt_metrics.py --cell "$R" --no-amota \
+        || echo "== [randctrl_${FRAME}_s${S}] GT METRICS FAILED"
+  done
+done
+
+echo "== E2b report  $(date)"
+python -u scripts/e2b_report.py --run-dir "$RUN_DIR" --e2c "$E2C" \
+  || echo "== REPORT FAILED"
+echo "== E2b done  $(date)"

@@ -1,0 +1,40 @@
+#!/bin/bash
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=12:00:00
+#PBS -j oe
+# E2: controlled isolation of the M11 confirmation gate.
+# Everything frozen except --m11-N. gamma_global, max_age 5, class-agnostic,
+# same cp-cache (detector output bit-identical across arms), 146 val scenes.
+# Control = baseline axis. N=1 arm is the no-op sanity check (must == control).
+cd /home/rintern16/OpenYOLO3D
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+RUN_DIR=results/2026-07-20_e2_gate_sweep
+mkdir -p "$RUN_DIR/cells"
+exec >"$RUN_DIR/run.log" 2>&1
+CACHE=/home/rintern16/OpenYOLO3D/results/outdoor_native_temporal_cpcache_thr000_single_gravity
+
+# frozen args shared by every arm
+COMMON=(--proposal-source gamma --association-frame global --association-class-agnostic
+        --association-max-age 5 --score-threshold 0.0
+        --cp-cache-dir "$CACHE" --no-gpu --collect-track-metrics)
+
+run_arm () {  # $1=cell name  $2..=axis-specific args
+  local CELL="$RUN_DIR/cells/$1"; shift
+  if compgen -G "$CELL"/axis_*/e1_metrics.json >/dev/null; then echo "== $CELL done, skip"; return; fi
+  echo "== [$CELL] replay $(date)"
+  python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+    --output "$CELL" "${COMMON[@]}" "$@" \
+    || { echo "== [$CELL] REPLAY FAILED"; return; }
+  python -u scripts/e1_gt_metrics.py --cell "$CELL" || echo "== [$CELL] GT METRICS FAILED"
+}
+
+run_arm control --axes baseline
+for N in 1 2 3 5; do
+  run_arm "m11_N${N}" --axes M11 --m11-N "$N"
+done
+echo "== e2 gate sweep done $(date)"

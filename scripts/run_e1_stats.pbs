@@ -1,0 +1,11 @@
+#!/bin/bash
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=32gb:Qlist=agpu
+#PBS -l walltime=02:00:00
+#PBS -j oe
+cd /home/rintern16/OpenYOLO3D
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+exec > results/2026-07-18_e1_grid_v01/stats_run.log 2>&1
+python -u scripts/e1_stats.py --run-dir results/2026-07-18_e1_grid_v01
+echo "== stats done $(date)"

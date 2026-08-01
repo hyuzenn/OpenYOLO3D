@@ -1,0 +1,28 @@
+#!/bin/bash
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=08:00:00
+#PBS -j oe
+# E1 secondary synthetic arms (prereg §2): frag-inject p on gamma_ego, 146 scenes.
+# NEVER pooled with the 21 primary variants.
+cd /home/rintern16/OpenYOLO3D
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+RUN_DIR=results/2026-07-18_e1_grid_v01
+mkdir -p "$RUN_DIR/cells_frag"
+exec >"$RUN_DIR/run_frag.log" 2>&1
+CACHE=/home/rintern16/OpenYOLO3D/results/outdoor_native_temporal_cpcache_thr000_single_gravity
+for P in 0.1 0.2 0.3 0.5; do
+  CELL="$RUN_DIR/cells_frag/gamma_ego_frag${P/./}"
+  if [ -f "$CELL"/axis_*/e1_metrics.json ] 2>/dev/null; then echo "== [$P] done, skip"; continue; fi
+  echo "== [frag p=$P] replay $(date)"
+  python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+    --output "$CELL" --axes baseline --proposal-source gamma --association-frame ego \
+    --cp-cache-dir "$CACHE" --no-gpu --collect-track-metrics --frag-inject-p "$P" \
+    || { echo "== [$P] REPLAY FAILED"; continue; }
+  python -u scripts/e1_gt_metrics.py --cell "$CELL" || echo "== [$P] GT METRICS FAILED"
+done
+echo "== frag arms done $(date)"
