@@ -62,3 +62,12 @@ output/
 ### Env & Secret ###
 .env
 .env.local
+
+### LaTeX build artifacts ###
+*.aux
+*.blg
+*.out
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+paper_iccv_draft/main.log

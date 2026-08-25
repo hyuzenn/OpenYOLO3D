@@ -1,0 +1,144 @@
+\begin{thebibliography}{26}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Bernardin and Stiefelhagen(2008)]{clearmot}
+Keni Bernardin and Rainer Stiefelhagen.
+\newblock Evaluating multiple object tracking performance: The {CLEAR MOT}
+  metrics.
+\newblock \emph{EURASIP Journal on Image and Video Processing}, 2008.
+
+\bibitem[Bewley et~al.(2016)Bewley, Ge, Ott, Ramos, and Upcroft]{sort}
+Alex Bewley, Zongyuan Ge, Lionel Ott, Fabio Ramos, and Ben Upcroft.
+\newblock Simple online and realtime tracking.
+\newblock In \emph{ICIP}, 2016.
+
+\bibitem[Boudjoghra et~al.(2024)]{openyolo3d}
+Mohamed El~Amine Boudjoghra et~al.
+\newblock Open-{YOLO} 3d: Towards fast and accurate open-vocabulary 3d instance
+  segmentation.
+\newblock In \emph{NeurIPS}, 2024.
+
+\bibitem[Caesar et~al.(2019)]{nuscenes_tracking}
+Holger Caesar et~al.
+\newblock {nuScenes} tracking benchmark ({AMOTA}/{AMOTP}), 2019.
+
+\bibitem[Caesar et~al.(2020)]{nuscenes}
+Holger Caesar et~al.
+\newblock {nuScenes}: A multimodal dataset for autonomous driving.
+\newblock In \emph{CVPR}, 2020.
+
+\bibitem[Cheng et~al.(2024)]{yoloworld}
+Tianheng Cheng et~al.
+\newblock {YOLO-World}: Real-time open-vocabulary object detection.
+\newblock In \emph{CVPR}, 2024.
+
+\bibitem[Dave et~al.(2020)]{tao}
+Achal Dave et~al.
+\newblock {TAO}: A large-scale benchmark for tracking any object.
+\newblock In \emph{ECCV}, 2020.
+
+\bibitem[Gu et~al.(2024)Gu, Kuwajerwala, Morin, Jatavallabhula,
+  et~al.]{conceptgraphs}
+Qiao Gu, Alihusein Kuwajerwala, Sacha Morin, Krishna~Murthy Jatavallabhula,
+  et~al.
+\newblock {ConceptGraphs}: Open-vocabulary 3d scene graphs for perception and
+  planning.
+\newblock In \emph{ICRA}, 2024.
+
+\bibitem[Han et~al.(2020)]{streaming3d}
+Wei Han et~al.
+\newblock Streaming object detection for 3-d point clouds.
+\newblock In \emph{ECCV}, 2020.
+
+\bibitem[Jatavallabhula et~al.(2023)]{conceptfusion}
+Krishna~Murthy Jatavallabhula et~al.
+\newblock {ConceptFusion}: Open-set multimodal 3d mapping.
+\newblock In \emph{RSS}, 2023.
+
+\bibitem[Kerr et~al.(2023)]{lerf}
+Justin Kerr et~al.
+\newblock {LERF}: Language embedded radiance fields.
+\newblock In \emph{ICCV}, 2023.
+
+\bibitem[Kim et~al.(2020)]{vpq}
+Dahun Kim et~al.
+\newblock Video panoptic segmentation.
+\newblock In \emph{CVPR}, 2020.
+
+\bibitem[Li et~al.(2020)Li, Wang, and Ramanan]{streamingperception}
+Mengtian Li, Yu-Xiong Wang, and Deva Ramanan.
+\newblock Towards streaming perception.
+\newblock In \emph{ECCV}, 2020.
+
+\bibitem[Li et~al.(2022)]{teta}
+Siyuan Li et~al.
+\newblock Tracking every thing in the wild.
+\newblock In \emph{ECCV}, 2022.
+
+\bibitem[Li et~al.(2023)]{ovtrack}
+Siyuan Li et~al.
+\newblock {OVTrack}: Open-vocabulary multiple object tracking.
+\newblock In \emph{CVPR}, 2023.
+
+\bibitem[Luiten et~al.(2021)]{hota}
+Jonathon Luiten et~al.
+\newblock {HOTA}: A higher order metric for evaluating multi-object tracking.
+\newblock \emph{IJCV}, 2021.
+
+\bibitem[Peng et~al.(2023)]{openscene}
+Songyou Peng et~al.
+\newblock {OpenScene}: 3d scene understanding with open vocabularies.
+\newblock In \emph{CVPR}, 2023.
+
+\bibitem[Ristani et~al.(2016)]{idf1}
+Ergys Ristani et~al.
+\newblock Performance measures and a data set for multi-target, multi-camera
+  tracking.
+\newblock In \emph{ECCV Workshops}, 2016.
+
+\bibitem[Rozenberszki et~al.(2022)Rozenberszki, Litany, and Dai]{scannet200}
+David Rozenberszki, Or Litany, and Angela Dai.
+\newblock Language-grounded indoor 3d semantic segmentation in the wild
+  ({ScanNet200}).
+\newblock In \emph{ECCV}, 2022.
+
+\bibitem[Schult et~al.(2023)]{mask3d}
+Jonas Schult et~al.
+\newblock {Mask3D}: Mask transformer for 3d semantic instance segmentation.
+\newblock In \emph{ICRA}, 2023.
+
+\bibitem[Takmaz et~al.(2023)]{openmask3d}
+Ayca Takmaz et~al.
+\newblock {OpenMask3D}: Open-vocabulary 3d instance segmentation.
+\newblock In \emph{NeurIPS}, 2023.
+
+\bibitem[Weber et~al.(2021)]{step}
+Mark Weber et~al.
+\newblock {STEP}: Segmenting and tracking every pixel.
+\newblock In \emph{NeurIPS Datasets and Benchmarks}, 2021.
+
+\bibitem[Weng et~al.(2020)Weng, Wang, Held, and Kitani]{ab3dmot}
+Xinshuo Weng, Jianren Wang, David Held, and Kris Kitani.
+\newblock {3D} multi-object tracking: A baseline and new evaluation metrics.
+\newblock In \emph{IROS}, 2020.
+
+\bibitem[Wojke et~al.(2017)Wojke, Bewley, and Paulus]{deepsort}
+Nicolai Wojke, Alex Bewley, and Dietrich Paulus.
+\newblock Simple online and realtime tracking with a deep association metric.
+\newblock In \emph{ICIP}, 2017.
+
+\bibitem[Yang et~al.(2022)]{streamyolo}
+Jinrong Yang et~al.
+\newblock Real-time object detection for streaming perception.
+\newblock In \emph{CVPR}, 2022.
+
+\bibitem[Yin et~al.(2021)Yin, Zhou, and Kr\"ahenb\"uhl]{centerpoint}
+Tianwei Yin, Xingyi Zhou, and Philipp Kr\"ahenb\"uhl.
+\newblock Center-based 3d object detection and tracking.
+\newblock In \emph{CVPR}, 2021.
+
+\end{thebibliography}

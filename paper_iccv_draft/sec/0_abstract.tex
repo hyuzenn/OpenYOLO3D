@@ -1,0 +1,34 @@
+\begin{abstract}
+Streaming 3D perception systems emit objects whose identities and class labels
+flicker: the same physical object is re-detected as a new instance, or changes
+class, from one frame to the next. We present a training-free
+\emph{retrospective confirmation} module that improves this identity and
+semantic consistency without retraining or modifying the perception model.
+Detections are associated into tracks and emitted only after $N$ observations,
+the standard confirmation test. At confirmation the module retrospectively
+emits the withheld prefix --- a step standard online trackers omit ---
+thereby recovering complete object trajectories. The module changes no box coordinate,
+score, or label, runs on frozen detector output, and transfers across
+pipelines at a single operating point ($N{=}3$). Because it also reduces how
+much a system emits, and most metrics respond to output volume alone, we
+validate it against \emph{matched controls} rather than an unfiltered
+baseline: a score threshold calibrated to the identical detection count, and a
+per-sequence top-$K$ selection matched to the identical identity count. On
+nuScenes with a frozen detector, the module improves association accuracy
+against both controls in both sensor- and world-frame association, with
+bootstrap confidence intervals excluding zero, and raises class-aware tracking
+accuracy (AMOTA $0.055\!\to\!0.089$ and $0.166\!\to\!0.203$; point estimates,
+consistent in sign across both controls and both frames). On ScanNet200,
+an indoor open-vocabulary instance-segmentation pipeline sharing no detector,
+modality, or codebase with the outdoor one, the same module reduces
+class-label switching by $26.9\%$ against an identity-matched control ($309$
+of $312$ scenes) with segmentation AP unchanged, while a random selection of
+equal size reproduces none of the reduction. The gain is in consistency
+specifically, and it is paid for: at an equal detection budget the module
+lowers mAP, detection recall, and aggregate HOTA, and retrospective emission
+costs $N{-}1$ frames of latency, without which the association gain holds in
+the sensor frame but not the world frame. What survives the controls is the
+contribution: identity and semantic consistency that score thresholding does
+not deliver at the same output budget, from a training-free module that
+transfers across pipelines unchanged.
+\end{abstract}

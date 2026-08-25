@@ -1,0 +1,244 @@
+\section{Method}
+\label{sec:method}
+
+\begin{figure}[t]
+\centering
+\resizebox{\columnwidth}{!}{%
+\begin{tikzpicture}
+  \node[font=\small\bfseries, anchor=west] at (-1.6, 2.85) {(a)};
+  \foreach \x in {1,...,6} {\node[font=\tiny, gray] at (\x*0.9, 2.75) {\x};}
+  \node[font=\tiny, gray, anchor=east] at (0.35, 2.75) {frame};
+  % row 1: per-frame threshold (identity switches shown as color changes)
+  \node[anchor=east, align=right, font=\tiny] at (0.35, 2.1) {per-frame\\threshold};
+  \foreach \x in {1,2} {\fill[blue!65!black] (\x*0.9, 2.1) circle (0.09);}
+  \foreach \x in {3,4} {\fill[orange!85!black] (\x*0.9, 2.1) circle (0.09);}
+  \foreach \x in {5,6} {\fill[teal!65!black] (\x*0.9, 2.1) circle (0.09);}
+  \node[font=\tiny, orange!85!black] at (2.25, 2.38) {new id};
+  \node[font=\tiny, teal!65!black] at (4.05, 2.38) {new id};
+  % row 2: causal confirmation
+  \node[anchor=east, align=right, font=\tiny] at (0.35, 1.05) {causal\\confirmation};
+  \foreach \x in {1,2} {
+    \draw[gray!70] (\x*0.9, 1.05) circle (0.09);
+    \draw[gray!70] (\x*0.9-0.09, 1.05-0.09) -- (\x*0.9+0.09, 1.05+0.09);}
+  \foreach \x in {3,...,6} {\fill[blue!65!black] (\x*0.9, 1.05) circle (0.09);}
+  \node[font=\tiny, gray, anchor=west] at (0.55, 0.72) {prefix dropped};
+  % row 3: retrospective confirmation
+  \node[anchor=east, align=right, font=\tiny] at (0.35, 0.0) {retrospective\\confirmation};
+  \foreach \x in {1,...,6} {\fill[blue!65!black] (\x*0.9, 0.0) circle (0.09);}
+  \draw[->, blue!65!black] (2.7, -0.22) .. controls (2.1, -0.62) and (1.5, -0.62) .. (0.95, -0.22);
+  \node[font=\tiny, blue!65!black] at (3.3, -0.72) {prefix emitted at confirmation};
+  % confirmation marker
+  \draw[dashed, gray] (2.7, -0.35) -- (2.7, 1.55);
+  \node[font=\tiny, gray, anchor=west] at (2.82, 1.45) {confirmed ($N{=}3$)};
+\end{tikzpicture}}
+\\[4pt]
+\resizebox{0.92\columnwidth}{!}{%
+\begin{tikzpicture}
+  \node[font=\small\bfseries, anchor=west] at (-1.15, 2.25) {(b)};
+  \draw[fill=gray!25, draw=gray] (0, 0) rectangle (0.8, 2.1);
+  \node[align=center, font=\tiny, anchor=north] at (0.4, -0.08) {frozen\\detections};
+  \draw[->, gray] (0.9, 1.05) -- (1.55, 1.05);
+  \node[font=\tiny, gray] at (1.22, 1.28) {select};
+  \draw[fill=blue!45, draw=blue!65!black] (1.7, 0) rectangle (2.5, 1.35);
+  \node[align=center, font=\tiny, anchor=north] at (2.1, -0.08) {confirmation\\(persistence)};
+  \draw[fill=orange!45, draw=orange!85!black] (3.1, 0) rectangle (3.9, 1.35);
+  \node[align=center, font=\tiny, anchor=north] at (3.5, -0.08) {score threshold\\(matched boxes)};
+  \draw[fill=teal!45, draw=teal!65!black] (4.5, 0) rectangle (5.3, 0.9);
+  \node[align=center, font=\tiny, anchor=north] at (4.9, -0.08) {top-$K$ tracks\\(matched ids)};
+  \draw[dashed, gray] (1.7, 1.35) -- (3.9, 1.35);
+  \node[font=\tiny] at (2.8, 1.58) {$=$ box count (exact)};
+  \node[align=center, font=\tiny] at (4.9, 1.35) {$=$ identity count,\\fewer boxes};
+\end{tikzpicture}}
+\caption{The module and the matched controls. \textbf{(a)} Emission policies
+for one re-observed object over six frames. A per-frame score threshold emits
+immediately but carries no history forward, so re-detections arrive as new
+identities (color changes). Confirmation-based initialization emits a track
+only once it has $N$ observations ($N{=}3$ shown): the \emph{causal} policy
+drops the pre-confirmation prefix, while the \emph{retrospective} policy
+emits the withheld prefix at confirmation time, completing the trajectory at
+a latency of up to $N{-}1$ frames. \textbf{(b)} Every arm selects from the
+same frozen detection set. The detection-budget control is a score threshold
+calibrated to the module's exact box count; the identity-budget control keeps
+the module's track count per sequence, which necessarily emits fewer boxes
+because score-ranked tracks are shorter (Sec.~\ref{sec:controls}).}
+\label{fig:overview}
+\end{figure}
+
+Throughout this paper, \emph{module} denotes a reusable post-processing
+operator composed of three existing parts --- a class-agnostic associator, the
+standard confirmation test for track initialization, and an emission policy
+--- applied to frozen detector output (Fig.~\ref{fig:overview}). The module is deliberately minimal:
+no part of it changes a box's coordinates, score, or label, and it decides
+only \emph{which} detections enter the output stream and under \emph{which}
+persistent identity. The confirmation test descends directly from
+tracking-by-detection practice~\cite{sort,deepsort,ab3dmot}; the
+retrospective-emission completion and the controlled evidence for what the
+composition does (Sec.~\ref{sec:protocol}) are what we add.
+
+\subsection{Streaming pipeline}
+\label{sec:pipeline}
+Per-frame detections (a 3D box with a score and a class label) are linked
+across frames into tracks by a class-agnostic nearest-centroid associator with
+a $2.0$\,m bird's-eye-view center-distance threshold and a gap tolerance of
+$5$ frames; no score threshold is applied before association. Association is
+performed either in the \emph{sensor frame} (raw detector coordinates) or in
+the \emph{world frame} (ego-motion-compensated global coordinates); both
+conditions are evaluated throughout, since ego-motion compensation changes how
+far the same physical object moves between frames and hence the difficulty of
+association. The associator is identical in every arm of every experiment. It
+is deliberately lightweight rather than state of the art, because the quantity
+of interest is the difference a selection rule makes and not the highest
+attainable tracking score; absolute tracking numbers reported here are
+correspondingly lower than those of tuned nuScenes trackers and are not
+comparable to them.
+
+\subsection{Confirmation-based track initialization}
+\label{sec:confirmation}
+A newly created track is \emph{tentative}. It becomes \emph{confirmed} once it
+has accumulated $N$ observations; only confirmed tracks contribute detections
+to the output stream, and tracks that die before confirmation are never
+emitted. We use a single operating point, $N{=}3$, throughout the paper ---
+the conventional setting in tracking-by-detection systems --- rather than
+tuning $N$ per dataset or per metric. The module is therefore a pure temporal
+\emph{selection}: the emitted detections are a subset of the baseline
+detector's output, chosen by track persistence instead of by score.
+
+\subsection{Emission policy}
+\label{sec:emission}
+Confirmation leaves a policy choice for the first $N{-}1$ observations of a
+track that does get confirmed (Fig.~\ref{fig:overview}a). A \emph{causal}
+(online) policy emits nothing until confirmation and drops the
+pre-confirmation detections; an \emph{offline retrospective} policy emits the
+withheld prefix at confirmation time, so a confirmed object's trajectory is
+complete from its first observation.
+The retrospective policy is only available to consumers that tolerate output
+latency: a detection may appear up to $N{-}1$ frames after it was observed ---
+at the $2$\,Hz annotated-frame rate of our outdoor benchmark, $2$ frames or
+$1.0$\,s for $N{=}3$. We adopt the retrospective policy for all main results
+and state this latency alongside every table; the causal policy is evaluated
+as an ablation (Sec.~\ref{sec:emissionabl}), since the two policies emit
+different numbers of boxes by construction.
+
+\section{Evaluation Protocol}
+\label{sec:protocol}
+
+The protocol is designed around one confound: confirmation reduces output
+volume, and the detection-oriented metrics this field reports are strongly
+coupled to how much a system emits, which makes a consistency gain hard to
+tell apart from the effect of suppression alone. Every claim in this paper is
+therefore made against a \emph{matched control} --- a non-temporal selection
+rule granted the same output budget --- rather than against the unfiltered
+baseline.
+
+\subsection{Datasets and pipelines}
+\label{sec:datasets}
+\noindent\textbf{Outdoor.} The nuScenes~\cite{nuscenes} validation split, all
+$150$ scenes at the $2$\,Hz annotated-frame rate. Detections come from a
+pretrained CenterPoint~\cite{centerpoint} detector whose per-frame output is
+computed once and \emph{frozen}; every arm of every experiment replays the
+same stored detections ($1{,}029{,}380$ boxes over the split; mAP $0.3408$,
+NDS $0.3150$), so any metric difference between arms is attributable to the
+selection rule, not to detector variance.
+
+\noindent\textbf{Indoor.} The ScanNet200~\cite{scannet200} validation split,
+all $312$ scenes, in a streaming instance-segmentation pipeline: class-agnostic
+3D instance-mask proposals from Mask3D~\cite{mask3d} are labeled per frame by a
+2D open-vocabulary detector~\cite{yoloworld}, so each persistent instance
+receives a stream of per-frame class labels. The proposal set is likewise
+frozen across arms. This pipeline shares no detector, modality, or codebase
+beyond the temporal module with the outdoor one, which is the point: it tests
+whether the same confirmation rule transfers.
+
+\subsection{Matched controls}
+\label{sec:controls}
+Two controls bracket the two budgets a temporal module alters
+(Fig.~\ref{fig:overview}b).
+
+\noindent\textbf{Detection-budget-matched control.} A score threshold is
+applied to the frozen baseline detections and calibrated so that the control
+emits \emph{exactly} as many boxes as the temporal module --- $360{,}309$
+boxes in the sensor frame (threshold $0.1875$) and $754{,}500$ in the world
+frame (threshold $0.1211$), both with zero count error. The match is exact
+rather than approximate because the count is a step function of the
+threshold whose breakpoints are the observed scores: the matched threshold is
+the $K$-th largest observed score, with ties resolved upward so the count
+never exceeds $K$. This control answers: does temporal selection beat the
+detector's own confidence ranking at equal detection volume?
+
+\noindent\textbf{Identity-budget-matched control.} Per sequence, the control
+keeps the $K$ highest-scoring tracks (ranked by mean detection score), where
+$K$ is the number of identities the temporal module emits in that sequence.
+The track counts match exactly ($64{,}428$ tracks in the sensor frame;
+$108{,}225$ in the world frame). This control answers: does temporal
+selection beat score-based selection at equal \emph{identity} volume? Five
+additional arms select the same $K$ tracks per sequence \emph{at random}
+(five seeds), scored on association accuracy, separating score-based
+selection from selection per se. One budget cannot
+be matched at a time without unmatching the other: at equal track count the
+control emits fewer boxes than the temporal module ($190{,}708$ vs.\
+$360{,}309$ sensor; $608{,}168$ vs.\ $754{,}500$ world), because score-ranked
+tracks are shorter than persistence-selected ones. We report this asymmetry
+explicitly and interpret the two controls jointly rather than reading either
+alone.
+
+\noindent\textbf{Indoor control.} The identity-budget design transfers
+directly: the control keeps the $K$ highest-scoring instances per scene, where
+$K$ matches the temporal module's emitted-instance count ($10{,}413$ instances
+in total; the control realizes $10{,}410$). Three
+additional arms select $K$ instances \emph{at random} per scene (three seeds),
+to separate the effect of score-based selection from that of selection per se.
+
+\noindent\textbf{Shared machinery.} Baseline, temporal module, and every
+control share the frozen detections, the associator, and the evaluation code;
+they differ only in the selection rule.
+
+\subsection{Metrics}
+\label{sec:metrics}
+\noindent\textbf{Outdoor.} Official nuScenes mAP and NDS on the emitted box
+set; class-agnostic HOTA, AssA, DetA, detection recall (DetRe), and IDF1 via
+TrackEval~\cite{hota,idf1}, with similarity
+$\mathrm{sim}=\mathrm{clip}(1-d_{xy}/2.0,\,0,\,1)$ matching the associator's
+$2.0$\,m threshold; and official class-aware AMOTA~\cite{nuscenes_tracking}
+over the $7$ nuScenes tracking classes. The class-agnostic and class-aware
+families are reported side by side because they respond to different
+properties of the stream.
+
+\noindent\textbf{Indoor.} The pre-registered primary endpoint is the per-scene
+count of \emph{label switches}: frames in which a persistent instance's
+emitted class label differs from its label in the previous frame \emph{in
+which it was emitted}. Counting against the last emission rather than the
+last frame is what makes the count comparable across arms, since the arms
+emit on different frames. The
+secondary endpoint is instance-segmentation AP on the final reconstruction,
+with the pre-registered expectation of no material change.
+
+\subsection{Statistics}
+\label{sec:stats}
+All three main comparisons --- detection-budget-matched,
+identity-budget-matched, and indoor --- were pre-registered: before each run
+we fixed the arms, the primary endpoint, and the criterion for a negative
+result. For the outdoor comparisons that criterion was that the association
+gain hold in \emph{both} association frames with scene-bootstrap intervals
+excluding zero, and that the dataset-level metrics (mAP, AMOTA) move
+consistently across the two association frames, whichever direction they move
+in; indoors,
+that the per-scene label-switch count fall. The pre-registration documents
+will be released with the code. The causal-emission ablation
+(Sec.~\ref{sec:emissionabl}) was \emph{not} pre-registered; it precedes those
+registrations and is what motivated them. All comparisons between the
+temporal module and a control are paired per scene. We report the per-scene Wilcoxon signed-rank test with the
+rank-biserial correlation as effect size, and a $95\%$ bootstrap confidence
+interval on the difference of the aggregate metric obtained by resampling
+scenes ($10{,}000$ resamples, fixed seed $20260718$). A difference is described as an
+improvement only when its interval excludes zero; intervals that span zero are
+reported as no detectable difference, whatever their sign.
+
+Intervals are available for the class-agnostic metrics, which are defined
+per scene and aggregate linearly over scenes. AMOTA is not, and neither are
+the nuScenes devkit metrics mAP and NDS: AMOTA integrates MOTA over recall
+thresholds estimated on the whole split, and mAP and NDS are likewise computed
+over the whole split, so a per-scene resample does not yield the same
+estimator. We report all three as point estimates without intervals. We therefore do not claim interval support for
+AMOTA anywhere; the evidence we offer for it is that its sign and rough
+magnitude are stable across four independent comparisons (two controls
+$\times$ two association frames).

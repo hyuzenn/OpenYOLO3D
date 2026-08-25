@@ -1,0 +1,218 @@
+\section{Implementation and reproducibility details}
+\label{sec:supp-repro}
+
+This supplement records the settings, seeds, and pre-registration artifacts
+behind the results in Sec.~\ref{sec:exp}, together with the complete metric
+tables abbreviated there. No claim in the main paper depends on material
+introduced here.
+
+\subsection{Outdoor pipeline settings}
+\label{sec:supp-outdoor}
+
+Detections are produced once by a pretrained CenterPoint~\cite{centerpoint}
+model on the nuScenes~\cite{nuscenes} validation split and written to disk
+($1{,}029{,}380$ boxes over $150$ scenes at the $2$\,Hz annotated-frame rate);
+every arm of every experiment replays this same file, so no arm re-runs the
+detector. Association uses a class-agnostic nearest-centroid matcher with a
+$2.0$\,m bird's-eye-view center-distance threshold, a gap tolerance of $5$
+frames, and no pre-association score threshold. Confirmation uses $N{=}3$ in
+all arms that use it. The \emph{sensor-frame} condition associates in raw
+detector coordinates; the \emph{world-frame} condition associates in
+ego-motion-compensated global coordinates. Association parameters are
+identical across arms within a condition.
+
+Class-agnostic tracking metrics are computed with TrackEval~\cite{hota,idf1}
+using the similarity $\mathrm{sim}=\mathrm{clip}(1-d_{xy}/2.0,\,0,\,1)$, which
+matches the associator's gating distance so that association and evaluation
+agree on what counts as the same location. Class-aware
+AMOTA~\cite{nuscenes_tracking} uses the official nuScenes implementation over
+its $7$ tracking classes. mAP and NDS use the official nuScenes detection
+evaluation on the emitted box set.
+
+\subsection{Control calibration}
+\label{sec:supp-calib}
+
+The detection-budget-matched control is calibrated exactly rather than by
+search. Because the baseline emits every cached proposal with its score
+unchanged and the control filters on \mbox{$\text{score} \ge t$}, the number of
+emitted boxes is a step function of $t$ whose breakpoints are the observed
+scores; the matched threshold is therefore the $K$-th largest observed score,
+with ties resolved upward so the count never exceeds $K$. Both conditions
+reach zero count error:
+sensor frame, threshold $0.1875$ giving $360{,}309$ boxes against a target of
+$360{,}309$; world frame, threshold $0.1211$ giving $754{,}500$ against
+$754{,}500$. Under causal emission the same procedure yields threshold
+$0.2519$ ($221{,}297$ boxes) and $0.1539$ ($503{,}619$ boxes).
+
+The identity-budget-matched control ranks each scene's tracks by mean
+detection score and keeps the top $K$, with $K$ read per scene from the
+confirmation module's emitted-identity count. Track counts match exactly in
+both conditions ($64{,}428$ sensor, $108{,}225$ world). The random-$K$ arms
+draw $K$ tracks uniformly at random per scene, using five seeds outdoors and
+three indoors.
+
+\subsection{Statistical procedure}
+\label{sec:supp-stats}
+
+Confidence intervals are scene-level bootstrap intervals on the difference of
+the aggregate metric: scenes are resampled with replacement $10{,}000$ times,
+the aggregate metric is recomputed on each resample for both arms, and the
+$2.5$th and $97.5$th percentiles of the paired difference are reported. All
+outdoor bootstraps use seed $20260718$. Paired tests are two-sided Wilcoxon
+signed-rank tests over per-scene values with the matched-pairs rank-biserial
+correlation as effect size. We describe a difference as an improvement only
+when its bootstrap interval excludes zero.
+
+\subsection{Pre-registration}
+\label{sec:supp-prereg}
+
+Each of the three main comparisons was specified in writing before the run it
+covers, including the arms, the primary endpoint, and the criterion that would
+count as a negative result. The documents map one-to-one onto the runs listed
+in Sec.~\ref{sec:supp-runs}:
+
+\begin{itemize}\itemsep1pt
+\item \texttt{preregistration\_2026-07-28.md} $\rightarrow$ the
+detection-budget-matched comparison with retrospective emission, run
+\texttt{2026-07-30}. It fixed the comparison as retrospective-emission
+confirmation against a score threshold at matched box count, required the
+pattern to hold in \emph{both} association frames, and fixed ``wins an axis''
+as a scene-bootstrap interval excluding zero for the per-scene metrics and a
+consistent sign for the devkit metrics (mAP, AMOTA).
+\item \texttt{preregistration\_E2b\_2026-07-31.md} $\rightarrow$ the
+identity-budget-matched comparison, run \texttt{2026-07-31}. It fixed the
+criterion that the association gain had to hold in both association frames
+with intervals excluding zero; it did.
+\item \texttt{preregistration\_indoor\_matched\_2026-08-01.md} $\rightarrow$
+the indoor comparison, run \texttt{2026-08-01}. It fixed the per-scene
+label-switch count as the primary endpoint and instance-segmentation AP as a
+secondary endpoint with an expectation of no material change, which is what
+we observe.
+\end{itemize}
+
+The causal-emission ablation (run \texttt{2026-07-28}) was \emph{not}
+pre-registered. It was run first, and its result --- that a score threshold
+beat confirmation at matched box count on most metrics --- is what prompted
+the retrospective-emission hypothesis that the \texttt{2026-07-28} document
+registers. We report it as the ablation it is, and no claim in the paper rests
+on it alone.
+
+\subsection{Complete metric tables}
+\label{sec:supp-tables}
+
+The main paper reports, for each comparison, the metrics that carry the claim.
+Tab.~\ref{tab:supp-idmatch} and Tab.~\ref{tab:supp-emission} give the metrics
+omitted there, and Tab.~\ref{tab:supp-ci} collects every confidence interval
+in one place so the significant and non-significant differences can be read
+together.
+
+\begin{table}[h]
+\centering\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lccccc}
+\toprule
+Arm & HOTA & AssA & DetA & DetRe & IDF1 \\
+\midrule
+\multicolumn{6}{l}{\emph{Sensor frame}} \\
+Control (top-$K$) & 0.2461 & 0.2346 & 0.2607 & 0.4125 & 0.2081 \\
+Confirmation      & 0.1960 & 0.2535 & 0.1537 & 0.3859 & 0.1531 \\
+\midrule
+\multicolumn{6}{l}{\emph{World frame}} \\
+Control (top-$K$) & 0.2538 & 0.4173 & 0.1553 & 0.5655 & 0.2596 \\
+Confirmation      & 0.2263 & 0.4314 & 0.1196 & 0.5326 & 0.2121 \\
+\bottomrule
+\end{tabular}
+\caption{Identity-budget-matched comparison, complete metric set
+(Tab.~\ref{tab:idmatch} in the main paper reports a subset).}
+\label{tab:supp-idmatch}
+\end{table}
+
+\begin{table}[h]
+\centering\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lcccc}
+\toprule
+Arm & NDS & DetA & DetRe & IDF1 \\
+\midrule
+\multicolumn{5}{l}{\emph{Sensor frame}} \\
+Control (threshold)  & 0.3058 & 0.2811 & 0.4728 & 0.1878 \\
+Confirmation, causal & 0.2031 & 0.1498 & 0.2818 & 0.1708 \\
+\midrule
+\multicolumn{5}{l}{\emph{World frame}} \\
+Control (threshold)  & 0.3131 & 0.1737 & 0.5406 & 0.2808 \\
+Confirmation, causal & 0.2989 & 0.1448 & 0.4623 & 0.2422 \\
+\bottomrule
+\end{tabular}
+\caption{Causal-emission ablation, metrics omitted from
+Tab.~\ref{tab:emission}.}
+\label{tab:supp-emission}
+\end{table}
+
+\begin{table}[h]
+\centering\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lcc}
+\toprule
+Metric & Sensor & World \\
+\midrule
+\multicolumn{3}{l}{\emph{Detection-budget-matched}} \\
+HOTA  & $[-0.0180, -0.0103]$ & $[-0.0059, -0.0027]$ \\
+AssA  & $[+0.0370, +0.0615]$ & $[+0.0086, +0.0195]$ \\
+DetA  & $[-0.0700, -0.0593]$ & $[-0.0101, -0.0072]$ \\
+DetRe & $[-0.1483, -0.1170]$ & $[-0.0404, -0.0286]$ \\
+IDF1  & $[-0.0046, +0.0064]$ & $[-0.0091, -0.0047]$ \\
+\midrule
+\multicolumn{3}{l}{\emph{Identity-budget-matched}} \\
+HOTA  & $[-0.0548, -0.0454]$ & $[-0.0288, -0.0263]$ \\
+AssA  & $[+0.0129, +0.0258]$ & $[+0.0101, +0.0185]$ \\
+DetA  & $[-0.1157, -0.0984]$ & $[-0.0382, -0.0334]$ \\
+DetRe & $[-0.0353, -0.0186]$ & $[-0.0384, -0.0280]$ \\
+IDF1  & $[-0.0623, -0.0477]$ & $[-0.0499, -0.0452]$ \\
+\midrule
+\multicolumn{3}{l}{\emph{Causal emission, detection-budget-matched}} \\
+HOTA  & $[-0.0418, -0.0315]$ & $[-0.0301, -0.0248]$ \\
+AssA  & $[+0.0577, +0.0922]$ & $[-0.0183, -0.0047]$ \\
+DetA  & $[-0.1380, -0.1244]$ & $[-0.0319, -0.0260]$ \\
+DetRe & $[-0.2103, -0.1712]$ & $[-0.0859, -0.0713]$ \\
+IDF1  & $[-0.0247, -0.0109]$ & $[-0.0424, -0.0348]$ \\
+\bottomrule
+\end{tabular}
+\caption{Scene-bootstrap $95\%$ confidence intervals on
+(confirmation $-$ control) for every class-agnostic tracking metric reported
+in Sec.~\ref{sec:exp}, with no metric omitted. The dataset-level devkit
+metrics (mAP, NDS, AMOTA) do not admit this per-scene resample and are
+reported as point estimates (Sec.~\ref{sec:stats}). Intervals excluding zero
+on the positive side favour the confirmation module. Two entries are worth
+reading directly: the sensor-frame IDF1 interval of the detection-matched
+comparison is the only one spanning zero, and the sensor-frame AssA interval
+under causal emission is the largest positive interval in the table, while
+its world-frame counterpart is negative.}
+\label{tab:supp-ci}
+\end{table}
+
+\subsection{Indoor pipeline settings}
+\label{sec:supp-indoor}
+
+Class-agnostic 3D instance-mask proposals are produced once by
+Mask3D~\cite{mask3d} on the ScanNet200~\cite{scannet200} validation split
+($312$ scenes) and frozen. Per-frame class labels come from a 2D
+open-vocabulary detector~\cite{yoloworld} projected onto the proposals, so each
+persistent instance carries a stream of per-frame labels. A label switch is a
+frame in which an instance's emitted label differs from its label in the
+previous frame in which it was emitted; the primary endpoint is the per-scene
+count of such switches. The unfiltered pipeline reproduces its frozen anchor AP
+of $0.1956$, which is the validity check for the run. Each arm evaluates all
+$312$ scenes; the confirmation arm and the top-$K$ control take approximately
+$2.6$ and $2.2$ GPU-hours respectively.
+
+\subsection{Run inventory}
+\label{sec:supp-runs}
+
+Every number in this paper is read from one of four result files, each
+containing the arms, per-scene values, and statistics for one comparison:
+the detection-budget-matched comparison with retrospective emission
+(\texttt{2026-07-30\_e2c\_retro\_thrmatch\_v01}), the identity-budget-matched
+comparison (\texttt{2026-07-31\_e2b\_trackmatch\_v01}), the causal-emission
+ablation (\texttt{2026-07-28\_e2\_thrmatch\_v01}), and the indoor comparison
+(\texttt{2026-08-01\_indoor\_matched\_control\_v02}). Code, pre-registration
+documents, and these result files will be released.

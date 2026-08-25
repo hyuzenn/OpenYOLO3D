@@ -1,0 +1,46 @@
+% Track-confirmation matched-control study — ICCV submission draft (rewritten 2026-08-03)
+% Compile: pdflatex main.tex && bibtex main && pdflatex main.tex && pdflatex main.tex
+% (drop in the official author-kit style; falls back to a plain two-column
+% article so the draft builds standalone). The shared CVPR/ICCV author kit
+% (https://github.com/cvpr-org/author-kit) ships the style as cvpr.sty, not
+% iccv.sty, for both venues.
+\IfFileExists{cvpr.sty}{%
+  \documentclass[10pt,twocolumn,letterpaper]{article}
+  \usepackage[review]{cvpr}
+  % cvpr.sty's review-mode watermark requires these to be defined.
+  \def\paperID{0000}
+  \def\confName{ICCV}
+  \def\confYear{2027}
+}{%
+  \documentclass[10pt,twocolumn,letterpaper]{article}
+  \usepackage[margin=2cm]{geometry}
+}
+\usepackage{graphicx}
+% cvpr.sty inlines everyshi's commands unguarded; mark the package as loaded
+% so pgf does not load the real one on top and redefine them.
+\expandafter\def\csname ver@everyshi.sty\endcsname{2001/05/15}
+\usepackage{tikz}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage[breaklinks,colorlinks]{hyperref}
+
+\input{preamble}
+
+\begin{document}
+
+\title{Retrospective Confirmation for Identity-Consistent
+Streaming 3D Perception}
+
+\author{Anonymous ICCV submission\\Paper ID 0000}
+\maketitle
+
+\input{sec/0_abstract}
+\input{sec/1_intro}
+\input{sec/2_formatting}
+\input{sec/3_finalcopy}
+
+\bibliographystyle{ieeenat_fullname}
+\bibliography{main}
+
+\end{document}
