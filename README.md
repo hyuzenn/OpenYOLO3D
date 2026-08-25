@@ -1,18 +1,22 @@
 # SemWorld-3D
 
-**Streaming Open-Vocabulary 3D Instance Mapping — Proposal-Agnostic Temporal Consistency Layer**
+**OV-TCS — A Temporal-Consistency Metric for Streaming Open-Vocabulary 3D Perception**
 
-A research project building on [OpenYOLO3D](https://github.com/aminebdj/OpenYOLO3D), reframed (2026-05-12 advisor meeting) as a single
-proposal-agnostic temporal consistency layer applied across two domains:
+A research project building on [OpenYOLO3D](https://github.com/aminebdj/OpenYOLO3D). The headline result is **OV-TCS**, a
+track-level temporal-consistency metric for streaming open-vocabulary 3D perception: per-frame AP/NDS is blind to the
+temporal degradation (label flicker, track fragmentation) that determines whether an online semantic map is usable, and
+OV-TCS measures it without ground-truth track IDs. The streaming evaluation harness and the indoor/outdoor temporal layer
+(below) are the infrastructure on which OV-TCS and a companion class-aware label-fusion method were developed and validated.
 
-- **Indoor (ScanNet200)**: Mask3D proposals → temporal layer → instance map
-- **Outdoor (nuScenes)**: LiDAR clustering proposals (β1 + γ hybrid) → same temporal layer → instance map
+- **Indoor (ScanNet200)**: Mask3D proposals → temporal layer → per-instance OV-TCS predictive-validity study
+- **Outdoor (nuScenes)**: LiDAR clustering proposals (β1 + γ hybrid) → associator tracks → OV-TCS corruption / method separation
 
-> 📌 **Status (2026-05-20, post-unified-merge)**
-> - **Step 1 — Online streaming evaluation harness** ✅ COMPLETE (sanity PASS by 333× margin, May 13)
-> - **Step 2 — Online streaming ablation** ✅ COMPLETE (Task 1.4b Part 3 + Task 1.4c + 1.5 + 1.6, May 14–19)
-> - **Step 3 — METHOD_22 / METHOD_32 failure analysis** ✅ COMPLETE (analytical; fix-not-needed verdict from Part 3)
-> - **Step 4 — Outdoor extension** 🚧 IN PROGRESS (diagnosis archived; Mask3D direct fails mAP=0; hybrid β1+γ + indoor-temporal-layer integration next)
+> 📌 **Status (2026-07-02)**
+> - **Streaming harness + indoor 6-axis ablation** ✅ COMPLETE (May 2026; see §3–§5, kept as infrastructure/prior findings)
+> - **Outdoor diagnosis (7-stage, β1+γ hybrid, β baseline)** ✅ COMPLETE (May 2026; see §6)
+> - **OV-TCS metric + two-axis formulation study** ✅ COMPLETE on banked data (see below; full write-up in [`docs/ovtcs_paper_draft.md`](docs/ovtcs_paper_draft.md) and [`docs/ovtcs_paper_storyline.md`](docs/ovtcs_paper_storyline.md))
+> - **Paper drafting** 🚧 IN PROGRESS — Abstract / Introduction / Related Work / Method drafted from confirmed evidence
+> - **ScanNet200 train(1201)+val full M22 run** 🚧 IN PROGRESS on PBS — *no results assumed anywhere; all indoor OV-TCS numbers below are from the banked val312 study*
 >
 > Targeting CVPR 2027 (Nov 13–15, 2026 deadline window).
 
@@ -20,36 +24,51 @@ proposal-agnostic temporal consistency layer applied across two domains:
 
 ## 1. Contribution
 
-> **Proposal-agnostic temporal consistency layer for streaming open-vocabulary 3D instance mapping.**
+Two contributions that justify each other:
 
-The contribution is the *layer* itself — the registration / label consistency / spatial merge stack that turns a stream of
-noisy per-frame open-vocab observations into a stable 3D instance map. The proposal source is treated as a swappable
-domain-specific front-end:
+1. **OV-TCS — a track-level temporal-consistency metric.** Native per-frame open-vocabulary labels are grouped by
+   associator track and scored, *without* ground-truth track IDs, as the product of two factors:
+   `OV-TCS_C = L_norm · (1 − CSR)`, where `L_norm = 1 − 1/L` is track integrity and `1 − CSR` (CSR = switches/(L−1)) is
+   semantic stability. It sees a degradation axis AP is blind to, carries information beyond track length, and separates
+   real methods AP collapses to a tie.
+2. **Class-aware label fusion** for open-vocabulary streaming — a class/source-aware 2D→3D label correction whose benefit
+   surfaces in temporal/label quality (OV-TCS) rather than in closed-vocabulary AP.
 
-| Domain | Proposal source | Temporal layer | Output |
-|---|---|---|---|
-| Indoor | Mask3D (per-scene, once) | M11/12 + M21/22 + M31/32 | online 3D instance map |
-| Outdoor | LiDAR clustering (hybrid β1 + γ) | same layer | online 3D instance map |
+The registration / label-consistency / spatial-merge temporal layer (§3) and the streaming harness (§4) are the
+**infrastructure** on which these were developed: the indoor Mask3D tracks and outdoor associator tracks are what OV-TCS
+is computed over. Definition source: `method_scannet/streaming/nuscenes_native_evaluator.py:988-1002`.
 
-Replacing the proposal source does not change the layer. This separation is what justifies "proposal-agnostic" and what
-makes ScanNet200 a viable validation domain for an outdoor-targeted method.
+## 2. OV-TCS — headline evidence (banked, verified)
 
-## 2. Why this contribution
+> Full write-up: [`docs/ovtcs_paper_draft.md`](docs/ovtcs_paper_draft.md). Numbers traced to `results/` and verified
+> against the metric source. **The pending ScanNet200 train(1201)+val run is not used here; indoor numbers are from the
+> banked val312 study (n=6202).**
 
-The May 2026 offline ScanNet200 ablations (8-way matrix, see §5.1) showed that the proposed methods sit between *noise
-floor* and *clear negative* under static offline evaluation. The honest reading of that result, agreed with advisor
-(May 12), is:
+- **AP is blind.** Injecting fragmentation that only splits tracks *after* detection (AP-scored proposals held fixed)
+  leaves AP flat while OV-TCS drops monotonically; a positive control (shrinking association max-age) moves both — so
+  OV-TCS is neither inert nor a restatement of AP.
+- **Beyond track length.** On real indoor per-instance data (ScanNet200 val, n=6202, target = label correctness), OV-TCS
+  adds significant explanatory power over track length: partial Pearson r = 0.12 (p = 3.5e-21); nested F-test ΔR² = 0.014,
+  F = 89.87, p = 3.5e-21. Track length alone is inert (ΔR² ≈ 0.003, negative partial correlation). Reported honestly: the
+  signal is instance-level — per-scene aggregation does **not** pass (n = 312, partial r = −0.03, p = 0.61).
+- **Why the product form (two-axis).** Each factor exclusively owns one failure mode. *Flicker* is owned by `1 − CSR`
+  (formulation ablation on n=6202: stability-only ΔR² 0.023 > product 0.014 > length 0.003). *Fragmentation* is owned by
+  `L_norm`: a per-instance sweep on nuScenes (150 val, ~19k–22k tracks/level) drops mean OV-TCS 0.476 → 0.438, carried
+  entirely by `L_norm` (−0.058), while per-track stability `1 − CSR` *rises* 0.731 → 0.769 — so a stability-only metric
+  would mis-report fragmentation as improvement. An additive (weighted-sum) form collapses to λ* = 0. The product is the
+  minimal form responsive to both axes.
+- **Separates real methods AP ties.** Switching association from ego- to global-frame raises OV-TCS_C 0.136 → 0.168
+  (+24%) at near-flat AP (nuScenes 150 val).
 
-- **ScanNet200 offline static evaluation cannot measure what the method is for.** The methods (M11/12/21/22/31/32) all
-  target *temporal inconsistency* across a stream of frames; an offline pipeline that processes every frame in one shot
-  has no temporal inconsistency to fix.
-- **The streaming protocol is the smallest setting in which the method's value is measurable.** Frames arrive one at a
-  time; a label can flicker across viewpoints; an instance can be confirmed late, never, or twice. These are the failure
-  modes the temporal layer is built for.
+**Why a metric, not aggregation (honest limitation).** Feeding a temporal signal into an EMA over the label stream did not
+help — no-aggregation beat every EMA setting (OFF > k = 0.335 > k = 1.0). Temporal quality is to be *measured*, not hoped
+for by averaging. Outdoor open-vocabulary AP is separately bottlenecked by localization (capped near the closed
+CenterPoint anchor of 0.3407), which is exactly why the label-fusion method's benefit is read via OV-TCS rather than AP.
 
-This is the project's raison d'être for the May 13 + onward work: build the streaming evaluation harness first, then
-re-measure the same methods inside it. The 8-way offline numbers in §5.1 are kept as the "limit of static measurement"
-reference, not as the method's verdict.
+---
+
+> The sections below (§3–§7) document the streaming infrastructure and the indoor/outdoor evidence the OV-TCS study is
+> built on. They reflect the May 2026 "proposal-agnostic temporal layer" framing and are kept as prior findings.
 
 ## 3. Method overview (6 axes, equal emphasis)
 
@@ -371,17 +390,19 @@ OpenYOLO3D/                                                 # unified main workt
 | **Step 1** | Online streaming evaluation harness + sanity PASS | ✅ Complete (May 13) |
 | **Step 2** | Online streaming ablation (Task 1.4b Part 3 + Task 1.4c + 1.5 + 1.6) | ✅ Complete (May 14–19) |
 | **Step 3** | M22 / M32 failure analysis | ✅ Complete (fix-not-needed verdict from Part 3) |
-| **Step 4** | Outdoor extension (β1+γ hybrid + indoor-temporal-layer integration on nuScenes) | 🚧 In progress (diagnosis complete, integration pending) |
+| **Step 4** | Outdoor extension (β1+γ hybrid + indoor-temporal-layer integration on nuScenes) | ✅ Diagnosis + native evaluator complete |
+| **Step 5** | OV-TCS metric + two-axis formulation study (AP-blindness, beyond-length, fragmentation decomposition, real-method separation) | ✅ Complete on banked data |
+| **Step 6** | Paper writing (Abstract/Intro/Related Work/Method drafted) + ScanNet200 train(1201)+val M22 run | 🚧 In progress |
 
 Milestones:
 
 | Month | Milestone |
 |---|---|
 | May 2026 | Indoor Step 1–3 ✅ + repository unification ✅ |
-| Jun–Aug 2026 | Step 4 (outdoor extension implementation) |
-| Aug 2026 | Full nuScenes experiments + ablation |
+| Jun 2026 | Outdoor native evaluator + OV-TCS metric/formulation study ✅ |
+| Jul 2026 | Paper drafting (Abstract → Method) 🚧 + ScanNet200 train+val M22 run 🚧 |
 | Sep 2026 | Graduation thesis presentation |
-| Oct 2026 | Paper writing |
+| Oct 2026 | Paper writing (Experiments + Discussion) |
 | Nov 13–15, 2026 | CVPR 2027 submission deadline window |
 
 ## 9. Setup
