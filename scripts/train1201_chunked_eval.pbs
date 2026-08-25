@@ -1,0 +1,139 @@
+#!/bin/bash
+#PBS -N train1201_chunked_eval
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=48:00:00
+#PBS -j oe
+
+# =============================================================================
+# STAGE 5 (disk-bounded): chunked  fetch RGB-D -> streaming eval -> purge RGB-D.
+#
+# WHY: the account is under a 1 TB cap. Holding all 1201 scenes' RGB-D at once
+# is ~520 GB, which blows the cap. RGB-D is consumed ONLY here (preproc reads
+# data/raw/scannet geometry; the Mask3D cache reads the .npy) and the eval loop
+# is per-scene, so RGB-D for scene N is dead weight the moment scene N is done.
+#
+# Chunking holds the RGB-D peak at CHUNK * ~435 MB (~26 GB at CHUNK=60) instead
+# of 520 GB. Scenes already extracted are skipped by the fetcher and purged
+# after their chunk, so total disk usage DROPS as this job runs.
+#
+# Chunk splits go through SCANNET200_SCENES_FILE (evaluate/__init__.py honors
+# any newline-delimited scene file), so no Python changes are needed.
+#
+# Idempotent: a chunk with a .done marker is skipped, so this resumes cleanly
+# after walltime or any interruption.
+#
+# CAVEAT: AP-vs-GT on train is IN-SAMPLE and NOT reportable (see memory:
+# project_scannet_train1201_data_blocker). The poolable products here are the
+# per-scene OV-TCS/temporal stats in <chunk>/per_scene/*.json. Official
+# accuracy set stays val312.
+#
+# NOTE: purging is permanent — re-running stage 5 with different knobs means
+# re-fetching the RGB-D. That is the deliberate trade for staying under the cap.
+# =============================================================================
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+# MinkowskiEngine needs libcusparse.so.11 at load time; without this the import
+# dies with "libcusparse.so.11: cannot open shared object file".
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
+CHUNK="${CHUNK:-60}"     # scenes per chunk. RGB-D peak ~ CHUNK * 435 MB
+PAR="${PAR:-6}"          # concurrent downloads within a chunk
+MIN_FREE_GB="${MIN_FREE_GB:-80}"   # abort a chunk's fetch below this
+
+DL=/home/rintern16/OpenYOLO3D/download-scannet.py
+READER=third_party/SensReader_py3/reader.py
+SPLIT=data/scannet200/splits/scannetv2_train.txt
+RAW=data/raw/scannet/scans
+DEST=data/scannet200
+CACHE_DIR="$PROJECT_ROOT/results/train1201_mask3d_cache"
+
+RUN_DIR="$PROJECT_ROOT/results/train1201_streaming_ovtcs"
+CHUNK_DIR="$RUN_DIR/chunks"
+mkdir -p "$CHUNK_DIR"
+LOG="$RUN_DIR/run.log"; exec >>"$LOG" 2>&1
+echo "=== STAGE 5 chunked eval start $(date)  CHUNK=$CHUNK PAR=$PAR ==="
+
+# --- fetch one scene: geometry is already on disk, so this is .sens only -----
+process_scene() {
+  local scene="$1" sdir="$DEST/$1" sens="$RAW/$1/$1.sens"
+  if [ -d "$sdir/color" ] && [ "$(ls "$sdir/color" 2>/dev/null | wc -l)" -gt 0 ]; then
+    return 0   # already extracted
+  fi
+  [ -s "$sens" ] || yes | python "$DL" -o "$RAW/.." --id "$scene" --type ".sens" >/dev/null 2>&1
+  if [ ! -s "$sens" ]; then echo "FAIL no .sens $scene"; return 1; fi
+  mkdir -p "$sdir"
+  python "$READER" --filename "$sens" --output_path "$sdir" \
+      --export_color_images --export_depth_images --export_poses --export_intrinsics >/dev/null 2>&1
+  if [ ! -d "$sdir/color" ]; then echo "FAIL extract $scene"; rm -f "$sens"; return 1; fi
+  [ -d "$sdir/pose" ] && mv -T "$sdir/pose" "$sdir/poses"
+  [ -f "$sdir/intrinsic/intrinsic_depth.txt" ] && cp "$sdir/intrinsic/intrinsic_depth.txt" "$sdir/intrinsics.txt"
+  cp -n "$RAW/$scene/$scene"_vh_clean_2.ply "$sdir/" 2>/dev/null
+  rm -f "$sens"   # .sens dies immediately; only the extraction is kept
+  echo "fetched $scene"
+}
+export -f process_scene
+export DL READER RAW DEST
+
+# purge only the RGB-D; the .npy / _vh_clean_2.ply the eval needs stay put.
+purge_scene() {
+  local sdir="$DEST/$1"
+  rm -rf "$sdir/color" "$sdir/depth" "$sdir/poses" "$sdir/pose" "$sdir/intrinsic"
+}
+
+# --- split into chunks -------------------------------------------------------
+# The .done markers are keyed by chunk id, so changing CHUNK mid-run would make
+# chunk_000 mean a different set of scenes and silently skip them. Pin it.
+if [ -f "$CHUNK_DIR/_chunk_size" ] && [ "$(cat "$CHUNK_DIR/_chunk_size")" != "$CHUNK" ]; then
+  echo "ABORT: CHUNK=$CHUNK but this run dir was built with $(cat "$CHUNK_DIR/_chunk_size"). "
+  echo "       Use that value, or start a fresh RUN_DIR."; exit 4
+fi
+echo "$CHUNK" > "$CHUNK_DIR/_chunk_size"
+grep -vE '^\s*$' "$SPLIT" > "$CHUNK_DIR/_all.txt"
+split -l "$CHUNK" -d -a 3 "$CHUNK_DIR/_all.txt" "$CHUNK_DIR/chunk_"
+NCHUNK=$(ls "$CHUNK_DIR"/chunk_[0-9][0-9][0-9] 2>/dev/null | wc -l)
+echo "split $(wc -l < "$CHUNK_DIR/_all.txt") scenes into $NCHUNK chunks of $CHUNK"
+
+for cf in "$CHUNK_DIR"/chunk_[0-9][0-9][0-9]; do
+  cid=$(basename "$cf")
+  cout="$RUN_DIR/$cid"
+  if [ -f "$cout/.done" ]; then echo "skip $cid (done)"; continue; fi
+
+  free=$(df -BG --output=avail "$PROJECT_ROOT" | tail -1 | tr -dc '0-9')
+  echo "--- $cid  free=${free}GB  $(date) ---"
+  if [ "$free" -lt "$MIN_FREE_GB" ]; then
+    echo "ABORT: free=${free}GB < MIN_FREE_GB=${MIN_FREE_GB}"; exit 3
+  fi
+
+  # 1. fetch the chunk's missing RGB-D
+  xargs -P "$PAR" -I{} bash -c 'process_scene "{}"' < "$cf"
+
+  # 2. evaluate exactly this chunk
+  mkdir -p "$cout"
+  SCANNET200_SCENES_FILE="$cf" python -m method_scannet.streaming.eval_streaming_baseline \
+    --output "$cout" \
+    --config pretrained/config_scannet200.yaml \
+    --mask3d-cache-dir "$CACHE_DIR"
+  rc=$?
+
+  # 3. purge the chunk's RGB-D regardless of eval outcome — a failed chunk's
+  #    RGB-D is still dead weight, and the chunk is re-fetchable on rerun.
+  while read -r s; do purge_scene "$s"; done < "$cf"
+
+  if [ "$rc" -eq 0 ]; then
+    touch "$cout/.done"
+    echo "$cid OK  free=$(df -BG --output=avail "$PROJECT_ROOT" | tail -1 | tr -dc '0-9')GB"
+  else
+    echo "$cid FAILED rc=$rc (purged; rerun to retry)"
+  fi
+done
+
+echo "=== chunked eval done $(date) ==="
+DONE=$(ls -d "$RUN_DIR"/chunk_*/.done 2>/dev/null | wc -l)
+echo "chunks_done=$DONE/$NCHUNK  per_scene_json=$(ls "$RUN_DIR"/chunk_*/per_scene/*.json 2>/dev/null | wc -l)"
+echo "free=$(df -BG --output=avail "$PROJECT_ROOT" | tail -1 | tr -dc '0-9')GB"

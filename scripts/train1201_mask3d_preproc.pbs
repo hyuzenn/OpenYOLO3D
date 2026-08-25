@@ -1,0 +1,56 @@
+#!/bin/bash
+#PBS -N train1201_mask3d_preproc
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=06:00:00
+#PBS -j oe
+
+# STAGE 4b (prereq for STAGE 5 AP scoring): Mask3D scannet_preprocessing over
+# the 1201 train scenes -> per-scene <shortid>.npy + ground_truth/<scene>.txt,
+# the exact inputs eval_streaming_baseline.py reads (line 151 .npy, line 246
+# ground_truth/). Depends on STAGE 1 geometry (.ply/labels/segs/agg/.txt).
+#
+# UNVERIFIED DEPENDENCY (flagged): this repo lacks the ScanNet benchmark repo
+# (Tasks/Benchmark split files + BenchmarkScripts/util.py) that
+# scannet_preprocessing needs. We shallow-clone the public ScanNet code repo
+# for those. If the clone is unavailable offline, this stage fails and the
+# afterok chain halts BEFORE wasting STAGE 4/5 (by design).
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d   # ponytail: preproc needs natsort+open3d+pandas+plyfile; verified in openyolo3d (natsort installed), -dev lacked natsort
+
+OUT="$PROJECT_ROOT/results/train1201_preproc"; mkdir -p "$OUT"
+LOG="$OUT/run.log"; exec >"$LOG" 2>&1
+echo "=== STAGE 4b Mask3D preproc (train1201) $(date) ==="
+
+GITREPO=third_party/ScanNet
+if [ ! -f "$GITREPO/BenchmarkScripts/util.py" ] || [ ! -f "$GITREPO/Tasks/Benchmark/scannetv2_train.txt" ]; then
+  echo "provisioning ScanNet benchmark repo into $GITREPO ..."
+  tmp=$(mktemp -d)
+  git clone --depth 1 https://github.com/ScanNet/ScanNet "$tmp/ScanNet" || { echo "FAIL clone ScanNet repo (offline?)"; exit 5; }
+  mkdir -p "$GITREPO/BenchmarkScripts" "$GITREPO/Tasks/Benchmark"
+  cp -rn "$tmp/ScanNet/BenchmarkScripts/." "$GITREPO/BenchmarkScripts/" 2>/dev/null
+  cp -rn "$tmp/ScanNet/Tasks/Benchmark/." "$GITREPO/Tasks/Benchmark/" 2>/dev/null
+  rm -rf "$tmp"
+fi
+
+# Mask3D preprocessing imports `from datasets...` -> run from mask3d package root.
+cd models/Mask3D/mask3d
+python -m datasets.preprocessing.scannet_preprocessing preprocess \
+  --data_dir "$PROJECT_ROOT/data/raw/scannet" \
+  --save_dir "$PROJECT_ROOT/data/scannet200" \
+  --git_repo "$PROJECT_ROOT/third_party/ScanNet" \
+  --modes "('train',)" \
+  --scannet200 true
+EXIT=$?
+echo "=== exit $EXIT / $(date) ==="
+
+# Sanity: at least a few train .npy + ground_truth txt now exist.
+cd "$PROJECT_ROOT"
+NPY=$(find data/scannet200 -maxdepth 2 -name "*.npy" 2>/dev/null | wc -l)
+GT=$(ls data/scannet200/ground_truth 2>/dev/null | wc -l)
+echo "npy_total=$NPY  ground_truth_txt=$GT"
+[ "$EXIT" -eq 0 ] || exit $EXIT
+exit 0

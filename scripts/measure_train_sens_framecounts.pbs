@@ -1,0 +1,56 @@
+#!/bin/bash
+#PBS -N sens_frames_probe
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=4:ngpus=1:mem=16gb:Qlist=agpu
+#PBS -l walltime=02:00:00
+#PBS -j oe
+
+# Metadata-only: read each train .sens HEADER (first 4 KiB via HTTP range-GET)
+# and parse num_frames from the SensorData header. NO full download.
+# Header layout (SensorData.py:53-70):
+#   u32 version | u64 strlen | strlen bytes name |
+#   4x(16 f32)=256B matrices | 2x i32 compression | 4x u32 wh | f32 depth_shift |
+#   u64 num_frames     -> offset of num_frames = 4+8+strlen+256+8+16+4 = 296+strlen
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+BASE="http://kaldir.vc.cit.tum.de/scannet/v1/scans"
+SPLIT="data/scannet200/splits/scannetv2_train.txt"
+OUT="$PROJECT_ROOT/scratch_sens_probe"
+mkdir -p "$OUT"
+FRAMES="$OUT/sens_framecounts.tsv"      # scene<TAB>num_frames (or -1)
+LOG="$OUT/framecounts.log"
+exec >"$LOG" 2>&1
+
+python3 - "$BASE" "$SPLIT" "$FRAMES" <<'PY'
+import sys, struct, subprocess
+base, split, out = sys.argv[1], sys.argv[2], sys.argv[3]
+scenes=[l.strip() for l in open(split) if l.strip()]
+def header_bytes(url, n=4096):
+    # range-GET first n bytes only (metadata; not the whole file)
+    r=subprocess.run(["curl","-4","-L","-s","-r",f"0-{n-1}","--connect-timeout","30",
+                      "--max-time","120",url], capture_output=True)
+    return r.stdout
+def num_frames(b):
+    if len(b)<20: return None
+    version=struct.unpack_from('I',b,0)[0]
+    strlen=struct.unpack_from('Q',b,4)[0]
+    off=4+8+strlen+256+8+16+4
+    if off+8>len(b): return None
+    return struct.unpack_from('Q',b,off)[0], version, strlen
+ok=fail=0; tot=0
+with open(out,"w") as fo:
+    for i,s in enumerate(scenes,1):
+        url=f"{base}/{s}/{s}.sens"
+        b=header_bytes(url)
+        res=num_frames(b)
+        if res and 0<res[0]<1_000_000:
+            nf=res[0]; fo.write(f"{s}\t{nf}\n"); ok+=1; tot+=nf
+        else:
+            fo.write(f"{s}\t-1\n"); fail+=1
+            print(f"WARN parse fail {s} (got {len(b)}B)")
+        if i%100==0:
+            fo.flush(); print(f"...{i} ok={ok} fail={fail} cum_frames={tot}")
+print(f"=== {len(scenes)} scenes: ok={ok} fail={fail} total_frames={tot} ===")
+PY
+echo "=== DONE framecounts ==="

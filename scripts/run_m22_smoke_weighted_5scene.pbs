@@ -1,0 +1,89 @@
+#!/bin/bash
+#PBS -N openyolo3d_m22_smoke_weighted
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=6:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=01:30:00
+#PBS -j oe
+#
+# 5-scene GPU smoke for METHOD_22 Confidence-Aware Weighted EMA.
+# Two configs in one job, each in its own process (so the per-run fusion
+# counters reset cleanly):
+#   A) --conf-mode weighted                 -> weighted normal path, 0 skips
+#   B) --conf-mode weighted --tau-skip 0.99 -> forces the low-conf SKIP path
+#
+# Verifies: import success, no runtime errors, weighted EMA executes
+# end-to-end and writes metrics.json, and the tau_skip drop path actually
+# fires under weighted mode (n_updates_skipped > 0 in run B).
+#
+# Scenes: same 5 canonical scans as the baseline smoke.
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+EXP=scannet_m22_smoke_weighted
+CONFIG=pretrained/config_scannet200.yaml
+N=$(printf '%02d' $(($(ls -d "results/${DATE}_${EXP}_v"* 2>/dev/null | wc -l) + 1)))
+RUN_DIR_BASE="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+mkdir -p "$RUN_DIR_BASE/A_weighted/outputs" "$RUN_DIR_BASE/B_weighted_skip/outputs"
+
+SCENES="scene0011_00,scene0011_01,scene0015_00,scene0019_00,scene0019_01"
+
+[ -f "$CONFIG" ] && cp "$CONFIG" "$RUN_DIR_BASE/config.yaml"
+
+exec >"$RUN_DIR_BASE/run.log" 2>&1
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH=$PROJECT_ROOT/models/YOLO-World:$PYTHONPATH
+export TORCH_CUDA_ARCH_LIST="6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6"
+
+echo "=== METHOD_22 Confidence-Aware Weighted EMA 5-scene GPU smoke ==="
+echo "Run dir : $RUN_DIR_BASE"
+echo "Scenes  : $SCENES"
+hostname
+nvidia-smi || true
+
+# Inline wrapper: drive eval_method_22_conf_skip.main() then read the
+# module-global fusion counters to prove which update path fired.
+run_cfg () {
+    local SUBDIR="$1"; shift
+    local TAU="$1"; shift
+    echo
+    echo "############################################################"
+    echo "### conf-mode=weighted tau-skip=${TAU}  -> ${SUBDIR}"
+    echo "############################################################"
+    RUN_DIR="${RUN_DIR_BASE}/${SUBDIR}" python -u - "$TAU" <<'PY'
+import os, sys
+sys.argv = [
+    "eval_method_22_conf_skip",
+    "--dataset_name", "scannet200",
+    "--path_to_3d_masks", "./output/scannet200/scannet200_masks",
+    "--scenes", "scene0011_00,scene0011_01,scene0015_00,scene0019_00,scene0019_01",
+    "--conf-mode", "weighted",
+    "--tau-skip", sys.argv[1],
+]
+from method_scannet import eval_method_22_conf_skip as ev
+from method_scannet import hooks
+ev.main()
+f = hooks._method22_state.get("fusion")
+if f is not None:
+    print(f"[smoke-counters] conf_mode={f.conf_mode} tau_skip={f.tau_skip} "
+          f"n_updates_attempted={f.n_updates_attempted} "
+          f"n_updates_skipped={f.n_updates_skipped}")
+else:
+    print("[smoke-counters] WARNING: no fusion in _method22_state")
+PY
+    echo "### exit ${SUBDIR} = $?"
+}
+
+run_cfg "A_weighted"      "0.0"
+run_cfg "B_weighted_skip" "0.99"
+
+echo
+echo "=== Done ==="
+echo "Inspect: cat ${RUN_DIR_BASE}/A_weighted/metrics.json ; cat ${RUN_DIR_BASE}/B_weighted_skip/metrics.json"

@@ -1,0 +1,81 @@
+#!/bin/bash
+#PBS -N sens_size_probe
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=4:ngpus=1:mem=16gb:Qlist=agpu
+#PBS -l walltime=02:00:00
+#PBS -j oe
+
+# Metadata-only probe: sum Content-Length of all 1201 train .sens files.
+# NO downloads. HEAD first; fall back to range-GET (bytes=0-0 -> Content-Range
+# total) for any URL whose HEAD omits Content-Length.
+# .sens is served from the v1 path (download-scannet.py:72-73, use_v1_sens=True).
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+BASE="http://kaldir.vc.cit.tum.de/scannet/v1/scans"
+SPLIT="data/scannet200/splits/scannetv2_train.txt"
+OUT="$PROJECT_ROOT/scratch_sens_probe"
+mkdir -p "$OUT"
+SIZES="$OUT/sens_sizes.tsv"          # scene<TAB>bytes (or -1 on failure)
+LOG="$OUT/probe.log"
+exec >"$LOG" 2>&1
+
+echo "=== reachability check ==="
+curl -4 -L -s -o /dev/null -w "connect=%{time_connect}s http=%{http_code}\n" \
+     --connect-timeout 30 --max-time 60 \
+     "$BASE/scene0191_00/scene0191_00.sens" \
+  && echo "REACHABLE" || { echo "UNREACHABLE: kaldir not responding from this node"; exit 4; }
+
+get_size() {
+  # $1 = url ; echo bytes or empty on failure
+  local url="$1" cl=""
+  # 1) HEAD -> Content-Length
+  cl=$(curl -4 -L -sI --connect-timeout 30 --max-time 120 "$url" \
+        | tr -d '\r' | awk -F': ' 'tolower($1)=="content-length"{print $2}' | tail -1)
+  if [ -n "$cl" ] && [ "$cl" -gt 0 ] 2>/dev/null; then echo "$cl"; return 0; fi
+  # 2) fallback: range GET first byte -> Content-Range: bytes 0-0/TOTAL
+  cl=$(curl -4 -L -s -r 0-0 -D - -o /dev/null --connect-timeout 30 --max-time 120 "$url" \
+        | tr -d '\r' | awk -F'/' 'tolower($0) ~ /content-range/{print $2}' | tail -1)
+  if [ -n "$cl" ] && [ "$cl" -gt 0 ] 2>/dev/null; then echo "$cl"; return 0; fi
+  return 1
+}
+
+: > "$SIZES"
+i=0; ok=0; fail=0
+while IFS= read -r scene; do
+  [ -z "$scene" ] && continue
+  i=$((i+1))
+  url="$BASE/$scene/$scene.sens"
+  if sz=$(get_size "$url"); then
+    echo -e "$scene\t$sz" >> "$SIZES"; ok=$((ok+1))
+  else
+    echo -e "$scene\t-1" >> "$SIZES"; fail=$((fail+1))
+    echo "WARN no size: $scene"
+  fi
+  [ $((i % 100)) -eq 0 ] && echo "...progress $i (ok=$ok fail=$fail)"
+done < "$SPLIT"
+
+echo "=== probed $i scenes: ok=$ok fail=$fail ==="
+
+echo "=== STATS (bytes; failures excluded) ==="
+awk -F'\t' '$2>0{print $2}' "$SIZES" | sort -n | awk '
+{ a[NR]=$1; sum+=$1 }
+END{
+  n=NR;
+  if(n==0){print "no valid sizes"; exit}
+  mean=sum/n;
+  med = (n%2)? a[(n+1)/2] : (a[n/2]+a[n/2+1])/2;
+  printf "count_ok    = %d\n", n;
+  printf "total_bytes = %d\n", sum;
+  printf "total_GiB   = %.2f\n", sum/1073741824;
+  printf "total_GB    = %.2f\n", sum/1000000000;
+  printf "mean_bytes  = %.0f  (%.3f GiB)\n", mean, mean/1073741824;
+  printf "median_bytes= %.0f  (%.3f GiB)\n", med, med/1073741824;
+  printf "min_bytes   = %d  (%.3f GiB)  scene=MIN\n", a[1], a[1]/1073741824;
+  printf "max_bytes   = %d  (%.3f GiB)  scene=MAX\n", a[n], a[n]/1073741824;
+}'
+echo "--- min/max scenes ---"
+awk -F'\t' '$2>0' "$SIZES" | sort -t$'\t' -k2,2n | head -1
+awk -F'\t' '$2>0' "$SIZES" | sort -t$'\t' -k2,2n | tail -1
+echo "=== DONE ==="

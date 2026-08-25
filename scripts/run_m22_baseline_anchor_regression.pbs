@@ -1,0 +1,78 @@
+#!/bin/bash
+#PBS -N openyolo3d_m22_baseline_anchor_regression
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=05:00:00
+#PBS -j oe
+#
+# REGRESSION CHECK — not a new experiment.
+#
+# Purpose: verify that `eval_method_22_conf_skip --conf-mode none` produces
+# mAP byte-identical to the pre-Task-1 v2 baseline anchor
+# (results/2026-05-08_scannet_method_22_v2_v01/metrics.json).
+#
+# All evaluation knobs are inherited unchanged from
+# scripts/run_scannet_method_22_v2.pbs:
+#   - dataset: scannet200
+#   - 3D mask cache: ./output/scannet200/scannet200_masks
+#   - prompt embeddings: pretrained/scannet200_prompt_embeddings_v2.pt
+#   - install_method_22_only kwargs:
+#       ema_alpha=0.7, use_inference_subset=True,
+#       min_match_iou=0.15, topk_per_inst=5
+#   - CUDA 11.7 / TORCH_CUDA_ARCH_LIST identical
+#   - PBS resource select identical (1×A100 via :Qlist=agpu)
+#
+# Sole delta vs baseline anchor invocation:
+#   - python module: eval_method_22_only_v2  →  eval_method_22_conf_skip
+#   - ADDED flag:    --conf-mode none   (the new default; exercises the
+#                                        Task-1 plumbing's no-op branch)
+#
+# Seed: ScanNet200 eval has no user-controlled seed (mmengine auto-
+# generates numpy_random_seed at import; baseline anchor log shows
+# numpy_random_seed: 1481768293 on May 8). This is orthogonal to the
+# conf-mode=none byte-identity claim — the test fails or succeeds the same
+# way regardless of seed, because the conf-mode='none' code path is a
+# strict no-op around the YOLO-score plumbing.
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+EXP=scannet_m22_baseline_anchor_regression
+CONFIG=pretrained/config_scannet200.yaml
+N=$(printf '%02d' $(($(ls -d "results/${DATE}_${EXP}_v"* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+export RUN_DIR
+mkdir -p "$RUN_DIR/outputs"
+[ -f "$CONFIG" ] && cp "$CONFIG" "$RUN_DIR/config.yaml"
+
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Run directory: $RUN_DIR ==="
+echo "=== Regression: METHOD_22 conf-mode=none vs pre-Task-1 anchor ==="
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export TORCH_CUDA_ARCH_LIST="6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6"
+
+echo "=== Node info ==="
+hostname
+nvidia-smi || true
+echo "=== Python / torch ==="
+python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), 'device', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'cpu')"
+
+echo "=== ScanNet200 METHOD_22 conf-mode=none REGRESSION ==="
+python -u -m method_scannet.eval_method_22_conf_skip \
+    --dataset_name scannet200 \
+    --path_to_3d_masks ./output/scannet200/scannet200_masks \
+    --conf-mode none
+
+echo "=== Done ==="
+echo "Anchor : results/2026-05-08_scannet_method_22_v2_v01/metrics.json"
+echo "Compare: diff <(jq -S . results/2026-05-08_scannet_method_22_v2_v01/metrics.json) \\"
+echo "              <(jq -S . $RUN_DIR/outputs/metrics.json)"

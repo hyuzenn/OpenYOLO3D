@@ -1,0 +1,56 @@
+#!/bin/bash
+#PBS -N m22_emak_sweep
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=06:00:00
+#PBS -j oe
+
+# Pure EMA incoming-weight sweep (M22, ScanNet200, first 10 scenes) — H1:
+# "current weighted EMA over-updates → smaller incoming weight helps".
+#   w = α·c·k,  k ∈ {1.0, 0.75, 0.50, 0.335, 0.25, 0.10}     (NO OV-TCS)
+# k=1.0 == the w=α·c baseline. Decision: AP rising monotonically as k<1
+# supports the over-update hypothesis; an interior peak ≈0.335 → promote
+# only {k=1.0, best-k} to 312-scene full validation.
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+CACHE_DIR="${PROJECT_ROOT}/results/2026-05-13_mask3d_cache"
+DATE=$(date +%F)
+EXP=scannet_m22_emak_sweep
+N=$(printf '%02d' $(($(ls -d "results/${DATE}_${EXP}_v"* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+export RUN_DIR
+mkdir -p "$RUN_DIR"
+cp pretrained/config_scannet200.yaml "$RUN_DIR/config.yaml"
+
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Run directory: $RUN_DIR ==="
+echo "=== M22 EMA incoming-weight sweep: k ∈ {1.0,0.75,0.50,0.335,0.25,0.10} ==="
+echo "=== scenes: first 10 (smoke) ==="
+echo "=== Date: $(date) ==="
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+# editable yolo_world finder does not resolve under batch — add it explicitly.
+export PYTHONPATH="${PROJECT_ROOT}:${PROJECT_ROOT}/models/YOLO-World:${PYTHONPATH:-}"
+
+python -m method_scannet.streaming.eval_streaming_ablation \
+  --cache-dir "$CACHE_DIR" \
+  --output "$RUN_DIR" \
+  --config pretrained/config_scannet200.yaml \
+  --axes M22_emak_1 M22_emak_0.75 M22_emak_0.5 M22_emak_0.335 M22_emak_0.25 M22_emak_0.1 \
+  --limit 10
+
+EXIT=$?
+echo "=== exit code: $EXIT ==="
+
+python scripts/aggregate_m22_emak_sweep.py --run-dir "$RUN_DIR" || true
+
+echo "=== done: $(date) ==="
+exit $EXIT

@@ -1,0 +1,40 @@
+#!/bin/bash
+#PBS -N val_perframe
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=4:ngpus=1:mem=16gb:Qlist=agpu
+#PBS -l walltime=01:00:00
+#PBS -j oe
+
+# Measure on-disk extracted footprint of EXISTING val scenes (in-sample, same
+# SensReader exporter the train extraction would use) to get a measured
+# per-frame byte cost for color/depth/poses. Sample first 20 val scenes that
+# have a color/ dir. NO downloads.
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+OUT="$PROJECT_ROOT/scratch_sens_probe"; mkdir -p "$OUT"
+LOG="$OUT/val_perframe.log"; exec >"$LOG" 2>&1
+
+echo "scene frames color_b depth_b pose_b intr_b"
+tc=0; td=0; tp=0; ti=0; nf=0; ns=0
+for s in $(ls -d data/scannet200/scene* | grep -vF ground_truth | head -20); do
+  [ -d "$s/color" ] || continue
+  fr=$(ls "$s/color" 2>/dev/null | wc -l)
+  cb=$(du -sb "$s/color"  2>/dev/null | cut -f1)
+  db=$(du -sb "$s/depth"  2>/dev/null | cut -f1)
+  pb=$(du -sb "$s/poses"  2>/dev/null | cut -f1)
+  ib=$(stat -c%s "$s/intrinsics.txt" 2>/dev/null || echo 0)
+  echo "$(basename $s) $fr $cb $db $pb $ib"
+  tc=$((tc+cb)); td=$((td+db)); tp=$((tp+pb)); ti=$((ti+ib)); nf=$((nf+fr)); ns=$((ns+1))
+done
+echo "TOTALS scenes=$ns frames=$nf color=$tc depth=$td pose=$tp intr=$ti"
+python3 -c "
+nf=$nf; tc=$tc; td=$td; tp=$tp; ti=$ti; ns=$ns
+print(f'per_frame_color = {tc/nf:.1f} B')
+print(f'per_frame_depth = {td/nf:.1f} B')
+print(f'per_frame_pose  = {tp/nf:.1f} B')
+print(f'per_frame_cdp   = {(tc+td+tp)/nf:.1f} B = {(tc+td+tp)/nf/1024:.2f} KiB')
+print(f'per_scene_intr  = {ti/ns:.1f} B')
+print(f'PER_FRAME_BYTES={(tc+td+tp)/nf:.4f}')
+"
+echo "=== DONE val_perframe ==="

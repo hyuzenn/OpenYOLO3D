@@ -1,0 +1,81 @@
+#!/bin/bash
+#PBS -N hybrid_v2_eval
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=96gb:Qlist=agpu
+#PBS -l walltime=08:00:00
+#PBS -j oe
+
+# ============================================================================
+# Hybrid-Proposal v2 evaluation (nuScenes val-150) — controlled ablation.
+# Geometry is held FIXED (both arms read CenterPoint gravity boxes); the only
+# variable is the proposal class/score:
+#     baseline (gamma)  : native CenterPoint class + objectness   (0.3407 anchor)
+#     hybrid            : YOLO-World per-camera label + score, transferred to the
+#                         SAME boxes by ROI->detection IoU matching.
+# All metrics (mAP / NDS / per-class AP / temporal / OV-TCS / fragmentation) are
+# computed by the SAME native evaluator code path, so any delta is purely the
+# open-vocab relabel effect. Cache-only (--no-gpu): no CenterPoint/YOLO here.
+#
+# Plus the proposal-recall probe (gamma vs hybrid): GT coverage, Recall@IoU3D,
+# per-class, range-binned, count/frame, oracle-mAP ceiling. (Geometry-identical
+# arms -> these are expected identical, which empirically confirms attribution.)
+# ============================================================================
+
+set -u
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+GAMMA_CACHE="${PROJECT_ROOT}/results/outdoor_native_temporal_cpcache_thr000_single_gravity"
+HYBRID_CACHE="${PROJECT_ROOT}/results/outdoor_hybrid_cpcache_gravity_nusc10"
+
+DATE=$(date +%F)
+EXP=outdoor_hybrid_proposal_v2
+N=$(printf '%02d' $(($(ls -d ${PROJECT_ROOT}/results/${DATE}_${EXP}_v* 2>/dev/null | wc -l) + 1)))
+TAG="${DATE}_${EXP}_v${N}"
+RUN_DIR="${PROJECT_ROOT}/results/${TAG}"
+mkdir -p "$RUN_DIR/outputs"
+cp "$0" "$RUN_DIR/submitted.pbs"
+
+exec >"$RUN_DIR/run.log" 2>&1
+
+echo "=== Hybrid-Proposal v2 evaluation (val-150) ==="
+echo "Run dir      : $RUN_DIR"
+echo "Gamma cache  : $GAMMA_CACHE  ($(ls "$GAMMA_CACHE" 2>/dev/null | grep -c '\.pkl$') pkls)"
+echo "Hybrid cache : $HYBRID_CACHE ($(ls "$HYBRID_CACHE" 2>/dev/null | grep -c 'hybrid\.pkl$') hybrid pkls)"
+date +"%F %T start"; hostname
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}
+export PYTHONPATH="${PROJECT_ROOT}:${PROJECT_ROOT}/models/YOLO-World:${PYTHONPATH:-}"
+export OMP_NUM_THREADS=16
+
+COMMON="--nuscenes-config configs/nuscenes_trainval.yaml --scene-split val \
+  --no-gpu --collect-track-metrics --association-threshold-m 2.0 --association-max-age 5"
+
+echo; echo "########## [1/3] baseline (gamma, native CenterPoint class) ##########"
+python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+  $COMMON --output "$RUN_DIR/eval_gamma" --axes baseline \
+  --proposal-source gamma --cp-cache-dir "$GAMMA_CACHE"
+echo "=== gamma exit: $? ==="
+
+echo; echo "########## [2/3] hybrid (YOLO-World relabel of same boxes) ##########"
+python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+  $COMMON --output "$RUN_DIR/eval_hybrid" --axes baseline \
+  --proposal-source hybrid --cp-cache-dir "$HYBRID_CACHE"
+echo "=== hybrid exit: $? ==="
+
+echo; echo "########## [3/3] proposal-recall probe (gamma vs hybrid) ##########"
+python -u diagnosis/outdoor_proposal_recall_probe.py \
+  --gamma-cache  "$GAMMA_CACHE" \
+  --hybrid-cache "$HYBRID_CACHE" \
+  --sources      gamma,hybrid \
+  --iou-mode     iou3d \
+  --oracle-mode  maxiou \
+  --output-name  "${TAG}/recall"
+echo "=== recall probe exit: $? ==="
+
+date +"%F %T end"
+echo "=== Done ==="

@@ -1,0 +1,60 @@
+#!/bin/bash
+#PBS -N oy3d_m22_abl
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=6:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=05:00:00
+#PBS -j oe
+#
+# One arm of the M22 Confidence-Aware Weighted EMA tau_skip ablation.
+# Full ScanNet200 validation (312 scenes). All hyperparameters identical
+# across arms except (conf_mode, tau_skip), passed via qsub -v:
+#     PARENT     shared results parent dir (computed once at submit time)
+#     TAG        subdir name for this arm
+#     CONF_MODE  none | weighted
+#     TAU        tau_skip value
+# Code is NOT modified — this only drives eval_method_22_conf_skip.
+
+set -u
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+: "${PARENT:?PARENT not set (pass via qsub -v)}"
+: "${TAG:?TAG not set}"
+: "${CONF_MODE:?CONF_MODE not set}"
+: "${TAU:?TAU not set}"
+
+RUN_DIR="${PARENT}/${TAG}"
+mkdir -p "$RUN_DIR/outputs"
+
+CONFIG=pretrained/config_scannet200.yaml
+[ -f "$CONFIG" ] && cp "$CONFIG" "$RUN_DIR/config.yaml"
+
+exec >"$RUN_DIR/run.log" 2>&1
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:${PATH:-}
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}
+export PYTHONPATH=$PROJECT_ROOT/models/YOLO-World:${PYTHONPATH:-}
+export TORCH_CUDA_ARCH_LIST="6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6"
+
+echo "=== M22 tau_skip ablation arm: $TAG ==="
+echo "conf_mode=$CONF_MODE tau_skip=$TAU  (full 312-scene ScanNet200 val)"
+echo "Run dir : $RUN_DIR"
+hostname; nvidia-smi || true
+date +"%F %T start"
+
+# Full split: no --scenes / --scene-limit -> uses all 312 SCENE_NAMES_SCANNET200.
+# ema_alpha / min_match_iou / topk_per_inst left at defaults (identical across arms).
+RUN_DIR="$RUN_DIR" python -u -m method_scannet.eval_method_22_conf_skip \
+    --dataset_name scannet200 \
+    --path_to_3d_masks ./output/scannet200/scannet200_masks \
+    --conf-mode "$CONF_MODE" \
+    --tau-skip "$TAU"
+EC=$?
+
+date +"%F %T end"
+echo "=== Done (exit $EC) — metrics: $RUN_DIR/metrics.json ==="
+exit $EC

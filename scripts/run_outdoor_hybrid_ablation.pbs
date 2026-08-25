@@ -1,0 +1,71 @@
+#!/bin/bash
+#PBS -N outdoor_hybrid_ablation
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=05:00:00
+#PBS -j oe
+
+# Hybrid-Proposal BOTTLENECK ATTRIBUTION (nuScenes val-150).
+# Reconstruct a 2x2 factorial (delete-unmatched x relabel) from the SINGLE
+# existing hybrid cache -- no rebuild, no GPU needed (cache-only read path).
+#   A  native CP label+score, keep all          -> baseline anchor (~0.3407)
+#   B  relabel matched (YOLO), keep unmatched    -> LABEL NOISE only
+#   C  CP label, drop unmatched                  -> RECALL LOSS only
+#   D' relabel matched, drop unmatched, CP score -> hybrid w/ CP score
+#   D  shipped hybrid (YOLO label+score)         -> original cache as-is
+# A->B = label effect, A->C = deletion effect, D'->D = score-swap effect.
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+SRC="${PROJECT_ROOT}/results/outdoor_hybrid_cpcache_gravity_nusc10"
+DATE=$(date +%F)
+N=$(printf '%02d' $(($(ls -d results/${DATE}_outdoor_hybrid_ablation_v* 2>/dev/null | wc -l) + 1)))
+OUT="${PROJECT_ROOT}/results/${DATE}_outdoor_hybrid_ablation_v${N}"
+CACHES="${OUT}/caches"
+mkdir -p "$OUT"
+LOG="${OUT}/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Hybrid-Proposal bottleneck attribution (val-150) ==="
+echo "Date: $(date) | SRC=$SRC | OUT=$OUT"
+hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+# ---- 1. build derived variant caches (A,B,C,Dp) from the hybrid cache -------
+echo; echo "########## BUILD variant caches ##########"
+python -u scripts/build_hybrid_ablation_variants.py --src "$SRC" --out "$CACHES" \
+  || { echo '!!! variant build failed'; exit 1; }
+
+# ---- 2. evaluator helper ----------------------------------------------------
+run_eval () {  # $1=label  $2=cache_dir
+  local label="$1" cache="$2" odir="${OUT}/eval_${1}"
+  echo; echo "########## EVAL variant ${label} ##########"
+  python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+      --proposal-source hybrid --cp-cache-dir "$cache" --no-gpu \
+      --axes baseline --output "$odir" \
+    || { echo "!!! eval ${label} FAILED"; return 1; }
+}
+
+# ---- smoke gate: 2 scenes on variant A, fail fast ---------------------------
+echo; echo "########## SMOKE (variant A, 2 scenes) ##########"
+python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+    --proposal-source hybrid --cp-cache-dir "${CACHES}/variant_A" --no-gpu \
+    --axes baseline --scene-limit 2 --output "${OUT}/_smoke" \
+  || { echo '!!! SMOKE FAILED -- aborting'; exit 1; }
+
+# ---- 3. full runs -----------------------------------------------------------
+run_eval A  "${CACHES}/variant_A"
+run_eval B  "${CACHES}/variant_B"
+run_eval C  "${CACHES}/variant_C"
+run_eval Dp "${CACHES}/variant_Dp"
+run_eval D  "$SRC"                       # shipped hybrid, original cache
+
+echo; echo "=== ALL DONE: $(date) ==="

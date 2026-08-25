@@ -1,0 +1,61 @@
+#!/bin/bash
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=03:00:00
+#PBS -j oe
+#PBS -N final_trkmetrics
+
+# Final paper-table gap-fill: per-track OV-TCS_C / track-length / fragmentation
+# / CSR for the nuScenes outdoor methods, via CACHE REPLAY ONLY (no new GPU
+# inference; eval_ovtcs_track_outdoor passes cp_proposals=None and reads the
+# pre-built proposal caches). Class-agnostic ego association (the only frame
+# under which these track metrics are non-degenerate).
+#
+#   Run A  gamma  (native CenterPoint labels) -> Baseline/Ego track structure;
+#          also = M31/M32 track metrics by associator-invariance (merge axes do
+#          not change the associator tracks, only the emitted boxes -> mAP).
+#   Run B  hybrid (variant_G class-aware 2D->3D label fusion) -> the fusion row,
+#          whose relabeling genuinely shifts OV-TCS_C / CSR.
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+EXP=outdoor_final_trackmetrics
+N=$(printf '%02d' $(($(ls -d "results/${DATE}_${EXP}_v"* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+mkdir -p "$RUN_DIR"
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Run dir: $RUN_DIR ==="
+echo "=== Date: $(date) ==="
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PROJECT_ROOT}/models/YOLO-World:${PYTHONPATH:-}"
+
+GAMMA_CACHE="${PROJECT_ROOT}/results/outdoor_native_temporal_cpcache_thr000_single_gravity"
+FUSION_CACHE="${PROJECT_ROOT}/results/2026-06-24_outdoor_labelfusion_classaware_v01/caches/variant_G"
+
+echo; echo "########## RUN A: gamma (Baseline/Ego = M31/M32 track structure) ##########"
+python -u -m method_scannet.streaming.eval_ovtcs_track_outdoor \
+  --cp-cache-dir "$GAMMA_CACHE" \
+  --proposal-source gamma \
+  --association-class-agnostic --association-frame ego \
+  --output "$RUN_DIR/gamma_ego"
+echo "=== RUN A exit: $? ==="
+
+echo; echo "########## RUN B: hybrid variant_G (Class-aware Label Fusion) ##########"
+python -u -m method_scannet.streaming.eval_ovtcs_track_outdoor \
+  --cp-cache-dir "$FUSION_CACHE" \
+  --proposal-source hybrid \
+  --association-class-agnostic --association-frame ego \
+  --output "$RUN_DIR/fusion_ego"
+echo "=== RUN B exit: $? ==="
+
+echo; echo "=== done: $(date) ==="
+echo "RUN_DIR=$RUN_DIR"

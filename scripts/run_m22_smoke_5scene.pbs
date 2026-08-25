@@ -1,0 +1,63 @@
+#!/bin/bash
+#PBS -N openyolo3d_m22_smoke_5scene
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=6:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=01:00:00
+#PBS -j oe
+#
+# 5-scene GPU smoke for METHOD_22 (baseline, --conf-mode none).
+# Purpose: verify the relocated data/ tree (nuscenes+scannet200 moved out of
+# the old SemWorld-3D symlink into a real OpenYOLO3D/data dir) resolves
+# end-to-end on an A100 — raw RGB/depth/pose + processed npy + mask3d cache
+# all load and the M22 inference path produces sensible K/class/score.
+#
+# Scenes: first 5 canonical scans, all verified to have raw+npy+mask cache.
+# Output follows the results/<DATE>_<EXP>_v<NN>/ convention from CLAUDE.md.
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+EXP=scannet_m22_smoke_5scene
+CONFIG=pretrained/config_scannet200.yaml
+N=$(printf '%02d' $(($(ls -d "results/${DATE}_${EXP}_v"* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+mkdir -p "$RUN_DIR/outputs"
+
+SCENES="scene0011_00,scene0011_01,scene0015_00,scene0019_00,scene0019_01"
+
+[ -f "$CONFIG" ] && cp "$CONFIG" "$RUN_DIR/config.yaml"
+echo "{\"scenes\": [\"$(echo $SCENES | sed 's/,/\",\"/g')\"], \"conf_mode\": \"none\", \"purpose\": \"data-relocation GPU smoke\"}" > "$RUN_DIR/smoke_index.json"
+
+exec >"$RUN_DIR/run.log" 2>&1
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH=$PROJECT_ROOT/models/YOLO-World:$PYTHONPATH
+export TORCH_CUDA_ARCH_LIST="6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6"
+
+echo "=== METHOD_22 5-scene GPU smoke (data-relocation verification) ==="
+echo "Run dir : $RUN_DIR"
+echo "Scenes  : $SCENES"
+echo "=== Node info ==="
+hostname
+nvidia-smi || true
+
+echo "=== data path sanity ==="
+ls -ld data data/scannet200 data/nuscenes 2>&1
+
+RUN_DIR="$RUN_DIR" python -u -m method_scannet.eval_method_22_conf_skip \
+    --dataset_name scannet200 \
+    --path_to_3d_masks ./output/scannet200/scannet200_masks \
+    --scenes "$SCENES" \
+    --conf-mode none
+EC=$?
+
+echo
+echo "=== Done (exit $EC) ==="
+echo "Inspect: ls -la $RUN_DIR ; cat $RUN_DIR/metrics.json"
+exit $EC

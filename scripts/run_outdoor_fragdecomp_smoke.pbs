@@ -1,0 +1,29 @@
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=01:00:00
+#PBS -j oe
+#PBS -N ofrag_smk
+cd /home/rintern16/OpenYOLO3D
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+ROOT=results/2026-06-26_outdoor_ovtcs_fragdecomp_smoke
+mkdir -p "$ROOT"
+exec >"$ROOT/smoke.log" 2>&1
+CACHE=results/outdoor_detguided_cpcache_thr000_full150
+for P in 0.0 0.5; do
+  TAG=$(echo $P | tr -d '.')
+  python -u -m method_scannet.streaming.eval_ovtcs_track_outdoor \
+    --cp-cache-dir "$CACHE" --proposal-source detguided --association-class-agnostic \
+    --frag-inject-p $P --scene-limit 8 --output "$ROOT/frag$TAG"
+done
+python - <<'PY'
+import json
+for tag in ("00","05"):
+    r=json.load(open(f"results/2026-06-26_outdoor_ovtcs_fragdecomp_smoke/frag{tag}/tracks.json"))
+    L=[x["track_len"] for x in r if x["track_len"]>=2]
+    print(f"frag{tag}: n_tracks={len(r)} n(L>=2)={len(L)} mean_L={sum(L)/max(1,len(L)):.3f}")
+PY
+echo "DONE exit=$?"

@@ -1,0 +1,58 @@
+#!/bin/bash
+#PBS -N hybrid_cache
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=04:00:00
+#PBS -j oe
+
+# Build the Hybrid-Proposal v2 cache on full nuScenes val-150:
+#   CenterPoint geometry (gravity cache) kept verbatim; YOLO-World run ONCE per
+#   camera image (nusc10 vocab); each 3D box projected + matched to a YOLO
+#   detection by IoU/containment; open-vocab label+score transferred.
+# Output: <token>.hybrid.pkl in a persistent, reusable cache dir (like the
+# gravity cache), plus a transfer-stats json in a versioned run dir.
+
+set -u
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+HYBRID_CACHE="${PROJECT_ROOT}/results/outdoor_hybrid_cpcache_gravity_nusc10"
+mkdir -p "$HYBRID_CACHE"
+
+DATE=$(date +%F)
+EXP=outdoor_hybrid_cache_build
+N=$(printf '%02d' $(($(ls -d results/${DATE}_${EXP}_v* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+mkdir -p "$RUN_DIR"
+
+exec >"$RUN_DIR/run.log" 2>&1
+
+echo "=== Hybrid-Proposal v2 cache build (val-150) ==="
+echo "Run dir:      $RUN_DIR"
+echo "Hybrid cache: $HYBRID_CACHE"
+date +"%F %T start"; hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}
+export TORCH_CUDA_ARCH_LIST="6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6"
+export PYTHONPATH="${PROJECT_ROOT}:${PROJECT_ROOT}/models/YOLO-World:${PYTHONPATH:-}"
+export OMP_NUM_THREADS=8
+
+python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+
+python -u scripts/build_hybrid_cache.py \
+  --out-cache   "$HYBRID_CACHE" \
+  --stats-out   "$RUN_DIR/build_stats.json" \
+  --scene-limit 0 \
+  --tau-iou     0.3 \
+  --tau-contain 0.5 \
+  --yolo-th     0.1 \
+  --yolo-nms    0.3
+
+EC=$?
+date +"%F %T end"
+echo "=== Done (exit $EC) ==="
+exit $EC

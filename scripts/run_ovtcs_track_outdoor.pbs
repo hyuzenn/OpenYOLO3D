@@ -1,0 +1,49 @@
+#!/bin/bash
+#PBS -N ovtcs_track_outdoor
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=04:00:00
+#PBS -j oe
+
+# OV-TCS metric validation on nuScenes (per-track), riding the #2 label-fusion
+# evaluator with collect_track_metrics on the existing hybrid proposal cache
+# (cache-replay; no new GPU inference). EVALUATION ONLY.
+#   qsub scripts/run_ovtcs_track_outdoor.pbs                   # full 150
+#   qsub -v LIMIT=10 scripts/run_ovtcs_track_outdoor.pbs       # smoke
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+SRC="${PROJECT_ROOT}/results/outdoor_hybrid_cpcache_gravity_nusc10"
+DATE=$(date +%F)
+EXP=outdoor_ovtcs_track
+N=$(printf '%02d' $(($(ls -d "results/${DATE}_${EXP}_v"* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+mkdir -p "$RUN_DIR"
+
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+echo "=== Run directory: $RUN_DIR (LIMIT=${LIMIT:-full150}) ==="
+echo "=== Date: $(date) ==="
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PROJECT_ROOT}/models/YOLO-World:${PYTHONPATH:-}"
+
+LIMIT_ARG=""
+[ -n "${LIMIT:-}" ] && LIMIT_ARG="--scene-limit ${LIMIT}"
+
+python -u -m method_scannet.streaming.eval_ovtcs_track_outdoor \
+  --cp-cache-dir "$SRC" \
+  --proposal-source hybrid \
+  --association-class-agnostic \
+  --output "$RUN_DIR" \
+  $LIMIT_ARG
+
+EXIT=$?
+echo "=== exit code: $EXIT ==="
+echo "=== done: $(date) ==="
+exit $EXIT

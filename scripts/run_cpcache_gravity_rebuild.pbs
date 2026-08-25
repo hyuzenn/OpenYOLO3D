@@ -1,0 +1,53 @@
+#!/bin/bash
+#PBS -N cpcache_gravity
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=04:00:00
+#PBS -j oe
+
+# Rebuild the gamma (CenterPoint) proposal cache with the gravity-center z fix
+# (adapters/centerpoint_proposals.py: z_bottom -> z_bottom + h/2). Writes to a
+# NEW cache dir; the existing bottom-center cache is left untouched for A/B.
+# --axes baseline also recomputes the native mAP, which must stay ~0.3407
+# (mAP is BEV centre-distance, z-independent) — a free regression check.
+
+set -u
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_outdoor_cpcache_gravity_v01"
+CACHE_DIR="${PROJECT_ROOT}/results/outdoor_native_temporal_cpcache_thr000_single_gravity"
+mkdir -p "$RUN_DIR/outputs" "$CACHE_DIR"
+cp configs/nuscenes_trainval.yaml "$RUN_DIR/nuscenes_config.yaml"
+
+exec >"$RUN_DIR/run.log" 2>&1
+
+echo "=== CenterPoint gamma cache rebuild (gravity-center z fix) ==="
+echo "Run dir   : $RUN_DIR"
+echo "Cache dir : $CACHE_DIR (NEW — existing bottom-center cache untouched)"
+date +"%F %T start"; hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:${PATH:-}
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+export OMP_NUM_THREADS=16
+
+python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+  --nuscenes-config configs/nuscenes_trainval.yaml \
+  --output          "$RUN_DIR" \
+  --axes            baseline \
+  --scene-split     val \
+  --score-threshold 0.0 \
+  --association-threshold-m 2.0 \
+  --proposal-source gamma \
+  --cp-cache-dir    "$CACHE_DIR"
+
+EC=$?
+date +"%F %T end"
+echo "=== Done (exit $EC) — cache: $CACHE_DIR ==="
+echo "cache file count: $(ls "$CACHE_DIR" 2>/dev/null | wc -l)"
+exit $EC

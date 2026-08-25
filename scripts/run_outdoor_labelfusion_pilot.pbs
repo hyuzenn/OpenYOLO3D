@@ -1,0 +1,110 @@
+#!/bin/bash
+#PBS -N outdoor_labelfusion_pilot
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=05:00:00
+#PBS -j oe
+
+# 2D->3D class-correction PILOT (Arm C = confidence-aware label fusion).
+# Decisive question: can 2D open-vocab label fusion reduce classification error
+# and RAISE mAP, given fixed geometry / fixed proposals / fixed CP score?
+#
+# Arms A (native CP label) and B (blind YOLO relabel, keep-all) were already
+# measured at FULL val on 2026-06-22 (A=0.3408, B=0.2611=FAIL).  This pilot adds
+# the ONLY new arm:
+#   F (Arm C)  confidence-aware fusion: override CP->YOLO only when the 2D match
+#              is tight AND confident (match_iou>=tau_iou AND yolo_score>=tau_score);
+#              else keep CP. CP score kept, no box dropped.
+#
+# 50-scene deterministic gate first (scenes[:50]); promote F to full val ONLY if
+# F mAP > A mAP at 50 scenes.
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+SRC="${PROJECT_ROOT}/results/outdoor_hybrid_cpcache_gravity_nusc10"
+TAU_IOU=0.5
+TAU_SCORE=0.4
+DATE=$(date +%F)
+EXP=outdoor_labelfusion_pilot
+N=$(printf '%02d' $(($(ls -d results/${DATE}_${EXP}_v* 2>/dev/null | wc -l) + 1)))
+OUT="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+CACHES="${OUT}/caches"
+mkdir -p "$OUT"
+LOG="${OUT}/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== 2D->3D label-fusion pilot (Arm C) ==="
+echo "Date: $(date) | SRC=$SRC | OUT=$OUT | tau_iou=$TAU_IOU tau_score=$TAU_SCORE"
+hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+# ---- 1. build derived variant caches (incl. F = Arm C) ----------------------
+echo; echo "########## BUILD variant caches (A,B,C,Dp,F) ##########"
+python -u scripts/build_hybrid_ablation_variants.py --src "$SRC" --out "$CACHES" \
+    --tau-iou "$TAU_IOU" --tau-score "$TAU_SCORE" \
+  || { echo '!!! variant build failed'; exit 1; }
+
+run_eval () {  # $1=label  $2=cache_dir  $3=scene_limit(0=full)
+  local label="$1" cache="$2" lim="$3" odir="${OUT}/eval_${1}"
+  echo; echo "########## EVAL ${label} (scene-limit ${lim}) ##########"
+  python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+      --proposal-source hybrid --cp-cache-dir "$cache" --no-gpu \
+      --axes baseline --scene-limit "$lim" --output "$odir" \
+    || { echo "!!! eval ${label} FAILED"; return 1; }
+}
+
+map_of () {  # $1=eval dir -> prints mAP (or NA)
+  python - "$1" <<'PY'
+import json,sys,os.path as p
+f=p.join(sys.argv[1],"axis_baseline","nuscenes_eval","eval_summary.json")
+try:
+    d=json.load(open(f)); print(f"{d.get('mean_ap', d.get('mAP','NA')):.4f}")
+except Exception as e:
+    print("NA")
+PY
+}
+
+# ---- 2. smoke (2 scenes, Arm C) ---------------------------------------------
+echo; echo "########## SMOKE (F, 2 scenes) ##########"
+python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+    --proposal-source hybrid --cp-cache-dir "${CACHES}/variant_F" --no-gpu \
+    --axes baseline --scene-limit 2 --output "${OUT}/_smoke" \
+  || { echo '!!! SMOKE FAILED -- aborting'; exit 1; }
+
+# ---- 3. 50-scene deterministic gate: A, B, F --------------------------------
+run_eval A50 "${CACHES}/variant_A" 50
+run_eval B50 "${CACHES}/variant_B" 50
+run_eval F50 "${CACHES}/variant_F" 50
+
+A=$(map_of "${OUT}/eval_A50"); B=$(map_of "${OUT}/eval_B50"); F=$(map_of "${OUT}/eval_F50")
+echo; echo "===== 50-SCENE GATE ====="
+echo "A (native)      mAP=$A"
+echo "B (blind relabel) mAP=$B"
+echo "F (Arm C fusion)  mAP=$F   [tau_iou=$TAU_IOU tau_score=$TAU_SCORE]"
+
+PROMOTE=$(python - "$F" "$A" <<'PY'
+import sys
+try: print("1" if float(sys.argv[1])>float(sys.argv[2]) else "0")
+except: print("0")
+PY
+)
+
+if [ "$PROMOTE" = "1" ]; then
+  echo ">>> GATE PASS (F > A at 50 scenes) -> promoting F to FULL val"
+  run_eval Ffull "${CACHES}/variant_F" 0
+  echo; echo "===== FULL-VAL ====="
+  echo "F (Arm C) full mAP=$(map_of "${OUT}/eval_Ffull")  vs A-anchor 0.3408 / B-anchor 0.2611"
+else
+  echo ">>> GATE FAIL (F <= A at 50 scenes) -> 2D->3D relabel path STOPS."
+  echo ">>> Per plan: move to localization refinement / proposal generation."
+fi
+
+echo; echo "=== ALL DONE: $(date) ==="

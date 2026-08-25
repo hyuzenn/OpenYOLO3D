@@ -1,0 +1,39 @@
+#!/bin/bash
+#PBS -N outdoor_lf_iou02_probe
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=02:00:00
+#PBS -j oe
+
+# Grid-edge probe: tau_iou=0.2 row on best allowlist A3, vs in-grid anchor 0.3/0.3.
+# GPU-free read-time overlay on the existing hybrid cache (no rebuild).
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+SRC="${PROJECT_ROOT}/results/outdoor_hybrid_cpcache_gravity_nusc10"
+DATE=$(date +%F)
+EXP=outdoor_labelfusion_iou02_probe
+N=$(printf '%02d' $(($(ls -d results/${DATE}_${EXP}_v* 2>/dev/null | wc -l) + 1)))
+OUT="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+mkdir -p "$OUT"
+LOG="${OUT}/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== outdoor label-fusion iou=0.2 grid-edge probe ==="
+echo "Date: $(date) | SRC=$SRC | OUT=$OUT"
+hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+python -u scripts/run_outdoor_labelfusion_iou02_probe.py \
+    --src "$SRC" --out "$OUT" --scene-limit 0 \
+  || { echo '!!! probe driver FAILED'; exit 1; }
+
+echo; echo "=== ALL DONE: $(date) ==="

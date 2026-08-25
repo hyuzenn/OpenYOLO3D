@@ -1,0 +1,99 @@
+#!/bin/bash
+#PBS -N openyolo3d_m22_conf_skip_mini
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=03:00:00
+#PBS -j oe
+#
+# Task 1 mini sweep — 10-scene × 5 tau values across the conf-skip sweep,
+# plus the baseline-none anchor (6 runs total per sweep). Same isolation
+# guarantees as the smoke variant: a single outer v-directory; one
+# subdirectory per tau; failures in one tau do not abort the rest.
+#
+# Layout:
+#   results/<DATE>_m22_conf_skip_mini_v<NN>/
+#     ├── config.snapshot
+#     ├── tau_baseline_none/   ── must match v2 baseline mAP byte-for-byte
+#     ├── tau_0.00/ ├── tau_0.10/ ├── tau_0.20/ ├── tau_0.30/ ├── tau_0.40/
+#     └── sweep_index.json
+#
+# Recommended order of inspection AFTER the run:
+#   1. diff baseline_none vs tau_0.00 (must be ~0 by construction of skip
+#      with tau=0.00; floor is "skip nothing since no score < 0").
+#   2. monotone trend of AP as tau grows (verifies the skip path fires).
+#   3. n_updates_skipped / n_updates_attempted counters in run.log
+#      (printed by FeatureFusionEMA via the python diagnostic line — these
+#      should be 0 in baseline_none, positive elsewhere).
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+EXP=m22_conf_skip_mini
+CONFIG=pretrained/config_scannet200.yaml
+N=$(printf '%02d' $(($(ls -d "results/${DATE}_${EXP}_v"* 2>/dev/null | wc -l) + 1)))
+SWEEP_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+mkdir -p "$SWEEP_DIR"
+
+# 10 contiguous scenes covering 4 scans (good multi-scene coverage of M22
+# state-reset and per-scene EMA reinit).
+SCENES="scene0011_00,scene0011_01,scene0015_00,scene0019_00,scene0019_01,scene0025_00,scene0025_01,scene0025_02,scene0030_00,scene0030_01"
+TAU_VALUES=(0.00 0.10 0.20 0.30 0.40)
+
+[ -f "$CONFIG" ] && cp "$CONFIG" "$SWEEP_DIR/config.snapshot"
+echo "{\"scenes\": [\"$(echo $SCENES | sed 's/,/\",\"/g')\"], \"tau_values\": [$(IFS=,; echo "${TAU_VALUES[*]}")], \"baseline_anchor\": \"tau_baseline_none\"}" > "$SWEEP_DIR/sweep_index.json"
+
+LOG_TOP="$SWEEP_DIR/sweep.log"
+exec >"$LOG_TOP" 2>&1
+
+echo "=== M22 conf-skip MINI sweep (10 scenes) ==="
+echo "Sweep dir : $SWEEP_DIR"
+echo "Scenes    : $SCENES"
+echo "Tau grid  : ${TAU_VALUES[*]}"
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export TORCH_CUDA_ARCH_LIST="6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6"
+
+echo "=== Node info ==="
+hostname
+nvidia-smi || true
+
+# ---- baseline anchor ----
+TAU_DIR="$SWEEP_DIR/tau_baseline_none"
+mkdir -p "$TAU_DIR/outputs"
+echo
+echo "=== [1/$((${#TAU_VALUES[@]} + 1))] BASELINE ANCHOR (conf-mode=none) ==="
+RUN_DIR="$TAU_DIR" python -u -m method_scannet.eval_method_22_conf_skip \
+    --dataset_name scannet200 \
+    --path_to_3d_masks ./output/scannet200/scannet200_masks \
+    --scenes "$SCENES" \
+    --conf-mode none \
+    >"$TAU_DIR/run.log" 2>&1 || echo "BASELINE ANCHOR FAILED (continuing sweep)"
+
+# ---- tau sweep ----
+i=2
+for TAU in "${TAU_VALUES[@]}"; do
+    TAU_TAG=$(printf "tau_%.2f" "$TAU")
+    TAU_DIR="$SWEEP_DIR/$TAU_TAG"
+    mkdir -p "$TAU_DIR/outputs"
+    echo
+    echo "=== [$i/$((${#TAU_VALUES[@]} + 1))] tau=$TAU (conf-mode=skip) ==="
+    RUN_DIR="$TAU_DIR" python -u -m method_scannet.eval_method_22_conf_skip \
+        --dataset_name scannet200 \
+        --path_to_3d_masks ./output/scannet200/scannet200_masks \
+        --scenes "$SCENES" \
+        --conf-mode skip \
+        --tau-skip "$TAU" \
+        >"$TAU_DIR/run.log" 2>&1 || echo "RUN tau=$TAU FAILED (continuing sweep)"
+    i=$((i + 1))
+done
+
+echo
+echo "=== MINI sweep complete ==="
+echo "Inspect:  ls -la $SWEEP_DIR"
+echo "Compare:  jq '.metrics.average.AP' $SWEEP_DIR/*/metrics.json"

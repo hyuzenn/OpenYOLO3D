@@ -1,0 +1,25 @@
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=05:00:00
+#PBS -j oe
+#PBS -N ofrag_full
+cd /home/rintern16/OpenYOLO3D
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+ROOT=results/2026-06-26_outdoor_ovtcs_fragdecomp_v01
+mkdir -p "$ROOT"
+exec >"$ROOT/run.log" 2>&1
+CACHE=results/outdoor_detguided_cpcache_thr000_full150
+for P in 0.0 0.1 0.2 0.3 0.5; do
+  TAG=$(echo $P | tr -d '.')
+  echo "===== frag-inject-p=$P -> frag$TAG ====="
+  python -u -m method_scannet.streaming.eval_ovtcs_track_outdoor \
+    --cp-cache-dir "$CACHE" --proposal-source detguided --association-class-agnostic \
+    --frag-inject-p $P --output "$ROOT/frag$TAG"
+done
+echo "===== decomposition ====="
+python -u "$ROOT/decompose.py"
+echo "DONE exit=$?"

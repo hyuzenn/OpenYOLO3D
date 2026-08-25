@@ -1,0 +1,35 @@
+#!/bin/bash
+#PBS -N train1201_mask3d_cache
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=24:00:00
+#PBS -j oe
+
+# STAGE 4: Mask3D class-agnostic proposal cache (one .pt per scene) for the
+# 1201 train scenes. Reuses generate_mask3d_cache.py unchanged; the train
+# split is selected via SCANNET200_SCENES_FILE (evaluate/__init__.py honors it).
+# Separate cache dir so the val312 cache (results/2026-05-13_mask3d_cache) is
+# untouched. Idempotent: scenes with an existing .pt are skipped.
+# Est size: ~30 GB (7.7 GB/312 val scaled to 1201).  Est time: 1201 x ~30s/scene.
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+# MinkowskiEngine needs libcusparse.so.11 at load time; without this the import
+# dies with "libcusparse.so.11: cannot open shared object file".
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
+export SCANNET200_SCENES_FILE=data/scannet200/splits/scannetv2_train.txt
+CACHE_DIR="$PROJECT_ROOT/results/train1201_mask3d_cache"
+mkdir -p "$CACHE_DIR"
+LOG="$CACHE_DIR/run.log"; exec >"$LOG" 2>&1
+
+echo "=== STAGE 4 Mask3D cache (train1201) $(date) ==="
+echo "scenes_file=$SCANNET200_SCENES_FILE  cache=$CACHE_DIR"
+python -m method_scannet.streaming.tools.generate_mask3d_cache \
+  --cache-dir "$CACHE_DIR" \
+  --config pretrained/config_scannet200.yaml
+echo "=== exit $? / $(date) ==="

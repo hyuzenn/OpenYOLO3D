@@ -1,0 +1,50 @@
+#!/bin/bash
+#PBS -N outdoor_hybrid_eval
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=04:00:00
+#PBS -j oe
+
+# Evaluate the Hybrid-Proposal v2 cache (built 2026-06-13, val-150, 6019 samples)
+# through the native evaluator so mAP / NDS / per-class AP land on the SAME code
+# path as the gamma baseline. Hybrid is cache-only (CenterPoint geometry +
+# YOLO-World label), so --no-gpu is sufficient: we only read .hybrid.pkl.
+#
+# Direct comparison anchor:  ego baseline gamma mAP = 0.3408 (= gamma-fixed 0.3407).
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+CACHE="${PROJECT_ROOT}/results/outdoor_hybrid_cpcache_gravity_nusc10"
+DATE=$(date +%F)
+OUT="${PROJECT_ROOT}/results/${DATE}_outdoor_hybrid_eval_v01"
+mkdir -p "$OUT"
+LOG="${OUT}/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Outdoor Hybrid-Proposal v2 eval (val-150) ==="
+echo "Date: $(date) | CACHE=$CACHE | OUT=$OUT"
+hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+# ---- SMOKE GATE: 2 scenes, fail fast if the hybrid read path is broken -----
+echo; echo "########## SMOKE (2 scenes) ##########"
+SMOKE="${OUT}/_smoke"
+python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+    --proposal-source hybrid --cp-cache-dir "$CACHE" --no-gpu \
+    --axes baseline --scene-limit 2 --output "$SMOKE" \
+  || { echo '!!! SMOKE FAILED — aborting full run (no GPU hours wasted)'; exit 1; }
+
+# ---- FULL RUN: all 150 val scenes -----------------------------------------
+echo; echo "########## FULL val-150 run ##########"
+python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+    --proposal-source hybrid --cp-cache-dir "$CACHE" --no-gpu \
+    --axes baseline --output "$OUT"
+echo "=== exit: $? ($(date)) ==="

@@ -1,0 +1,55 @@
+#!/bin/bash
+#PBS -N outdoor_proposal_recall_probe
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=02:00:00
+#PBS -j oe
+#
+# Task 2 — outdoor proposal-recall probe. Reads the EXISTING pickled
+# proposal caches (γ-native + detguided) and emits per-class / per-distance
+# Recall_box, Recall_iou3d, and Oracle_mAP into a fresh results/<date>_v<NN>/
+# directory. Zero model invocation, zero evaluator changes.
+#
+# GPU is *not* used by the probe itself (no model inference); the A100
+# allocation is just to match the rintern16 PBS conventions and keep
+# nuscenes-devkit import time identical to other Task-2 jobs.
+#
+# Default cache paths (overridden via --gamma-cache / --detguided-cache):
+#   γ-native      results/outdoor_native_temporal_cpcache_thr000_single/
+#   detguided     results/outdoor_detguided_cpcache_thr000_full150/
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+EXP=outdoor_proposal_recall
+N=$(printf '%02d' $(($(ls -d "results/${DATE}_${EXP}_v"* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+mkdir -p "$RUN_DIR/outputs"
+
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Outdoor proposal-recall probe ==="
+echo "Run dir : $RUN_DIR"
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
+echo "=== Node info ==="
+hostname
+nvidia-smi || true
+
+# Note: --output-name is forced to the auto-resolved RUN_DIR basename so
+# the probe writes into THIS PBS run's directory rather than picking its
+# own version number.
+python -u -m diagnosis.outdoor_proposal_recall_probe \
+    --nuscenes-dataroot data/nuscenes \
+    --nuscenes-version v1.0-trainval \
+    --sources gamma,detguided \
+    --output-name "$(basename "$RUN_DIR")"
+echo "=== Done ==="

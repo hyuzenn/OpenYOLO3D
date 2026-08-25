@@ -1,0 +1,54 @@
+#!/bin/bash
+#PBS -N ovtcs_inst_val312
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=08:00:00
+#PBS -j oe
+
+# OV-TCS metric validation on ScanNet200 val — per-instance + per-scene.
+# EVALUATION ONLY (M22 EMA frozen-negative; this validates OV-TCS_C as a
+# temporal-quality *metric*). Cache-replay over the Mask3D val-312 cache; the
+# per-frame YOLO-World 2D pass is the only GPU work.
+#
+#   qsub scripts/run_ovtcs_instance_scannet_val312.pbs              # full 312
+#   qsub -v LIMIT=3 scripts/run_ovtcs_instance_scannet_val312.pbs   # smoke
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+CACHE_DIR="${PROJECT_ROOT}/results/2026-05-13_mask3d_cache"
+DATE=$(date +%F)
+EXP=scannet_ovtcs_instance_val312
+N=$(printf '%02d' $(($(ls -d "results/${DATE}_${EXP}_v"* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+mkdir -p "$RUN_DIR"
+cp pretrained/config_scannet200.yaml "$RUN_DIR/config.yaml"
+
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Run directory: $RUN_DIR ==="
+echo "=== OV-TCS per-instance + per-scene validation (LIMIT=${LIMIT:-full312}) ==="
+echo "=== Date: $(date) ==="
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+# editable yolo_world finder does not resolve under batch — add it explicitly.
+export PYTHONPATH="${PROJECT_ROOT}:${PROJECT_ROOT}/models/YOLO-World:${PYTHONPATH:-}"
+
+LIMIT_ARG=""
+[ -n "${LIMIT:-}" ] && LIMIT_ARG="--limit ${LIMIT}"
+
+python -u -m method_scannet.streaming.eval_ovtcs_instance_scannet \
+  --cache-dir "$CACHE_DIR" \
+  --output "$RUN_DIR" \
+  --config pretrained/config_scannet200.yaml \
+  $LIMIT_ARG
+
+EXIT=$?
+echo "=== exit code: $EXIT ==="
+echo "=== done: $(date) ==="
+exit $EXIT

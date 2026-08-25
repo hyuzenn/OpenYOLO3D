@@ -1,0 +1,62 @@
+#!/bin/bash
+#PBS -N m22_off_vs_ema_50
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=06:00:00
+#PBS -j oe
+
+# Attribution study (M22, ScanNet200, deterministic first-50 scenes) — separates
+# the benefit of EMA itself from the benefit of EMA weight tuning. 50-scene
+# follow-up to the 10-scene smoke (off_vs_ema_v01), whose AP margin was razor-thin
+# (k=0.335 +0.0034 over OFF).
+#   baseline       = M22 OFF (no EMA; emak arms install only M22, so baseline
+#                    is the exact control with M22 removed)
+#   M22_emak_1     = full weighted EMA, w = α·c·1.0   (benefit of EMA itself)
+#   M22_emak_0.335 = reduced EMA, w = α·c·0.335       (benefit of weight tuning)
+# Subset is deterministic: SCENE_NAMES_SCANNET200[:50] (fixed order, superset of
+# the smoke's first 10).
+# Gate: promote {OFF,k=1.0,k=0.335} to 312-scene full val ONLY if k=0.335
+#       consistently beats BOTH OFF and k=1.0 on AP. Otherwise hold full run.
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+CACHE_DIR="${PROJECT_ROOT}/results/2026-05-13_mask3d_cache"
+DATE=$(date +%F)
+EXP=scannet_m22_off_vs_ema_50
+N=$(printf '%02d' $(($(ls -d "results/${DATE}_${EXP}_v"* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+export RUN_DIR
+mkdir -p "$RUN_DIR"
+cp pretrained/config_scannet200.yaml "$RUN_DIR/config.yaml"
+
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== Run directory: $RUN_DIR ==="
+echo "=== M22 OFF vs EMA attribution: arms = baseline, M22_emak_1, M22_emak_0.335 ==="
+echo "=== scenes: deterministic first 50 ==="
+echo "=== Date: $(date) ==="
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+# editable yolo_world finder does not resolve under batch — add it explicitly.
+export PYTHONPATH="${PROJECT_ROOT}:${PROJECT_ROOT}/models/YOLO-World:${PYTHONPATH:-}"
+
+python -m method_scannet.streaming.eval_streaming_ablation \
+  --cache-dir "$CACHE_DIR" \
+  --output "$RUN_DIR" \
+  --config pretrained/config_scannet200.yaml \
+  --axes baseline M22_emak_1 M22_emak_0.335 \
+  --limit 50
+
+EXIT=$?
+echo "=== exit code: $EXIT ==="
+
+python scripts/aggregate_m22_off_vs_ema.py --run-dir "$RUN_DIR" || true
+
+echo "=== done: $(date) ==="
+exit $EXIT

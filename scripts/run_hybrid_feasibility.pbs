@@ -1,0 +1,50 @@
+#!/bin/bash
+#PBS -N hybrid_feas
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=02:00:00
+#PBS -j oe
+
+# Hybrid-Proposal feasibility validation:
+#   CenterPoint 3D box (class discarded) -> project to image -> 2D ROI
+#   -> YOLO-World on ROI -> open-vocab label.
+# Measures ROI projection success, runtime overhead, label distribution, viz.
+# No accuracy optimisation — feasibility only.
+
+set -u
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+DATE=$(date +%F)
+EXP=outdoor_hybrid_proposal
+N=$(printf '%02d' $(($(ls -d results/${DATE}_${EXP}_v* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+mkdir -p "$RUN_DIR/outputs"
+
+exec >"$RUN_DIR/run.log" 2>&1
+
+echo "=== Hybrid-Proposal feasibility ==="
+echo "Run dir: $RUN_DIR"
+date +"%F %T start"; hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}
+export TORCH_CUDA_ARCH_LIST="6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6"
+export PYTHONPATH="${PROJECT_ROOT}:${PROJECT_ROOT}/models/YOLO-World:${PYTHONPATH:-}"
+export OMP_NUM_THREADS=8
+
+python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+
+python -u scripts/run_hybrid_feasibility.py \
+  --out         "$RUN_DIR" \
+  --n-samples   30 \
+  --score-thr   0.10 \
+  --n-viz       6
+
+EC=$?
+date +"%F %T end"
+echo "=== Done (exit $EC) ==="
+exit $EC

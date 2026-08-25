@@ -1,0 +1,18 @@
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=00:30:00
+#PBS -j oe
+#PBS -N ovtcs_relia
+
+cd /home/rintern16/OpenYOLO3D
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
+RUN_DIR=results/2026-06-26_ablation_ovtcs_formulation_v01
+exec >"$RUN_DIR/reliability.log" 2>&1
+
+python -u "$RUN_DIR/reliability_analysis.py"
+echo "DONE exit=$?"

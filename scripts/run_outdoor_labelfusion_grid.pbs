@@ -1,0 +1,44 @@
+#!/bin/bash
+#PBS -N outdoor_labelfusion_grid
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=08:00:00
+#PBS -j oe
+
+# Outdoor 2D->3D label-fusion OPERATING-REGION map (GPU-free; no proposal jobs).
+# Reuses the single hybrid source cache; fusion is a read-time overlay in the
+# evaluator (--fuse-allow / --fuse-tau-iou / --fuse-tau-score), validated to
+# reproduce the prebuilt variant_A/variant_G/variant_F caches byte-for-byte.
+#   Study 1: allowlist expansion A0..A4  (tau_iou=0.5, tau_score=0.4)
+#   Study 2: tau_iou{0.3,0.5,0.7} x tau_score{0.1,0.3,0.5} on the best allowlist
+# One python process: nuScenes loaded once, internal 3-scene smoke, then full val.
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+SRC="${PROJECT_ROOT}/results/outdoor_hybrid_cpcache_gravity_nusc10"
+DATE=$(date +%F)
+EXP=outdoor_labelfusion_grid
+N=$(printf '%02d' $(($(ls -d results/${DATE}_${EXP}_v* 2>/dev/null | wc -l) + 1)))
+OUT="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+mkdir -p "$OUT"
+LOG="${OUT}/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== outdoor label-fusion operating-region map ==="
+echo "Date: $(date) | SRC=$SRC | OUT=$OUT"
+hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+python -u scripts/run_outdoor_labelfusion_grid.py \
+    --src "$SRC" --out "$OUT" --scene-limit 0 \
+  || { echo '!!! grid driver FAILED'; exit 1; }
+
+echo; echo "=== ALL DONE: $(date) ==="

@@ -1,0 +1,35 @@
+#!/bin/bash
+#PBS -N indoor_matched_ctrl
+#PBS -q coss_a6gpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=a6000
+#PBS -l walltime=20:00:00
+#PBS -j oe
+#PBS -o /home/rintern16/OpenYOLO3D/results/pbs_logs/
+# Indoor matched control (prereg experiments/preregistration_indoor_matched_2026-08-01.md).
+# 5 arms x 312 scenes over the frozen Mask3D cache; GPU = YOLO-World 2D pass.
+#   qsub scripts/run_indoor_matched_control.pbs
+#   qsub -v LIMIT=3 scripts/run_indoor_matched_control.pbs   # smoke
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PROJECT_ROOT}/models/YOLO-World:${PYTHONPATH:-}"
+
+DATE=$(date +%F)
+EXP=indoor_matched_control
+N=$(printf '%02d' $(($(ls -d "results/${DATE}_${EXP}_v"* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="results/${DATE}_${EXP}_v${N}"
+mkdir -p "$RUN_DIR"
+cp pretrained/config_scannet200.yaml "$RUN_DIR/config.yaml"
+exec >"$RUN_DIR/run.log" 2>&1
+
+echo "== indoor matched control  $(date)  host=$(hostname)  run_dir=$RUN_DIR  LIMIT=${LIMIT:-full}"
+python -u scripts/indoor_matched_control.py \
+  --cache-dir results/2026-05-13_mask3d_cache \
+  --output "$RUN_DIR" ${LIMIT:+--limit $LIMIT} \
+  || echo "== RUN FAILED"
+echo "== indoor matched control done  $(date)"

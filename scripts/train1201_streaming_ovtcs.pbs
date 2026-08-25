@@ -1,0 +1,38 @@
+#!/bin/bash
+#PBS -N train1201_streaming_ovtcs
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=24:00:00
+#PBS -j oe
+
+# STAGE 5: streaming OV-TCS evaluation over the 1201 train scenes using the
+# train Mask3D cache from STAGE 4. Reuses eval_streaming_baseline unchanged;
+# train split via SCANNET200_SCENES_FILE.
+#
+# CAVEAT: AP-vs-GT numbers on train are IN-SAMPLE and NOT reportable as a
+# result (see memory: project_scannet_train1201_data_blocker). Treat this run
+# as OV-TCS temporal-consistency measurement / capacity check, not a headline
+# accuracy result — the official accuracy set stays val312.
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d
+
+export SCANNET200_SCENES_FILE=data/scannet200/splits/scannetv2_train.txt
+CACHE_DIR="$PROJECT_ROOT/results/train1201_mask3d_cache"
+
+DATE=$(date +%F); EXP=scannet_streaming_ovtcs_train1201
+N=$(printf '%02d' $(($(ls -d "results/${DATE}_${EXP}_v"* 2>/dev/null | wc -l) + 1)))
+RUN_DIR="$PROJECT_ROOT/results/${DATE}_${EXP}_v${N}"
+mkdir -p "$RUN_DIR/outputs"
+cp pretrained/config_scannet200.yaml "$RUN_DIR/config.yaml"
+LOG="$RUN_DIR/run.log"; exec >"$LOG" 2>&1
+
+echo "=== STAGE 5 streaming OV-TCS (train1201) $(date) ==="
+echo "scenes_file=$SCANNET200_SCENES_FILE  cache=$CACHE_DIR  run=$RUN_DIR"
+python -m method_scannet.streaming.eval_streaming_baseline \
+  --output "$RUN_DIR" \
+  --config pretrained/config_scannet200.yaml \
+  --mask3d-cache-dir "$CACHE_DIR"
+echo "=== exit $? / $(date) ==="

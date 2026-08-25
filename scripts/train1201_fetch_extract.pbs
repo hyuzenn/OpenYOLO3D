@@ -1,0 +1,84 @@
+#!/bin/bash
+#PBS -N train1201_fetch_extract
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=48:00:00
+#PBS -j oe
+
+# =============================================================================
+# STAGES 1-3 (disk-safe): per-scene  download .sens -> extract -> delete .sens
+# plus the small geometry files (.ply/labels/segs/agg/.txt) Mask3D preproc needs.
+#
+# WHY per-scene (not bulk): the shared volume is 98% full (~1.9 TB free). Bulk
+# .sens = 754 GiB, and keeping .sens alongside the 484 GiB extraction = 1.24 TB
+# on a shared 98% volume = unsafe. Deleting each .sens right after its own
+# extraction holds the peak at  extracted_so_far + PAR*(one .sens, max 3.76 GiB)
+# ~= 484 + ~23 GiB, final ~= 484 GiB.
+#
+# WHY parallel: kaldir throttles ~0.5 MB/s per connection (measured) but scales
+# ~linearly across connections (4 conns -> 7.2 MB/s measured). Serial would take
+# ~20 days; PAR=6 concurrent scenes -> ~24-32 h. Set PAR to override.
+#
+# Idempotent: a scene whose color/ is already populated is skipped, so the job
+# resumes cleanly after the walltime or any interruption.
+# =============================================================================
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d   # ponytail: reader.py needs numpy+imageio+cv2+png; -dev env lacks png -> "FAIL extract" on every scene
+
+PAR="${PAR:-6}"          # concurrent scenes (download+extract). disk peak ~ PAR*3.76GiB transient
+
+DL=/home/rintern16/OpenYOLO3D/download-scannet.py          # TUM downloader
+READER=third_party/SensReader_py3/reader.py                # py3 SensReader
+SPLIT=data/scannet200/splits/scannetv2_train.txt           # 1201 scenes
+RAW=data/raw/scannet/scans                                 # nested .sens/.ply here
+DEST=data/scannet200                                       # flat runtime layout
+BASE_URL_UNUSED=1
+
+OUT="$PROJECT_ROOT/results/train1201_fetch"; mkdir -p "$OUT"
+LOG="$OUT/fetch_extract.log"; exec >"$LOG" 2>&1
+echo "=== train1201 fetch+extract start $(date) ==="
+
+# --- disk guard: need ~550 GiB headroom for the full run --------------------
+AVAIL_GB=$(df -BG --output=avail "$PROJECT_ROOT" | tail -1 | tr -dc '0-9')
+echo "avail=${AVAIL_GB}GB (need >=560GB extracted+geom+cache; peak +4GB per-scene .sens)"
+if [ "${FORCE_DISK:-0}" != "1" ] && [ "$AVAIL_GB" -lt 560 ]; then
+  echo "ABORT: <560GB free. Set FORCE_DISK=1 to override."; exit 3
+fi
+
+# --- label map (once, needed by Mask3D preprocessing) -----------------------
+[ -s "$RAW/../scannetv2-labels.combined.tsv" ] || \
+  yes | python "$DL" -o "$RAW/.." --label_map || echo "WARN label_map nonzero"
+
+# process one scene end-to-end: geometry -> .sens -> extract -> delete .sens.
+process_scene() {
+  local scene="$1" sdir="$DEST/$1" sens="$RAW/$1/$1.sens" t
+  if [ -d "$sdir/color" ] && [ "$(ls "$sdir/color" 2>/dev/null | wc -l)" -gt 0 ]; then
+    echo "skip (already extracted) $scene"; return 0
+  fi
+  for t in _vh_clean_2.ply _vh_clean_2.labels.ply .aggregation.json _vh_clean_2.0.010000.segs.json .txt; do
+    [ -s "$RAW/$scene/$scene$t" ] || yes | python "$DL" -o "$RAW/.." --id "$scene" --type "$t" >/dev/null 2>&1
+  done
+  [ -s "$sens" ] || yes | python "$DL" -o "$RAW/.." --id "$scene" --type ".sens" >/dev/null 2>&1
+  if [ ! -s "$sens" ]; then echo "FAIL no .sens $scene"; return 1; fi
+  mkdir -p "$sdir"
+  python "$READER" --filename "$sens" --output_path "$sdir" \
+      --export_color_images --export_depth_images --export_poses --export_intrinsics >/dev/null 2>&1
+  if [ ! -d "$sdir/color" ]; then echo "FAIL extract $scene"; rm -f "$sens"; return 1; fi
+  [ -d "$sdir/pose" ] && mv -T "$sdir/pose" "$sdir/poses"
+  [ -f "$sdir/intrinsic/intrinsic_depth.txt" ] && cp "$sdir/intrinsic/intrinsic_depth.txt" "$sdir/intrinsics.txt"
+  cp -n "$RAW/$scene/$scene"_vh_clean_2.ply "$sdir/" 2>/dev/null
+  rm -f "$sens"   # delete .sens NOW to hold the disk peak down
+  echo "ok $scene  free=$(df -BG --output=avail "$PROJECT_ROOT" | tail -1 | tr -dc '0-9')GB"
+}
+export -f process_scene
+export DL READER RAW DEST PROJECT_ROOT
+grep -vE '^\s*$' "$SPLIT" | xargs -P "$PAR" -I{} bash -c 'process_scene "{}"'
+
+N=$(grep -cvE '^\s*$' "$SPLIT")
+EX=$(ls -d "$DEST"/scene*/color 2>/dev/null | wc -l)
+echo "=== fetch+extract done: extracted_dirs=$EX of $N (PAR=$PAR) ==="
+echo "=== $(date) ==="

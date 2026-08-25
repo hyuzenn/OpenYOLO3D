@@ -1,0 +1,126 @@
+#!/bin/bash
+#PBS -N outdoor_labelfusion_classaware
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=05:00:00
+#PBS -j oe
+
+# 2D->3D class-correction PILOT, arm G = CLASS-AWARE fusion.
+# v01 (job 100645) showed the global-gated fusion F FAILS the 50-scene gate
+# (F=0.3563 < A=0.3632) but the per-class decomposition is informative:
+#   bicycle  A 0.0935 -> F 0.1099  (+0.0163, real VRU-confusion correction)
+#   motorcyc A 0.2444 -> F 0.2481  (+0.0037)
+#   truck/trailer/car  -0.0365/-0.0435/-0.0179  (large-pop bleed -> kills global mAP)
+# The loss is entirely large-pop classes where YOLO is wrong but clears the
+# GLOBAL tau. G makes the gate class-aware: override CP->YOLO only when tight,
+# confident, AND the YOLO target class is in {bicycle, motorcycle}. Keeps the
+# VRU win, reverts the truck/trailer/car bleed.
+#
+# Decisive 2-arm gate: G vs A (native) at 50 scenes. Promote G to full val ONLY
+# if G > A. Per-class AP table dumped for A/F/G regardless (this is the actual
+# contribution: VRU per-class correction, not global mAP).
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+SRC="${PROJECT_ROOT}/results/outdoor_hybrid_cpcache_gravity_nusc10"
+TAU_IOU=0.5
+TAU_SCORE=0.4
+DATE=$(date +%F)
+EXP=outdoor_labelfusion_classaware
+N=$(printf '%02d' $(($(ls -d results/${DATE}_${EXP}_v* 2>/dev/null | wc -l) + 1)))
+OUT="${PROJECT_ROOT}/results/${DATE}_${EXP}_v${N}"
+CACHES="${OUT}/caches"
+mkdir -p "$OUT"
+LOG="${OUT}/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== 2D->3D label-fusion: class-aware arm G ==="
+echo "Date: $(date) | SRC=$SRC | OUT=$OUT | tau_iou=$TAU_IOU tau_score=$TAU_SCORE | allow={bicycle,motorcycle}"
+hostname; nvidia-smi -L || true
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export OMP_NUM_THREADS=16
+
+# ---- 1. build derived variant caches (now incl. G) --------------------------
+echo; echo "########## BUILD variant caches (A..G) ##########"
+python -u scripts/build_hybrid_ablation_variants.py --src "$SRC" --out "$CACHES" \
+    --tau-iou "$TAU_IOU" --tau-score "$TAU_SCORE" \
+  || { echo '!!! variant build failed'; exit 1; }
+
+run_eval () {  # $1=label  $2=cache_dir  $3=scene_limit(0=full)
+  local label="$1" cache="$2" lim="$3" odir="${OUT}/eval_${1}"
+  echo; echo "########## EVAL ${label} (scene-limit ${lim}) ##########"
+  python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+      --proposal-source hybrid --cp-cache-dir "$cache" --no-gpu \
+      --axes baseline --scene-limit "$lim" --output "$odir" \
+    || { echo "!!! eval ${label} FAILED"; return 1; }
+}
+
+map_of () {  # $1=eval dir -> prints mAP (or NA)
+  python - "$1" <<'PY'
+import json,sys,os.path as p
+f=p.join(sys.argv[1],"axis_baseline","nuscenes_eval","eval_summary.json")
+try:
+    d=json.load(open(f)); print(f"{d.get('mean_ap', d.get('mAP','NA')):.4f}")
+except Exception as e:
+    print("NA")
+PY
+}
+
+# ---- 2. smoke (2 scenes, G) -------------------------------------------------
+echo; echo "########## SMOKE (G, 2 scenes) ##########"
+python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+    --proposal-source hybrid --cp-cache-dir "${CACHES}/variant_G" --no-gpu \
+    --axes baseline --scene-limit 2 --output "${OUT}/_smoke" \
+  || { echo '!!! SMOKE FAILED -- aborting'; exit 1; }
+
+# ---- 3. 50-scene deterministic gate: A, F, G --------------------------------
+run_eval A50 "${CACHES}/variant_A" 50
+run_eval F50 "${CACHES}/variant_F" 50
+run_eval G50 "${CACHES}/variant_G" 50
+
+A=$(map_of "${OUT}/eval_A50"); F=$(map_of "${OUT}/eval_F50"); G=$(map_of "${OUT}/eval_G50")
+echo; echo "===== 50-SCENE GATE ====="
+echo "A (native)         mAP=$A"
+echo "F (global fusion)  mAP=$F"
+echo "G (class-aware)    mAP=$G   [allow={bicycle,motorcycle}]"
+
+# per-class AP table (cap-mean over 0.5/1/2/4) for A/F/G + B-miss / conversion view
+python - "${OUT}/eval_A50" "${OUT}/eval_F50" "${OUT}/eval_G50" <<'PY'
+import json,sys,os.path as p
+def load(d):
+    return json.load(open(p.join(d,"axis_baseline","metrics.json")))["per_class_AP"]
+A,F,G=load(sys.argv[1]),load(sys.argv[2]),load(sys.argv[3])
+cm=lambda d:sum(d.values())/len(d)
+print("\n----- per-class AP (cap-mean over dist-thresholds) -----")
+print(f"{'class':22s}{'A':>9s}{'F':>9s}{'G':>9s}{'G-A':>9s}")
+for c in A:
+    a,f,g=cm(A[c]),cm(F[c]),cm(G[c])
+    print(f"{c:22s}{a:9.4f}{f:9.4f}{g:9.4f}{g-a:+9.4f}")
+PY
+
+PROMOTE=$(python - "$G" "$A" <<'PY'
+import sys
+try: print("1" if float(sys.argv[1])>float(sys.argv[2]) else "0")
+except: print("0")
+PY
+)
+
+if [ "$PROMOTE" = "1" ]; then
+  echo ">>> GATE PASS (G > A at 50 scenes) -> promoting G to FULL val"
+  run_eval Gfull "${CACHES}/variant_G" 0
+  echo; echo "===== FULL-VAL ====="
+  echo "G (class-aware) full mAP=$(map_of "${OUT}/eval_Gfull")  vs A-anchor 0.3408"
+else
+  echo ">>> GATE FAIL (G <= A at 50 scenes)."
+  echo ">>> 2D->3D label fusion does NOT net-win even class-aware -> per-class VRU"
+  echo ">>> correction is the contribution; global mAP path stops, move to localization."
+fi
+
+echo; echo "=== ALL DONE: $(date) ==="
