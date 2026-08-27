@@ -39,9 +39,23 @@ Streaming 3D Perception."**
 7. Indoor and outdoor are the same contribution on different datasets. State
    the effect-size difference factually; do not generalise the indoor
    zero-AP-cost result to the outdoor setting.
-8. Keep only tables needed for the final claim. The paper has **one figure**
-   (`fig:overview`, TikZ, single-column, top of Method): panel (a) emission
-   policies, panel (b) the two matched controls. Do not re-add `retired/` figures.
+8. Keep only tables needed for the final claim. **Figures are no longer capped
+   at one** (rule retired 2026-08-26): the supervisor asked for qualitative
+   figures, and more than one is expected. `fig:overview` (TikZ, single-column,
+   top of Method) stays the anchor: panel (a) emission policies, panel (b) the
+   two matched controls. **Panel (a) is now a measured example**, not a
+   schematic — one pedestrian over six frames of nuScenes `scene-0925`, control
+   identities `…000/…056/…000/…000/…000/…131` vs. one identity under
+   retrospective confirmation, with the emitted box identical across arms.
+   Provenance and alternative candidates:
+   `results/2026-08-26_qualitative_figure_mining_v01/CANDIDATES.md`; extra
+   figure assets live in `figs/`. Any new qualitative figure must come from
+   stored output — no schematic passed off as data. Do not re-add
+   `retired/` figures.
+9. **"Pre-registration" appears exactly once in the body** (Sec. Statistics),
+   per supervisor feedback that the term reads as defensive to CV reviewers.
+   Do not reintroduce it into endpoint descriptions or table captions; say
+   "primary endpoint" / "exploratory". The documents go to the code release.
 
 ## 2. File tree
 ```
@@ -49,17 +63,26 @@ Streaming 3D Perception."**
 ├── main.tex               # Structural driver (title, style, section inputs)
 ├── preamble.tex           # Global custom macros (currently empty — no macros needed)
 ├── main.bib               # BibTeX bibliography
+├── figs/                  # Figure assets + paste-ready TikZ bodies (see figs/README.md)
 ├── retired/               # Dead assets from the pre-rewrite narrative. Do not reuse.
 └── sec/
     ├── 0_abstract.tex     # Abstract only
     ├── 1_intro.tex        # Introduction + Related Work
     ├── 2_formatting.tex   # Method + Evaluation Protocol
-    └── 3_finalcopy.tex    # Experiments, Discussion, Limitations, Conclusion
+    ├── 3_finalcopy.tex    # Experiments, Discussion, Limitations, Conclusion
+    └── 9_supp_nsweep.tex  # Supplementary: full N-sweep numbers. NOT \input by
+                           # main.tex — the body shows fig:nsweep instead.
 ```
-**There is no supplement.** It was removed on 2026-08-03; the paper is
-self-contained and every claim must be supported inside the four section files.
-Do not add an appendix back, and do not move detail there instead of cutting it.
-Internal run IDs now have no permitted location anywhere in the paper.
+**The supplement is reinstated, narrowly** (2026-08-27, supervisor
+instruction: the pre-registration documents go to supplementary + the code
+release, not the body). It had been removed on 2026-08-03. The original intent
+still binds: **every claim must be supported inside the four section files**,
+and the supplement may hold only the full numeric backing for a claim the body
+already makes in prose --- never an argument, never detail moved there to dodge
+a cut. Currently: `sec/9_supp_nsweep.tex` (full N-sweep table, whose claims are
+stated in `sec:nsweep` and in the caption of `fig:nsweep`) and the
+pre-registration documents. Internal run IDs still have no permitted location
+anywhere in the paper.
 `retired/` holds the old figures (`figs_old/`), `make_gate_figs.py`, and
 `figure_specs.md`. They render numbers that are no longer in the paper —
 **never re-include them**.

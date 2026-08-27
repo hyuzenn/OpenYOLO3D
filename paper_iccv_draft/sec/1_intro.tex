@@ -6,62 +6,60 @@ a live sensor feed~\cite{streamingperception,streaming3d,conceptfusion,conceptgr
 --- are consumed downstream as \emph{persistent objects}: a map, a scene
 graph, a planner's object memory. What those consumers need is that one
 physical object stay one object with one label. What streaming systems
-actually produce flickers. The prevailing emission rule is a per-frame
+actually produce flickers, because the prevailing emission rule is a per-frame
 confidence threshold: every detection above a score cut-off enters the stream
-immediately, independently of what was emitted a frame earlier. Nothing
-carries an object's history forward, so a re-detected object arrives as a new
-identity, and an unstable open-vocabulary label changes class along the way.
-Per-frame detection
-metrics do not see any of this, and so do not penalise it. Nor does the usual
-demonstration of a temporal fix settle the matter: a component that suppresses
-unstable output is conventionally compared against an unfiltered baseline, a
-comparison that cannot separate what the component \emph{selects} from how
-much it \emph{removes}. The property is thus both unmeasured by the dominant
-metrics and unattributed by the dominant comparison.
+immediately, independently of what was emitted a frame earlier. A re-detected
+object arrives as a new identity, and an unstable open-vocabulary label changes
+class along the way. Per-frame detection metrics do not see this, and so do not
+penalise it. Temporal remedies exist --- confirmation counts, and confidence
+accumulated along a track~\cite{cbmot,simpletrack,polymot,fastpoly} --- but
+each also reduces how much a system emits, and detection-oriented metrics are
+strongly coupled to output volume, so a comparison that does not hold that
+volume fixed reports what a rule \emph{selects} and how much it \emph{removes}
+together. The property is thus both unmeasured by the dominant metrics and
+unattributed by the dominant comparison.
 
-We present a \emph{retrospective confirmation} module that improves identity
-and semantic consistency in such a stream, and requires no retraining and no
-change to the perception model. Detections are linked into tracks by a
-class-agnostic associator; a track becomes \emph{confirmed} only after $N$
-observations, and at that moment the module emits not only the current
-detection but the track's withheld prefix, so a confirmed object's trajectory
-is complete from its first observation. Nothing about a box's
-coordinates, score, or label is modified. The retrospective step, which
-ordinary online trackers~\cite{sort,deepsort,ab3dmot} do not perform, is what
-makes the consistency gain hold in both of the association regimes we test,
-and it is what the module contributes beyond the confirmation test it builds
-on. The module runs at a single operating point ($N{=}3$) with no per-dataset
-or per-metric tuning.
+We study a \emph{retrospective confirmation} module in that setting, requiring
+no retraining and no change to the perception model. Detections are linked into
+tracks by a class-agnostic associator; a track becomes \emph{confirmed} only
+after $N$ observations, and at that moment the module emits not only the
+current detection but the track's withheld prefix, so a confirmed object's
+trajectory is complete from its first observation. Nothing about a box's
+coordinates, score, or label is modified, and the module runs at a single
+operating point ($N{=}3$) with no per-dataset or per-metric tuning.
 
-The attribution problem stated above applies to our module as much as to any
-other: confirmation also changes the \emph{amount} of output, and every
-volume-sensitive metric moves for that reason alone. We therefore evaluate it
-under a protocol built to settle exactly that question --- non-temporal
-\emph{matched controls}, which hold the output budget fixed so that only the
-selection rule varies. A
-\emph{detection-budget-matched} control thresholds the same frozen detector
-output so that it emits exactly as many detections as the module; an
-\emph{identity-budget-matched} control keeps, per sequence, the highest-scoring
-$K$ tracks, where $K$ is the number of identities the module emits. Both
-controls share the detector, the association step, and the evaluation code
-with the module, and differ from it only in selecting by score instead of by
-temporal persistence.
+The attribution problem applies to our module as much as to any other, so we
+evaluate under \emph{matched controls} that hold the output budget fixed while
+the selection rule varies. A \emph{detection-budget-matched} control thresholds
+the same frozen detector output to emit exactly as many detections as the
+module; an \emph{identity-budget-matched} control keeps, per sequence, the
+highest-scoring $K$ tracks, where $K$ is the number of identities the module
+emits. To compare persistence against the other established temporal rule
+rather than against score alone, a third control accumulates confidence along a
+track in the manner of CBMOT~\cite{cbmot} and is held to both budgets. All
+controls share the detector, the association step, and the evaluation code with
+the module, differing only in the rule that selects what is emitted.
 
 Under these controls, on the nuScenes validation set (150 scenes, a frozen
 CenterPoint~\cite{centerpoint} detector, both sensor-frame and ego-motion-%
 compensated world-frame association, confirmed tracks emitted
-retrospectively), the module improves identity consistency and pays for it in
-per-frame detection quality. It improves
-association accuracy (HOTA's AssA component~\cite{hota}) over both matched
-controls in both association frames, with bootstrap confidence intervals
-excluding zero. The class-aware tracking accuracy
-AMOTA~\cite{nuscenes_tracking}, which does not admit the same per-scene
-resampling and is reported as a point estimate, rises consistently in sign and
-magnitude across both controls and both frames. At the same output budget it
-\emph{reduces} per-frame detection quality, a cost we quantify in
-Sec.~\ref{sec:detmatch}. We present both sides as the finding: the benefit of
-temporal confirmation is identity consistency, and it is bought rather than
-added.
+retrospectively), the module improves association accuracy (HOTA's AssA
+component~\cite{hota}) over both matched controls in both association frames,
+with bootstrap confidence intervals excluding zero, while class-aware tracking
+accuracy AMOTA~\cite{nuscenes_tracking} --- a point estimate, since it does not
+admit the same per-scene resampling --- rises consistently in sign and
+magnitude. At the same output budget it \emph{reduces} per-frame detection
+quality (Sec.~\ref{sec:detmatch}). The gain is bought rather than added.
+
+Against confidence accumulation this becomes the paper's central observation:
+at a matched budget the two temporal rules do not order one another but sit at
+different points of the same trade-off. Persistence yields higher association
+accuracy, accumulation retains the advantage on the detection- and
+identity-oriented measures, and each of these differences has an interval
+excluding zero. The separation is the same size whether emitted
+\emph{detections} or emitted \emph{identities} are held fixed, which rules out
+the simplest explanation --- that persistence gains association accuracy merely
+by carrying fewer identities to confuse.
 
 Because the module touches only emission timing, it transfers to any streaming
 pipeline that re-observes objects. We apply the identical module, unchanged
@@ -89,13 +87,18 @@ retrospective step is what completes the module: emitting causally instead
 narrows \emph{where} the gain holds --- it survives in the sensor frame but
 reverses in the world frame --- and retrospection's price is $N{-}1$ frames
 of latency ($1.0$\,s at $2$\,Hz for $N{=}3$).
-\item \textbf{A matched-control evaluation protocol.} Two non-temporal
-controls --- detection-budget-matched and identity-budget-matched --- with
-paired per-sequence statistics, which separate what temporal selection
-contributes from what merely emitting less contributes. The protocol is not
-specific to confirmation and applies unchanged to any component that alters
-output volume.
-\item \textbf{Cross-domain validation under that protocol.} Outdoors, the
+\item \textbf{A matched-budget comparison of two temporal selection rules.}
+Confirmation and confidence accumulation are compared at an identical emission
+budget and again at an identical identity budget, with paired per-sequence
+statistics. Neither dominates: persistence buys association accuracy,
+accumulation keeps the detection- and identity-oriented measures, and the
+separation is unchanged under either matching.
+\item \textbf{Controls that separate a rule from its suppression.} Both budgets
+are also matched against a non-temporal score threshold, and indoors against
+random selection, so what the comparisons credit is the selection rule rather
+than the smaller volume it emits. The design is not specific to confirmation
+and applies to any component that alters output volume.
+\item \textbf{Cross-domain validation under that design.} Outdoors, the
 module improves association accuracy and class-aware tracking accuracy under
 both controls in both association frames, at a detection cost we quantify in
 Sec.~\ref{sec:detmatch} rather than leave implicit. Indoors, the identical module
@@ -106,83 +109,103 @@ instance-segmentation pipeline, with segmentation quality unchanged.
 \section{Related Work}
 \label{sec:related}
 
-\noindent\textbf{Streaming perception.} Streaming perception was formalised by
-Li et al.~\cite{streamingperception}, who observed that a detector evaluated
-offline is scored on a world that has already moved on, and introduced streaming
-AP (sAP): predictions are compared against the state of the world at the moment
-they are \emph{emitted}, so latency and accuracy are folded into one number.
-Follow-up work optimises detectors directly for this
-regime~\cite{streamyolo}, and the 3D analogue processes LiDAR
-sectors as they arrive rather than waiting for a full sweep~\cite{streaming3d}.
-This line establishes the premise we build on --- that a perception system on a
-live stream must be judged as a stream --- but its correction is about
-\emph{when} a prediction is scored. sAP is still a per-frame average precision:
-two systems that emit identical boxes at identical latency but differ entirely
-in identity continuity and label stability receive the same sAP. Our focus is
-orthogonal and complementary: we hold latency and box geometry fixed and ask
-what the per-frame family cannot see \emph{within} a frame-aligned comparison.
+\noindent\textbf{Streaming perception.} Streaming perception was formalised
+by~\cite{streamingperception}, which scores predictions against the world at
+the moment they are \emph{emitted}, folding latency and accuracy into streaming
+AP (sAP); later work optimises detectors for this
+regime~\cite{streamyolo}, and the 3D analogue processes LiDAR sectors as they
+arrive rather than waiting for a full sweep~\cite{streaming3d}. This line
+establishes our premise but corrects \emph{when} a prediction is scored: sAP
+remains a per-frame average precision, so two systems emitting identical boxes
+at identical latency but differing entirely in identity continuity and label
+stability receive the same sAP. We hold latency and box geometry fixed and ask
+what that family cannot see.
 
-\noindent\textbf{Multi-object tracking.} Online tracking-by-detection descends
-from SORT~\cite{sort}, which pairs a Kalman filter with greedy Hungarian IoU
-association, and DeepSORT~\cite{deepsort}, which adds an appearance embedding to
-survive occlusion. Both use a \emph{track-confirmation} rule: a tentative
-track is not reported until it has been matched in $N$ consecutive frames. The
-confirmation test is inherited from this literature; what has not been examined
-is what it contributes once the volume it removes is held fixed. In 3D,
-AB3DMOT~\cite{ab3dmot} showed that the same approach applied to 3D boxes is a
-strong baseline, and CenterPoint~\cite{centerpoint} tracks by predicting
-velocity and associating centre points greedily across frames. Throughout this
-literature, confirmation is treated as a tuned nuisance parameter and compared
-against an unfiltered tracker, so its measured benefit includes whatever
-follows from emitting less output. We instead compare it against non-temporal
-selection rules granted the same output budget, and report what changes on the
-detection metrics the 3D perception field reports as well as on the tracking
-metrics.
+\noindent\textbf{Track lifecycle and confirmation.} Deciding when a candidate
+track is real enough to report is among the oldest problems in multi-target
+tracking. The classical radar literature settles it with \emph{track
+confirmation} --- under $M$-out-of-$N$ history logic a track is confirmed once
+it has been assigned a detection in $M$ of the last $N$ updates, under score
+logic once its likelihood ratio crosses a sequential threshold --- and designs
+confirmation, deletion, and track management together~\cite{blackmanpopoli}.
+The same literature established that reporting may lag estimation:
+\emph{retrodiction} revises earlier estimates once later measurements arrive,
+in exchange for a bounded delay~\cite{retrodiction}. Tracking-by-detection
+inherited the count-based half: SORT~\cite{sort} and DeepSORT~\cite{deepsort}
+withhold a tentative track until matched in $N$ consecutive frames, and
+AB3DMOT~\cite{ab3dmot} carries the same minimum-hits rule onto 3D boxes, while
+CenterPoint~\cite{centerpoint} keeps a max-age deletion rule but reports tracks
+from their first observation. None of this is ours: the confirmation test we
+use is the textbook one at its conventional operating point. Our retrospective
+emission likewise buys completeness with delay, as fixed-lag smoothing does,
+and differs in what it revises --- it releases a confirmed track's withheld
+prefix with coordinates, scores, and labels exactly as the detector produced
+them, so the backward step changes set \emph{membership}, not state.
+
+\noindent\textbf{Confidence in the track lifecycle.} Recent 3D tracking has
+largely moved this decision from counting to confidence.
+CBMOT~\cite{cbmot} replaces the minimum-hits criterion outright, propagating a
+tracklet score by constant decay, fusing it probabilistically with each matched
+detection score, and gating both output and termination on the refined score;
+it reports consistent AMOTA gains over count-based lifecycles.
+SimpleTrack~\cite{simpletrack} decomposes tracking-by-detection into
+pre-processing, association, motion model, and lifecycle management, and names
+\emph{output} as a lifecycle decision separate from birth and death, letting
+low-score detections sustain a track through association without being emitted.
+Poly-MOT~\cite{polymot} and Fast-Poly~\cite{fastpoly} pair category-specific
+association with mixed count- and confidence-based termination and explicit
+control over which trajectories are written out; Fast-Poly adopts CBMOT's
+score-fusion rule directly. Confidence-based temporal management is therefore
+established and well tuned, and we treat it as such: our contribution is not a
+new confirmation or lifecycle mechanism, and our associator is deliberately
+lightweight, so our absolute tracking scores are not comparable to these
+systems'. What we take from this line is a comparison rather than a competitor.
+Persistence-based confirmation and confidence accumulation are two temporal
+rules that both decide which detections reach the output, and both reduce how
+much is emitted; since detection-oriented metrics are strongly coupled to
+output volume, a comparison that does not hold that volume fixed reports the
+suppression and the rule together. Budget-matched comparison is routine when
+scoring detectors at a fixed proposal count; we apply it to temporal selection,
+holding fixed each of the two currencies such a rule spends --- emitted
+detections and emitted identities --- and read what separates the two rules
+under each.
 
 \noindent\textbf{Open-vocabulary 3D perception.} OpenScene~\cite{openscene}
-distils 2D vision--language features into 3D points for zero-shot querying
-without 3D annotation, and LERF~\cite{lerf} embeds language into a radiance
-field. OpenMask3D~\cite{openmask3d} moves to instances, computing per-mask CLIP
-features over class-agnostic 3D proposals, and Open-YOLO~3D~\cite{openyolo3d}
-replaces the expensive per-mask feature extraction with cheap 2D open-vocabulary
-box predictions projected onto 3D masks. All four are \emph{offline}: they
-consume a completed reconstruction. ConceptFusion~\cite{conceptfusion} makes the
-setting online, fusing open-set multimodal features into a map frame by frame,
-and ConceptGraphs~\cite{conceptgraphs} builds an open-vocabulary 3D scene graph
-incrementally, associating and merging per-frame detections into persistent
-object nodes for planning. Once a system is incremental, \emph{which} per-frame
-detection becomes which persistent object is a first-class question --- yet
-evaluation remains per-scene AP or mIoU on the final map, which is insensitive
-to how often a persistent object's identity or class label changes along the
-way. Our indoor experiment measures exactly that property, on a pipeline of
-this family, under a matched control.
+distils 2D vision--language features into 3D points and LERF~\cite{lerf} embeds
+language into a radiance field; OpenMask3D~\cite{openmask3d} moves to instances
+via per-mask CLIP features over class-agnostic 3D proposals, and
+Open-YOLO~3D~\cite{openyolo3d} replaces that extraction with 2D
+open-vocabulary boxes projected onto 3D masks. All four are \emph{offline},
+consuming a completed reconstruction. ConceptFusion~\cite{conceptfusion} and
+ConceptGraphs~\cite{conceptgraphs} make the setting incremental, merging
+per-frame detections into persistent object nodes. A more recent line segments
+3D instances fully online, computing proposals per frame:
+EmbodiedSAM~\cite{embodiedsam} lifts per-frame 2D masks into 3D queries matched
+across views by a learned similarity, OnlineAnySeg~\cite{onlineanyseg} merges
+them into persistent instances zero-shot through voxel hashing,
+and~\cite{autoseg3d} recasts online 3D segmentation as instance tracking with
+long-term query association. Cross-frame identity is thus an acknowledged
+design goal here, and in two of the three a trained objective, so we neither
+call it neglected nor rest any distinction on being training-free --- one of
+these systems is itself zero-shot. The gap is in what is measured: all are
+scored by per-scene instance-segmentation AP, the tracking-framed system
+included, so how often a persistent instance's \emph{class label} changes as
+observations accumulate is never quantified. Our indoor experiment measures
+that property, on a pipeline of this family, under a matched control.
 
-\noindent\textbf{Evaluation metrics.} CLEAR MOTA~\cite{clearmot} scores a
-tracker by counting FP, FN, and identity switches, but is dominated by detection
-errors; IDF1~\cite{idf1} rebalances toward identity by matching whole
-trajectories one-to-one and reporting an identity F1. HOTA~\cite{hota} was
-introduced precisely because these conflate two capabilities, and factorises the
-score into a detection accuracy DetA and an association accuracy AssA, whose
-geometric mean is HOTA. This factorisation is what makes our result legible:
-association quality and detection quality can be read separately over an
-\emph{identical} box set, which is precisely the distinction a temporal
-selection rule acts on. In 3D, nuScenes AMOTA~\cite{nuscenes_tracking} ---
-following AB3DMOT's integral formulation~\cite{ab3dmot} --- averages MOTA over
-recall thresholds and is class-aware, so it responds to class labels that the
-class-agnostic family ignores; we report both. Video consistency metrics
-(STQ~\cite{step}, VPQ~\cite{vpq}, TETA~\cite{teta}) and open-vocabulary tracking
-benchmarks (TAO~\cite{tao}, OVTrack~\cite{ovtrack}) extend the family but
-likewise require dense GT tube identities over a fixed taxonomy. We use these
-metrics where they are computable rather than proposing a new one; our
-contribution is the controlled experiment and the protocol that reads it.
-
-\noindent\textbf{Controlled evaluation of pipeline components.} Isolating what a
-single component contributes requires holding the rest of the system fixed, and
-for components that change how much output a system produces, holding the
-output budget fixed as well; otherwise the comparison rewards volume rather than
-the mechanism. Budget-matched comparison is standard practice when scoring
-detectors at a fixed number of proposals, but it is not usually applied to
-temporal components, whose effect on output volume is a side effect rather than
-a parameter. The controls in this paper apply it in both of the currencies a
-temporal component spends --- detections and identities --- and read the
-resulting trade-off directly.
+\noindent\textbf{Evaluation metrics.} CLEAR MOTA~\cite{clearmot} counts FP, FN
+and identity switches but is dominated by detection errors; IDF1~\cite{idf1}
+rebalances toward identity by matching whole trajectories one-to-one.
+HOTA~\cite{hota} was introduced because these conflate two capabilities, and
+factorises into a detection accuracy DetA and an association accuracy AssA
+whose geometric mean it is. That factorisation is what makes our result
+legible: detection and association quality can be read separately over an
+\emph{identical} box set, precisely the distinction a temporal selection rule
+acts on. In 3D, nuScenes AMOTA~\cite{nuscenes_tracking} --- following AB3DMOT's
+integral formulation~\cite{ab3dmot} --- averages MOTA over recall thresholds
+and is class-aware, so it responds to labels the class-agnostic family ignores;
+we report both. Video consistency metrics (STQ~\cite{step}, VPQ~\cite{vpq},
+TETA~\cite{teta}) and open-vocabulary tracking benchmarks (TAO~\cite{tao},
+OVTrack~\cite{ovtrack}) extend the family but require dense ground-truth tube
+identities over a fixed taxonomy. We use these metrics where computable rather
+than proposing a new one.

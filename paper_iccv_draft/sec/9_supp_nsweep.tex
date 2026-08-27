@@ -1,0 +1,31 @@
+% Supplementary: full confirmation-window sensitivity numbers.
+% Body shows Fig.~\ref{fig:nsweep} instead; not \input from main.tex.
+\begin{table*}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{llrrcrrc}
+\toprule
+Frame & $N$ & Delay & Boxes & $\Delta$AssA & 95\% CI & $\Delta$AMOTA & $\Delta$DetRe \\
+\midrule
+\multirow{4}{*}{Sensor}
+ & 2 & $1$ & 551{,}452 & $+0.0219$ & $[{+}0.0155,{+}0.0286]$ & $+0.0177$ & $-0.0817$ \\
+ & 3 & $2$ & 360{,}309 & $+0.0491$ & $[{+}0.0370,{+}0.0615]$ & $+0.0339$ & $-0.1323$ \\
+ & 4 & $3$ & 269{,}330 & $+0.0767$ & $[{+}0.0596,{+}0.0936]$ & $+0.0393$ & $-0.1606$ \\
+ & 5 & $4$ & 217{,}295 & $+0.1038$ & $[{+}0.0820,{+}0.1249]$ & $+0.0414$ & $-0.1794$ \\
+\midrule
+\multirow{4}{*}{World}
+ & 2 & $1$ & 869{,}354 & $+0.0058$ & $[{+}0.0021,{+}0.0096]$ & $+0.0228$ & $-0.0219$ \\
+ & 3 & $2$ & 754{,}500 & $+0.0139$ & $[{+}0.0086,{+}0.0195]$ & $+0.0378$ & $-0.0342$ \\
+ & 4 & $3$ & 658{,}099 & $+0.0184$ & $[{+}0.0120,{+}0.0252]$ & $+0.0424$ & $-0.0412$ \\
+ & 5 & $4$ & 576{,}711 & $+0.0220$ & $[{+}0.0148,{+}0.0297]$ & $+0.0381$ & $-0.0470$ \\
+\bottomrule
+\end{tabular}
+\caption{\textbf{Confirmation-window sensitivity.} Each row is confirmation at
+that $N$ with retrospective emission, minus \emph{its own}
+detection-budget-matched threshold control, matched exactly to the box count
+in the Boxes column. Delay is $N{-}1$ frames ($0.5$\,s each at $2$\,Hz). The
+$N{=}3$ rows are the comparison of Tab.~\ref{tab:detmatch}, reproduced here
+rather than recomputed. $\Delta$AMOTA is a whole-split point estimate; the
+DetRe intervals are omitted for space and exclude zero at every $N$. This sweep is an exploratory sensitivity analysis.}
+\label{tab:nsweep}
+\end{table*}

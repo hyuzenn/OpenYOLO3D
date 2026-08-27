@@ -99,6 +99,10 @@ def run_arm(name, oy3d, cfg, cache_dir, out_root, scenes, gate_factory):
         per_scene[scene_name] = {
             "lsc": int(label_switch_count(hist)),
             "n_unique": len(set().union(*[h.keys() for h in hist])) if hist else 0,
+            # denominator for the per-emission switch rate: every emitted
+            # (instance, frame) observation. Opportunities to switch =
+            # n_obs - n_unique (an instance's first emission cannot switch).
+            "n_obs": int(sum(len(h) for h in hist)),
             "n_confirmed": len(gate._confirmed) if gate is not None else None,
         }
         if (s_idx + 1) % 25 == 0 or s_idx == len(scenes) - 1:
@@ -115,13 +119,17 @@ def run_arm(name, oy3d, cfg, cache_dir, out_root, scenes, gate_factory):
         "AP": float(avgs["all_ap"]), "AP_50": float(avgs["all_ap_50%"]),
         "lsc_total": int(sum(v["lsc"] for v in per_scene.values())),
         "n_unique_total": int(sum(v["n_unique"] for v in per_scene.values())),
+        "n_obs_total": int(sum(v["n_obs"] for v in per_scene.values())),
         "n_scenes": len(per_scene),
         "walltime_s": time.time() - t0,
     }
+    opp = summary["n_obs_total"] - summary["n_unique_total"]
+    summary["lsc_rate"] = summary["lsc_total"] / opp if opp > 0 else None
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
     (out_dir / "per_scene.json").write_text(json.dumps(per_scene, indent=2))
     print(f"[{name}] AP={summary['AP']:.5f} lsc={summary['lsc_total']} "
-          f"uniq={summary['n_unique_total']}", flush=True)
+          f"uniq={summary['n_unique_total']} obs={summary['n_obs_total']} "
+          f"rate={summary['lsc_rate']}", flush=True)
     return summary, per_scene
 
 

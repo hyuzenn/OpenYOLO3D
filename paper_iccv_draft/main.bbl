@@ -1,9 +1,14 @@
-\begin{thebibliography}{26}
+\begin{thebibliography}{37}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
   \providecommand{\doi}[1]{doi: #1}\else
   \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Benbarka et~al.(2021)]{cbmot}
+Nuri Benbarka et~al.
+\newblock Score refinement for confidence-based 3d multi-object tracking.
+\newblock In \emph{IROS}, 2021.
 
 \bibitem[Bernardin and Stiefelhagen(2008)]{clearmot}
 Keni Bernardin and Rainer Stiefelhagen.
@@ -15,6 +20,11 @@ Keni Bernardin and Rainer Stiefelhagen.
 Alex Bewley, Zongyuan Ge, Lionel Ott, Fabio Ramos, and Ben Upcroft.
 \newblock Simple online and realtime tracking.
 \newblock In \emph{ICIP}, 2016.
+
+\bibitem[Blackman and Popoli(1999)]{blackmanpopoli}
+Samuel~S. Blackman and Robert Popoli.
+\newblock \emph{Design and Analysis of Modern Tracking Systems}.
+\newblock Artech House, 1999.
 
 \bibitem[Boudjoghra et~al.(2024)]{openyolo3d}
 Mohamed El~Amine Boudjoghra et~al.
@@ -69,6 +79,13 @@ Dahun Kim et~al.
 \newblock Video panoptic segmentation.
 \newblock In \emph{CVPR}, 2020.
 
+\bibitem[Koch(2000)]{retrodiction}
+Wolfgang Koch.
+\newblock Fixed-interval retrodiction approach to {Bayesian} {IMM}-{MHT} for
+  maneuvering multiple targets.
+\newblock \emph{IEEE Trans. Aerospace and Electronic Systems}, 36\penalty0
+  (1):\penalty0 2--14, 2000.
+
 \bibitem[Li et~al.(2020)Li, Wang, and Ramanan]{streamingperception}
 Mengtian Li, Yu-Xiong Wang, and Deva Ramanan.
 \newblock Towards streaming perception.
@@ -79,15 +96,31 @@ Siyuan Li et~al.
 \newblock Tracking every thing in the wild.
 \newblock In \emph{ECCV}, 2022.
 
-\bibitem[Li et~al.(2023)]{ovtrack}
+\bibitem[Li et~al.(2023{\natexlab{a}})]{ovtrack}
 Siyuan Li et~al.
 \newblock {OVTrack}: Open-vocabulary multiple object tracking.
-\newblock In \emph{CVPR}, 2023.
+\newblock In \emph{CVPR}, 2023{\natexlab{a}}.
+
+\bibitem[Li et~al.(2023{\natexlab{b}})]{polymot}
+Xiaoyu Li et~al.
+\newblock {Poly-MOT}: A polyhedral framework for 3d multi-object tracking.
+\newblock In \emph{IROS}, 2023{\natexlab{b}}.
+
+\bibitem[Li et~al.(2024)]{fastpoly}
+Xiaoyu Li et~al.
+\newblock {Fast-Poly}: A fast polyhedral algorithm for 3d multi-object
+  tracking.
+\newblock \emph{IEEE Robotics and Automation Letters}, 9, 2024.
 
 \bibitem[Luiten et~al.(2021)]{hota}
 Jonathon Luiten et~al.
 \newblock {HOTA}: A higher order metric for evaluating multi-object tracking.
 \newblock \emph{IJCV}, 2021.
+
+\bibitem[Pang et~al.(2022)]{simpletrack}
+Ziqi Pang et~al.
+\newblock {SimpleTrack}: Understanding and rethinking 3d multi-object tracking.
+\newblock In \emph{ECCV Workshops}, 2022.
 
 \bibitem[Peng et~al.(2023)]{openscene}
 Songyou Peng et~al.
@@ -116,6 +149,24 @@ Ayca Takmaz et~al.
 \newblock {OpenMask3D}: Open-vocabulary 3d instance segmentation.
 \newblock In \emph{NeurIPS}, 2023.
 
+\bibitem[Tang et~al.(2025)]{onlineanyseg}
+Yijie Tang et~al.
+\newblock {OnlineAnySeg}: Online zero-shot 3d segmentation by visual foundation
+  model guided 2d mask merging.
+\newblock In \emph{CVPR}, 2025.
+
+\bibitem[Wang et~al.(2025)]{autoseg3d}
+Hanshi Wang et~al.
+\newblock Online segment any 3d thing as instance tracking.
+\newblock In \emph{NeurIPS}, 2025.
+
+\bibitem[Wang et~al.(2024)Wang, Meng, Liu, Yan, Wang, Cheng, and
+  Hou]{stability3d}
+Jiabao Wang, Qiang Meng, Guochao Liu, Liujiang Yan, Ke Wang, Ming-Ming Cheng,
+  and Qibin Hou.
+\newblock Towards stable {3D} object detection.
+\newblock In \emph{ECCV}, 2024.
+
 \bibitem[Weber et~al.(2021)]{step}
 Mark Weber et~al.
 \newblock {STEP}: Segmenting and tracking every pixel.
@@ -131,6 +182,11 @@ Nicolai Wojke, Alex Bewley, and Dietrich Paulus.
 \newblock Simple online and realtime tracking with a deep association metric.
 \newblock In \emph{ICIP}, 2017.
 
+\bibitem[Xu et~al.(2025)]{embodiedsam}
+Xiuwei Xu et~al.
+\newblock {EmbodiedSAM}: Online segment any 3d thing in real time.
+\newblock In \emph{ICLR}, 2025.
+
 \bibitem[Yang et~al.(2022)]{streamyolo}
 Jinrong Yang et~al.
 \newblock Real-time object detection for streaming perception.
@@ -140,5 +196,10 @@ Jinrong Yang et~al.
 Tianwei Yin, Xingyi Zhou, and Philipp Kr\"ahenb\"uhl.
 \newblock Center-based 3d object detection and tracking.
 \newblock In \emph{CVPR}, 2021.
+
+\bibitem[Zhang and Wang(2016)]{vidstability}
+Hong Zhang and Naiyan Wang.
+\newblock On the stability of video detection and tracking.
+\newblock \emph{arXiv:1611.06467}, 2016.
 
 \end{thebibliography}
