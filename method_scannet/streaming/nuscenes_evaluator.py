@@ -386,6 +386,45 @@ def _yolo_label_for_proposal(centroid_ego: np.ndarray,
     return best_cls, best_score
 
 
+# Official CenterPoint attribute serialization, copied verbatim in semantics
+# from installed mmdet3d 1.4.0 nuscenes_metric.py: DefaultAttribute (L68-79)
+# and the speed-gated rule in _format_lidar_bbox (L515-536). CenterPoint
+# predicts no attribute; the official JSON derives it from predicted speed.
+_DEFAULT_ATTRIBUTE = {
+    "car": "vehicle.parked",
+    "pedestrian": "pedestrian.moving",
+    "trailer": "vehicle.parked",
+    "truck": "vehicle.parked",
+    "bus": "vehicle.moving",
+    "motorcycle": "cycle.without_rider",
+    "construction_vehicle": "vehicle.parked",
+    "bicycle": "cycle.without_rider",
+    "barrier": "",
+    "traffic_cone": "",
+}
+
+
+def _official_attribute(detection_name: str, vx: float, vy: float) -> str:
+    """mmdet3d _format_lidar_bbox attribute rule: strict speed > 0.2 m/s gate
+    on the velocity magnitude. Magnitude is rotation-invariant, so LiDAR- or
+    global-frame velocity give the same answer — no extra rotation here.
+    Unknown class -> "" (official code would KeyError; callers pre-filter to
+    nuScenes-10 so this branch is defensive only).
+    """
+    if np.sqrt(vx * vx + vy * vy) > 0.2:
+        if detection_name in ("car", "construction_vehicle", "bus", "truck",
+                              "trailer"):
+            return "vehicle.moving"
+        if detection_name in ("bicycle", "motorcycle"):
+            return "cycle.with_rider"
+    else:
+        if detection_name == "pedestrian":
+            return "pedestrian.standing"
+        if detection_name == "bus":
+            return "vehicle.stopped"
+    return _DEFAULT_ATTRIBUTE.get(detection_name, "")
+
+
 def _detection_box_dict(global_id: int,
                         sample_token: str,
                         bbox_lidar: list[float],
@@ -411,10 +450,6 @@ def _detection_box_dict(global_id: int,
         vx, vy = float(bbox_lidar[7]), float(bbox_lidar[8])
     else:
         vx, vy = 0.0, 0.0
-    attr_default = "vehicle.moving" if detection_name in (
-        "car", "truck", "bus", "trailer", "construction_vehicle", "motorcycle",
-        "bicycle"
-    ) else ""
     return {
         "sample_token": sample_token,
         "translation": [float(x) for x in centroid_global],
@@ -425,7 +460,7 @@ def _detection_box_dict(global_id: int,
         "num_pts": 1,  # placeholder; eval doesn't use this if range filter passes
         "detection_name": detection_name,
         "detection_score": float(score),
-        "attribute_name": attr_default,
+        "attribute_name": _official_attribute(detection_name, vx, vy),
     }
 
 

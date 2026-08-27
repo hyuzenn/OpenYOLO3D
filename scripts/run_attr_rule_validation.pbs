@@ -1,0 +1,50 @@
+#!/bin/bash
+#PBS -N attr_rule_validation
+#PBS -q coss_a6gpu
+#PBS -l select=1:ncpus=8:mem=64g:ngpus=1:host=ece-a6gpu6:Qlist=a6000
+#PBS -l walltime=02:00:00
+#PBS -j oe
+
+# #8 fix validation:
+#   1. pure unit tests for the official attribute rule (audit/test_attr_rule.py)
+#   2. box-for-box parity vs the official 10-sweep JSON + eval regression
+#      (expect NDS 0.645809, mAP 0.558050 bit-identical to Test D)
+#   3. existing evaluator-correction tests F1-F5 must stay green
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+OUT_DIR="$PROJECT_ROOT/audit/official_centerpoint_ref/attr_rule_validation"
+mkdir -p "$OUT_DIR"
+LOG="$OUT_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== attr-rule validation — $(date) ==="
+hostname
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
+cd "$PROJECT_ROOT"
+
+echo "=== STEP 1: unit tests (attribute rule) ==="
+python -u audit/test_attr_rule.py
+RC1=$?
+echo "unit tests exit: $RC1"
+if [ $RC1 -ne 0 ]; then echo "ABORT"; exit 1; fi
+
+echo "=== STEP 2: parity + eval regression ==="
+python -u audit/verify_attr_rule_parity.py \
+  --json "$PROJECT_ROOT/audit/official_centerpoint_ref/nusc_submission/pred_instances_3d/results_nusc.json" \
+  --out "$OUT_DIR/eval_our_attrs"
+RC2=$?
+echo "parity exit: $RC2"
+
+echo "=== STEP 3: existing evaluator-fix tests F1-F5 ==="
+python -u audit/test_evaluator_fix.py
+RC3=$?
+echo "evaluator-fix tests exit: $RC3"
+
+echo "=== done — $(date) ==="
+if [ $RC2 -ne 0 ] || [ $RC3 -ne 0 ]; then exit 1; fi
+echo "=== exit 0 ==="

@@ -1,0 +1,34 @@
+#!/bin/bash
+#PBS -N attr_heuristic_analysis
+#PBS -q coss_a6gpu
+#PBS -l select=1:ncpus=8:mem=64g:ngpus=1:host=ece-a6gpu6:Qlist=a6000
+#PBS -l walltime=02:00:00
+#PBS -j oe
+
+# #8 decision analysis: quantify the pipeline attribute heuristic's cost on
+# NDS by re-evaluating the 10-sweep CenterPoint JSON with swapped attributes.
+# CPU-only eval; no inference, no source modification.
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+OUT_DIR="$PROJECT_ROOT/audit/official_centerpoint_ref/attr_heuristic_analysis"
+mkdir -p "$OUT_DIR"
+LOG="$OUT_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== attr-heuristic analysis — $(date) ==="
+hostname
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
+cd "$PROJECT_ROOT"
+
+python -u audit/analyze_attr_heuristic.py \
+  --json "$PROJECT_ROOT/audit/official_centerpoint_ref/nusc_submission/pred_instances_3d/results_nusc.json" \
+  --out "$OUT_DIR/eval_heuristic_attrs"
+RC=$?
+echo "exit code: $RC"
+echo "=== done — $(date) ==="
+exit $RC
