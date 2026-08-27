@@ -393,14 +393,21 @@ def _detection_box_dict(global_id: int,
                         ego_translation: np.ndarray,
                         rotation_global_wxyz: list[float],
                         detection_name: str,
-                        score: float) -> dict:
+                        score: float,
+                        velocity_global: list[float] | None = None) -> dict:
     """Build a DetectionBox-shaped dict for nuScenes-devkit eval.
 
     bbox_lidar: [x, y, z, dx, dy, dz, yaw, (vx, vy)] from CenterPoint.
     We use dx, dy, dz as size in nuScenes convention (w, l, h) — exactly
     matches CenterPoint output ordering.
+
+    velocity_global: global-frame (vx, vy) if the caller already rotated the
+    LiDAR-frame CenterPoint velocity (nuScenes eval expects global frame).
+    When None, falls back to the raw LiDAR-frame values (legacy callers).
     """
-    if len(bbox_lidar) >= 9:
+    if velocity_global is not None:
+        vx, vy = float(velocity_global[0]), float(velocity_global[1])
+    elif len(bbox_lidar) >= 9:
         vx, vy = float(bbox_lidar[7]), float(bbox_lidar[8])
     else:
         vx, vy = 0.0, 0.0

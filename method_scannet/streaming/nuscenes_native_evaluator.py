@@ -447,24 +447,35 @@ class NativeTemporalNuScenesEvaluator:
         ego_pose = transform_matrix(ego_rec["translation"], Quaternion(ego_rec["rotation"]))
         T_lidar_to_ego = transform_matrix(lidar_cs["translation"], Quaternion(lidar_cs["rotation"]))
         ego_translation = ego_pose[:3, 3]
+        # Official GT semantics (devkit loaders.load_gt): real velocity via
+        # box_velocity (global frame, may be NaN — cummean is NaN-aware),
+        # attribute from attribute_tokens, num_pts = lidar + radar.
+        attr_map = getattr(self, "_attr_token_to_name", None)
+        if attr_map is None:
+            attr_map = {a["token"]: a["name"] for a in nusc.attribute}
+            self._attr_token_to_name = attr_map
         gts = []
         for ann_token in sample["anns"]:
             ann = nusc.get("sample_annotation", ann_token)
             det = category_to_detection_name(ann["category_name"])
             if det is None or det not in NUSC_10_SET:
                 continue
+            attr_tokens = ann["attribute_tokens"]
+            assert len(attr_tokens) <= 1, \
+                f"GT annotation {ann_token} has {len(attr_tokens)} attributes"
+            velocity = nusc.box_velocity(ann_token)[:2]
             gts.append({
                 "sample_token": sample_token,
                 "instance_token": ann["instance_token"],
                 "translation": [float(x) for x in ann["translation"]],
                 "size": [float(x) for x in ann["size"]],
                 "rotation": [float(x) for x in ann["rotation"]],
-                "velocity": [0.0, 0.0],
+                "velocity": [float(velocity[0]), float(velocity[1])],
                 "ego_translation": [float(x) for x in ego_translation],
-                "num_pts": int(ann.get("num_lidar_pts", 0)),
+                "num_pts": int(ann["num_lidar_pts"]) + int(ann["num_radar_pts"]),
                 "detection_name": det,
                 "detection_score": -1.0,
-                "attribute_name": "",
+                "attribute_name": attr_map[attr_tokens[0]] if attr_tokens else "",
             })
         return ego_pose, T_lidar_to_ego, gts
 
@@ -755,6 +766,14 @@ class NativeTemporalNuScenesEvaluator:
             box_q_ego = lidar_to_ego_q * Quaternion(axis=(0.0, 0.0, 1.0), angle=yaw_lidar)
             centroid_global = (ego_pose[:3, :3] @ centroid_ego[:3]) + ego_translation
             global_q = ego_quat * box_q_ego
+            # CenterPoint velocities are LiDAR-frame; nuScenes eval expects
+            # global-frame. Rotate (no translation — velocity is a vector).
+            if len(bbox_lidar) >= 9:
+                v_l = np.array([float(bbox_lidar[7]), float(bbox_lidar[8]), 0.0])
+                v_g = ego_pose[:3, :3] @ (T_lidar_to_ego[:3, :3] @ v_l)
+                velocity_global = [float(v_g[0]), float(v_g[1])]
+            else:
+                velocity_global = [0.0, 0.0]
             native_idx = NAME_TO_IDX.get(p["cls_name"], -1)
             native_score = float(p.get("score", 0.0))
 
@@ -780,6 +799,7 @@ class NativeTemporalNuScenesEvaluator:
                 "centroid_global": centroid_global,
                 "rotation_global_wxyz": [float(global_q.w), float(global_q.x),
                                          float(global_q.y), float(global_q.z)],
+                "velocity_global": velocity_global,
             })
 
         # --- 2D->3D override audit (GT-matched, overlay only) ----------
@@ -882,7 +902,8 @@ class NativeTemporalNuScenesEvaluator:
                 bbox_lidar=r["bbox_lidar"], centroid_global=r["centroid_global"],
                 ego_translation=ego_t,
                 rotation_global_wxyz=r["rotation_global_wxyz"],
-                detection_name=cls_name, score=r["native_score"])
+                detection_name=cls_name, score=r["native_score"],
+                velocity_global=r.get("velocity_global"))
             # E1 GT-metric dump: DetectionBox.deserialize ignores extra keys.
             d["tracking_id"] = int(r["gid"])
             self.per_sample_pred_boxes[tok].append(d)
@@ -1022,7 +1043,8 @@ class NativeTemporalNuScenesEvaluator:
         try:
             eval_summary = nu_evaluate(pred_boxes=pred_eb, gt_boxes=gt_eb,
                                        output_dir=str(out_dir / "nuscenes_eval"),
-                                       config_name="detection_cvpr_2019")
+                                       config_name="detection_cvpr_2019",
+                                       nusc=self.loader.nusc)
         except Exception as exc:
             (out_dir / "nuscenes_eval_error.txt").write_text(repr(exc))
 

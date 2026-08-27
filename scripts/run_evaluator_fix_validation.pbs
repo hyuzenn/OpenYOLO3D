@@ -1,0 +1,69 @@
+#!/bin/bash
+#PBS -N evaluator_fix_validation
+#PBS -q coss_a6gpu
+#PBS -l select=1:ncpus=8:mem=64g:ngpus=1:host=ece-a6gpu6:Qlist=a6000
+#PBS -l walltime=04:00:00
+#PBS -j oe
+
+# Validation for the 2026-08-28 custom-evaluator correction (approved plan
+# section D). Three steps, all CPU-only eval (no inference, no training):
+#   1. unit/isolation tests   audit/test_evaluator_fix.py   (plan F1-F5)
+#   2. regression Test B      author-distributed official JSON -> corrected
+#                             custom evaluator (expect ~0.5956/0.6676)
+#   3. regression Test D      our 10-sweep CenterPoint JSON -> corrected
+#                             custom evaluator (expect ~0.5580/0.6458)
+# Acceptance: B and D within +/-0.002 of their unmodified-devkit results.
+
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+OUT_DIR="$PROJECT_ROOT/audit/official_centerpoint_ref/evaluator_fix_validation"
+mkdir -p "$OUT_DIR"
+LOG="$OUT_DIR/run.log"
+exec >"$LOG" 2>&1
+
+echo "=== evaluator-fix validation — $(date) ==="
+hostname
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+# CUDA libs needed at import time (method_scannet.streaming -> Mask3D ->
+# MinkowskiEngine -> libcusparse.so.11), even though the eval itself is CPU.
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
+cd "$PROJECT_ROOT"
+
+AUTHOR_JSON="$PROJECT_ROOT/audit/official_centerpoint_ref/author_json/infos_val_10sweeps_withvelo_filter_True.json"
+OURS_JSON="$PROJECT_ROOT/audit/official_centerpoint_ref/nusc_submission/pred_instances_3d/results_nusc.json"
+
+for f in "$AUTHOR_JSON" "$OURS_JSON"; do
+  if [ ! -s "$f" ]; then
+    echo "ABORT: missing input JSON $f"
+    exit 1
+  fi
+done
+
+echo "=== STEP 1: unit tests (F1-F5) — $(date) ==="
+python -u audit/test_evaluator_fix.py
+UNIT_RC=$?
+echo "unit tests exit code: $UNIT_RC"
+if [ $UNIT_RC -ne 0 ]; then
+  echo "ABORT: unit tests failed — skipping regression tests."
+  exit 1
+fi
+
+echo "=== STEP 2: regression Test B (author JSON -> corrected custom) — $(date) ==="
+python -u audit/reeval_corrected_custom.py \
+  --json "$AUTHOR_JSON" --out "$OUT_DIR/test_B_author_json"
+RC_B=$?
+echo "Test B exit code: $RC_B"
+
+echo "=== STEP 3: regression Test D (our 10-sweep JSON -> corrected custom) — $(date) ==="
+python -u audit/reeval_corrected_custom.py \
+  --json "$OURS_JSON" --out "$OUT_DIR/test_D_our_10sweep"
+RC_D=$?
+echo "Test D exit code: $RC_D"
+
+echo "=== done — $(date) ==="
+if [ $RC_B -ne 0 ] || [ $RC_D -ne 0 ]; then exit 1; fi
+echo "=== exit 0 ==="

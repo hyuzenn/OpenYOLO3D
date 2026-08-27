@@ -71,8 +71,16 @@ def evaluate(
     gt_boxes: EvalBoxes,
     output_dir: str,
     config_name: str = "detection_cvpr_2019",
+    nusc=None,
 ) -> dict:
     """Run mAP + TP metrics + NDS, mirroring DetectionEval's main loop.
+
+    When `nusc` (a NuScenes instance) is given, pred and GT are filtered with
+    the official devkit pipeline exactly as DetectionEval.__init__ does:
+    add_center_dist (relative ego_translation) + filter_eval_boxes (strict
+    `<` range, num_pts==0 drop, bike-rack drop). Without `nusc` the legacy
+    range-only `_filter_by_range` is used (50-sample mini/trainval mixed
+    path, where no single NuScenes object covers all tokens).
 
     Writes:
       - {output_dir}/eval_summary.json   serialized DetectionMetrics
@@ -82,8 +90,15 @@ def evaluate(
     os.makedirs(output_dir, exist_ok=True)
     cfg = config_factory(config_name)
 
-    pred_boxes = _filter_by_range(pred_boxes, cfg.class_range)
-    gt_boxes = _filter_by_range(gt_boxes, cfg.class_range)
+    if nusc is not None:
+        from nuscenes.eval.common.loaders import add_center_dist, filter_eval_boxes
+        pred_boxes = filter_eval_boxes(nusc, add_center_dist(nusc, pred_boxes),
+                                       cfg.class_range)
+        gt_boxes = filter_eval_boxes(nusc, add_center_dist(nusc, gt_boxes),
+                                     cfg.class_range)
+    else:
+        pred_boxes = _filter_by_range(pred_boxes, cfg.class_range)
+        gt_boxes = _filter_by_range(gt_boxes, cfg.class_range)
 
     metrics = DetectionMetrics(cfg)
     metric_data_list = {}
