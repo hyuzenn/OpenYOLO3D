@@ -1,0 +1,69 @@
+#!/bin/bash
+#PBS -N outdoor_mot_compare
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=08:00:00
+#PBS -j oe
+
+# =============================================================================
+# E1 — MOT-metric comparison for OV-TCS validation (nuScenes val, cache replay).
+#
+# Replays the gravity-corrected CenterPoint cache through the frozen baseline
+# pipeline (class-agnostic association, ego + global arms) and computes
+# HOTA/DetA/AssA + IDF1/IDP/IDR + MOTA/MOTP per scene against nuScenes GT
+# instance tokens, plus the official devkit AMOTA/AMOTP (full runs only).
+# No new GPU inference; no existing pipeline code modified (the new evaluator
+# lives in the claude-md-update worktree and is injected via PYTHONPATH).
+#
+# Smoke:  qsub -v SCENE_LIMIT=5,DEVKIT=0 scripts/run_outdoor_mot_compare.pbs
+# Full:   qsub -v SCENE_LIMIT=0,DEVKIT=1 scripts/run_outdoor_mot_compare.pbs
+# =============================================================================
+
+# The production pipeline (global associator, association_frame, ...) lives as
+# UNCOMMITTED state in the main checkout — the frozen numbers came from it, so
+# E1 must run against exactly that code. We therefore run FROM the main
+# checkout, but invoke the new evaluator BY PATH from the worktree (script
+# invocation puts the script's own dir on sys.path, not the cwd, so
+# PYTHONPATH=$MAIN resolves method_scannet to the live main-checkout package
+# and nothing in the user's checkout is modified or shadowed).
+MAIN=/home/rintern16/OpenYOLO3D
+WORKTREE=$MAIN/.claude/worktrees/claude-md-update
+cd "$MAIN"
+export PYTHONPATH=$MAIN:${PYTHONPATH:-}
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
+# Self-contained E1 artifact dir (integration into STATE.md/tracker deferred —
+# per instruction, this run touches nothing outside its own run dir).
+EXP=e1_outdoor_mot_compare
+N=$(printf '%02d' $(($(ls -d $MAIN/results/${EXP}_v* 2>/dev/null | wc -l) + 1)))
+RUN_DIR=$MAIN/results/${EXP}_v${N}
+mkdir -p "$RUN_DIR/outputs"
+LOG="$RUN_DIR/run.log"
+exec >"$LOG" 2>&1
+
+SCENE_LIMIT=${SCENE_LIMIT:-0}
+DEVKIT=${DEVKIT:-1}
+EXTRA=""
+[ "$SCENE_LIMIT" -gt 0 ] && EXTRA="--scene-limit $SCENE_LIMIT"
+[ "$DEVKIT" = "1" ] && EXTRA="$EXTRA --devkit-eval"
+
+echo "E1 outdoor_mot_compare  scene_limit=$SCENE_LIMIT devkit=$DEVKIT"
+echo "worktree rev: $(git -C $WORKTREE rev-parse HEAD)"
+echo "main checkout rev: $(git -C $MAIN rev-parse HEAD) (+$(git -C $MAIN status --short | wc -l) uncommitted files — the live pipeline)"
+cp configs/nuscenes_trainval.yaml "$RUN_DIR/config.yaml"
+cp "$WORKTREE/method_scannet/streaming/eval_mot_compare_outdoor.py" \
+   "$RUN_DIR/evaluator_snapshot.py"
+
+python -u "$WORKTREE/method_scannet/streaming/eval_mot_compare_outdoor.py" \
+  --cp-cache-dir "$MAIN/results/outdoor_native_temporal_cpcache_thr000_single_gravity" \
+  --output "$RUN_DIR/outputs" \
+  --proposal-source gamma \
+  --arms ego global \
+  $EXTRA
+
+python -u "$WORKTREE/scripts/aggregate_outdoor_mot_compare.py" "$RUN_DIR"
+echo "DONE $RUN_DIR"
