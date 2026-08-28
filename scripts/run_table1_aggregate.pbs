@@ -1,0 +1,34 @@
+#!/bin/bash
+#PBS -N t1_agg
+#PBS -q coss_a6gpu
+#PBS -l select=1:ncpus=8:ngpus=0:mem=64gb:Qlist=a6000
+#PBS -l walltime=04:00:00
+#PBS -j oe
+
+# Table-1 regeneration, phase 4: collect the eight arms, compare to the
+# published values, run the sanity checks, write the audit artifacts.
+# Exits nonzero if anything is flagged -- a flagged run is NOT a pass.
+
+set -u
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:${PATH:-}
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+export OMP_NUM_THREADS=8
+
+AUDIT="${PROJECT_ROOT}/audit/table1_regen_2026-08-28"
+mkdir -p "$AUDIT/logs"
+LOG="$AUDIT/logs/aggregate.${PBS_JOBID%%.*}.log"
+exec >"$LOG" 2>&1
+
+echo "=== Table-1 phase 4: aggregate — $(date) ==="
+hostname
+echo "git HEAD: $(git rev-parse HEAD)"
+python -u "$AUDIT/aggregate_table1.py"
+EC=$?
+echo "=== exit $EC ==="
+exit $EC

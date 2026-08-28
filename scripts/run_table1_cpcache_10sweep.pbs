@@ -99,6 +99,28 @@ print("sweep runtime gate:", "PASS" if ok else "FAIL")
 sys.exit(0 if ok else 1)
 PY
 
+# --- One-scene smoke through the REAL proposal path before committing 8 GPU
+# --- hours. The evaluator catches per-scene exceptions and still exits 0, so a
+# --- broken path otherwise looks like success with an empty cache (this is
+# --- exactly how job 120011 failed). Write to a throwaway cache and require it
+# --- to be non-empty.
+SMOKE_CACHE="$RUN_DIR/smoke_cache"
+rm -rf "$SMOKE_CACHE" "$RUN_DIR/smoke_out"; mkdir -p "$SMOKE_CACHE"
+echo "--- 1-scene proposal smoke ---"
+python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+  --nuscenes-config configs/nuscenes_trainval_multisweep.yaml \
+  --output "$RUN_DIR/smoke_out" --axes baseline --scene-split val \
+  --scene-limit 1 --score-threshold 0.0 --association-threshold-m 2.0 \
+  --proposal-source gamma --cp-cache-dir "$SMOKE_CACHE"
+NSMOKE=$(ls "$SMOKE_CACHE" 2>/dev/null | wc -l)
+echo "smoke cache files: $NSMOKE"
+if [ "$NSMOKE" -lt 10 ]; then
+  echo "ABORT: 1-scene smoke produced $NSMOKE cached samples. Proposal path is broken;"
+  echo "       not spending GPU hours on an empty cache. See SCENE FAILED lines above."
+  exit 4
+fi
+echo "--- smoke OK, starting full build ---"
+
 python -u -m method_scannet.streaming.nuscenes_native_evaluator \
   --nuscenes-config configs/nuscenes_trainval_multisweep.yaml \
   --output          "$RUN_DIR/outputs" \
@@ -111,6 +133,15 @@ python -u -m method_scannet.streaming.nuscenes_native_evaluator \
 EC=$?
 
 date +"%F %T end"
-echo "cache file count: $(ls "$CACHE_DIR" 2>/dev/null | wc -l)  (expect 6019)"
+NCACHE=$(ls "$CACHE_DIR" 2>/dev/null | wc -l)
+echo "cache file count: $NCACHE  (expect 6019)"
+NFAIL=$(grep -c "SCENE FAILED" "$LOG" || true)
+echo "scene failures: $NFAIL"
+# The evaluator swallows per-scene exceptions and still returns 0, so its exit
+# code alone is not evidence of success. Require a complete cache.
+if [ "$NCACHE" -ne 6019 ]; then
+  echo "=== INCOMPLETE: $NCACHE/6019 cached. Job exit was $EC but this is a FAILURE. ==="
+  exit 5
+fi
 echo "=== exit $EC ==="
 exit $EC

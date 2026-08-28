@@ -605,12 +605,17 @@ class NativeTemporalNuScenesEvaluator:
         if self.cp is None:
             raise RuntimeError(
                 f"no cached proposals for {sample_token[:8]} and cp_proposals is None")
-        # loader._load gives byte-identical single-sweep input to the anchor.
-        item = self.loader._load(sample_token)
-        pc = item["point_cloud"]
         nusc = self.loader.nusc
-        lidar_sd = nusc.get("sample_data", nusc.get("sample", sample_token)["data"]["LIDAR_TOP"])
+        sample = nusc.get("sample", sample_token)
+        lidar_sd = nusc.get("sample_data", sample["data"]["LIDAR_TOP"])
         lidar_cs = nusc.get("calibrated_sensor", lidar_sd["calibrated_sensor_token"])
+        # CenterPoint is LiDAR-only, so load just the point cloud. loader._load()
+        # would additionally read six camera JPEGs, and this dataset copy has no
+        # camera data at all (data/nuscenes/samples/ holds LIDAR_TOP only), which
+        # made every scene die with FileNotFoundError. This is the same call
+        # _load() makes internally, with identically derived arguments, so the
+        # points handed to CenterPoint are unchanged.
+        pc = self.loader._load_lidar_ego(sample, lidar_sd, lidar_cs)
         T_lidar_to_ego = transform_matrix(lidar_cs["translation"], Quaternion(lidar_cs["rotation"]))
         _set_mm_scope("mmdet3d")
         out = self.cp.generate(pc, T_lidar_to_ego,
