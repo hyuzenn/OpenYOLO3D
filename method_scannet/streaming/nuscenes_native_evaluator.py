@@ -1325,9 +1325,14 @@ def main():
 
     print("Loading nuScenes ...", flush=True)
     loader = NuScenesLoader(config_path=args.nuscenes_config)
-    loader.multi_sweep = False
-    loader.num_sweeps = 1
-    print(f"  scenes={len(loader.nusc.scene)} samples={len(loader.nusc.sample)}", flush=True)
+    # Sweep aggregation now follows the config instead of being forced off here.
+    # configs/nuscenes_trainval.yaml still says multi_sweep:false/num_sweeps:1,
+    # so the historical single-sweep runs reproduce byte-for-byte; the 10-sweep
+    # Table-1 protocol selects configs/nuscenes_trainval_multisweep.yaml, which
+    # is the input distribution the CenterPoint checkpoint was trained for.
+    print(f"  scenes={len(loader.nusc.scene)} samples={len(loader.nusc.sample)} "
+          f"multi_sweep={loader.multi_sweep} num_sweeps={loader.num_sweeps}",
+          flush=True)
 
     cp = None
     if args.proposal_source == "gamma" and not args.no_gpu:

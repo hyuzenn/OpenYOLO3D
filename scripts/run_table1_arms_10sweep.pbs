@@ -1,0 +1,108 @@
+#!/bin/bash
+#PBS -N t1_arms10
+#PBS -q coss_a6gpu
+#PBS -l select=1:ncpus=8:ngpus=0:mem=64gb:Qlist=a6000
+#PBS -l walltime=24:00:00
+#PBS -j oe
+
+# Table-1 regeneration, phase 2: the six mAP/NDS-bearing arms, replayed on the
+# NEW 10-sweep CenterPoint cache built by scripts/run_table1_cpcache_10sweep.pbs.
+#
+# Arms (per association frame ego|global), exactly the Table-1 definitions:
+#   gamma_<frame>  Baseline (unfiltered)   --axes baseline
+#   retro_<frame>  Confirmation N=3        --axes phase1 --m11-N 3 --retro-emission
+#   ctrl_<frame>   Control (threshold)     --axes baseline --proposal-score-threshold THR
+#
+# Flags are copied verbatim from the runs that produced the published table
+# (scripts/run_e1_grid.pbs gamma_* and scripts/run_e2c_retro_thrmatch.pbs).
+# The ONLY change is --cp-cache-dir, i.e. the detector input distribution.
+# The threshold-matching RULE is unchanged (scripts/e2_thrmatch_pick.py, match
+# the retro arm's emitted box count); the threshold VALUE is re-derived because
+# the box budget is a property of the new detections.
+#
+# GPU: none. Replay hits the proposal cache, so loader._load() is never called
+# and no point cloud is read; the --nuscenes-config sweep setting is inert here
+# and is passed only to document provenance.
+
+set -u
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:${PATH:-}
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+
+AUDIT="${PROJECT_ROOT}/audit/table1_regen_2026-08-28"
+RUN_DIR="${AUDIT}/phase2_arms"
+CACHE="${PROJECT_ROOT}/results/outdoor_native_temporal_cpcache_thr000_10sweep_gravity"
+mkdir -p "$RUN_DIR/cells"
+LOG="$RUN_DIR/run.${PBS_JOBID%%.*}.log"
+exec >"$LOG" 2>&1
+
+echo "== Table-1 phase 2: arms on 10-sweep cache  $(date)  host=$(hostname)"
+echo "== git HEAD : $(git rev-parse HEAD)"
+echo "== cache    : $CACHE  ($(ls "$CACHE" | wc -l) files)"
+
+NCACHE=$(ls "$CACHE" 2>/dev/null | wc -l)
+if [ "$NCACHE" -ne 6019 ]; then
+  echo "ABORT: cache has $NCACHE files, expected 6019. Phase 1 incomplete."
+  exit 2
+fi
+
+COMMON=(--nuscenes-config configs/nuscenes_trainval_multisweep.yaml
+        --proposal-source gamma --cp-cache-dir "$CACHE"
+        --no-gpu --collect-track-metrics)
+
+run_cell () {  # $1=cell dir, $2...=extra args
+  local CELL="$1"; shift
+  if compgen -G "$CELL"/axis_*/metrics.json >/dev/null; then
+    echo "== [$(basename "$CELL")] done, skip"; return 0
+  fi
+  echo "== [$(basename "$CELL")] replay $*  $(date)"
+  python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+    --output "$CELL" "${COMMON[@]}" "$@" \
+    || { echo "== [$(basename "$CELL")] REPLAY FAILED"; return 1; }
+  python -u scripts/e1_gt_metrics.py --cell "$CELL" \
+    || echo "== [$(basename "$CELL")] GT METRICS FAILED"
+}
+
+for FRAME in ego global; do
+  BASE="$RUN_DIR/cells/gamma_${FRAME}"
+  RETRO="$RUN_DIR/cells/retro_${FRAME}"
+  CTRL="$RUN_DIR/cells/ctrl_${FRAME}"
+
+  # 1. unfiltered baseline
+  run_cell "$BASE" --axes baseline --association-frame "$FRAME" || continue
+
+  # 2. confirmation gate, N=3, retrospective emission
+  run_cell "$RETRO" --axes phase1 --m11-N 3 --retro-emission \
+                    --association-frame "$FRAME" || continue
+
+  # 3. count-matched score-threshold control
+  TARGET=$(python -c "
+import json,glob
+print(json.load(open(glob.glob('$RETRO/axis_*/metrics.json')[0]))['n_pred_boxes_total'])")
+  echo "== [ctrl_$FRAME] target=$TARGET boxes (from retro_$FRAME)  $(date)"
+  TJ="$RUN_DIR/threshold_${FRAME}.json"
+  # emission is association-independent, so the ego baseline tracks define the
+  # score ranking for both frames -- same convention as run_e2c_retro_thrmatch.pbs
+  python -u scripts/e2_thrmatch_pick.py \
+      --tracks "$RUN_DIR/cells/gamma_ego/axis_baseline/tracks.json" \
+      --target "$TARGET" --out "$TJ" \
+      || { echo "== [ctrl_$FRAME] PICK FAILED"; continue; }
+  THR=$(python -c "import json;print(json.load(open('$TJ'))['threshold'])")
+
+  run_cell "$CTRL" --axes baseline --association-frame "$FRAME" \
+                   --proposal-score-threshold "$THR" || continue
+
+  python -c "
+import json,glob,sys
+m=json.load(open(glob.glob('$CTRL/axis_*/metrics.json')[0]))
+n,t=m['n_pred_boxes_total'],$TARGET
+print(f'== [ctrl_$FRAME] MATCH emitted={n} target={t} rel_err={(n-t)/t:+.4%}')
+sys.exit(0 if abs(n-t)/t<=0.01 else 3)" || echo "== [ctrl_$FRAME] WARNING count match outside +-1%"
+done
+
+echo "== phase 2 done  $(date)"

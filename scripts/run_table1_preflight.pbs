@@ -1,0 +1,41 @@
+#!/bin/bash
+#PBS -N t1_preflight
+#PBS -q coss_a6gpu
+#PBS -l select=1:ncpus=8:ngpus=0:mem=64gb:Qlist=a6000
+#PBS -l walltime=04:00:00
+#PBS -j oe
+
+# Table-1 regeneration preflight. CPU only, and deliberately on coss_a6gpu so it
+# does NOT consume the single coss_agpu running slot that phase 1 is queued for.
+
+set -u
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:${PATH:-}
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
+
+AUDIT="${PROJECT_ROOT}/audit/table1_regen_2026-08-28"
+mkdir -p "$AUDIT/logs"
+LOG="$AUDIT/logs/preflight.${PBS_JOBID%%.*}.log"
+exec >"$LOG" 2>&1
+
+echo "=== Table-1 preflight — $(date) ==="
+hostname
+python -u "$AUDIT/preflight.py"
+EC1=$?
+echo "=== preflight exit $EC1 ==="
+
+echo
+echo "=== phase-4 aggregator dry run against the OLD cells ==="
+python -u "$AUDIT/smoke_aggregate.py"
+EC2=$?
+echo "=== smoke exit $EC2 ==="
+
+EC=$(( EC1 != 0 || EC2 != 0 ))
+echo "=== exit $EC ==="
+exit $EC
