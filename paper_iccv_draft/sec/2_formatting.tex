@@ -146,8 +146,8 @@ baseline.
 $150$ scenes at the $2$\,Hz annotated-frame rate. Detections come from a
 pretrained CenterPoint~\cite{centerpoint} detector whose per-frame output is
 computed once and \emph{frozen}; every arm of every experiment replays the
-same stored detections ($1{,}029{,}380$ boxes over the split; mAP $0.3408$,
-NDS $0.3150$), so any metric difference between arms is attributable to the
+same stored detections ($718{,}786$ boxes over the split; mAP $0.5613$,
+NDS $0.6480$), so any metric difference between arms is attributable to the
 selection rule, not to detector variance.
 
 \noindent\textbf{Indoor.} The ScanNet200~\cite{scannet200} validation split,
@@ -167,8 +167,8 @@ non-temporal score rule and against the other established temporal rule.
 
 \noindent\textbf{Detection-budget-matched control.} A score threshold on the
 frozen baseline detections is calibrated so the control emits \emph{exactly} as
-many boxes as the temporal module --- $360{,}309$ in the sensor frame
-(threshold $0.1875$), $754{,}500$ in the world frame ($0.1211$), both with zero
+many boxes as the temporal module --- $257{,}259$ in the sensor frame
+(threshold $0.2214$), $517{,}566$ in the world frame ($0.1272$), both with zero
 count error. The match is exact because the count is a step function of the
 threshold whose breakpoints are the observed scores: the matched threshold is
 the $K$-th largest observed score, ties resolved upward so the count never

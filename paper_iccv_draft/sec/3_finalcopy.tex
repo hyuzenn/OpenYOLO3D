@@ -50,52 +50,54 @@ The unfiltered baseline is shown for reference only and is not budget-matched.}
 
 Table~\ref{tab:detmatch} compares confirmation against controls calibrated to
 the identical box count, so the comparison is free of the volume confound: all
-matched arms emit $360{,}309$ boxes in the sensor frame and $754{,}500$ in the
+matched arms emit $257{,}259$ boxes in the sensor frame and $517{,}566$ in the
 world frame, from the same frozen detector output.
 
 \noindent\textbf{Association accuracy improves.} Against the threshold control
-AssA rises from $0.2044$ to $0.2535$ in the sensor frame and from $0.4175$ to
-$0.4314$ in the world frame, both intervals excluding zero
-($[{+}0.0370,{+}0.0615]$ and $[{+}0.0086,{+}0.0195]$). Per scene the
-sensor-frame gain averages $+0.0340$ --- a different estimator from the
-$0.0491$ difference of aggregates --- and holds in $110$ of $150$ scenes
-(Wilcoxon $p{=}4.6{\times}10^{-13}$, rank-biserial $0.68$).
+AssA rises from $0.2119$ to $0.2744$ in the sensor frame and from $0.5146$ to
+$0.5293$ in the world frame, both intervals excluding zero
+($[{+}0.0471,{+}0.0785]$ and $[{+}0.0098,{+}0.0203]$). Per scene the
+sensor-frame gain averages $+0.0460$ --- a different estimator from the
+$0.0625$ difference of aggregates --- and holds in $113$ of $150$ scenes
+(Wilcoxon $p{=}2.6{\times}10^{-15}$, rank-biserial $0.74$).
 
 \noindent\textbf{Class-aware tracking accuracy rises.} AMOTA goes from
-$0.0547$ to $0.0887$ (sensor) and $0.1655$ to $0.2033$ (world), the largest
+$0.0942$ to $0.1338$ (sensor) and $0.3137$ to $0.3864$ (world), the largest
 relative effect we measure. AMOTA does not admit the per-scene resampling used
 for the other metrics (Sec.~\ref{sec:stats}), so this is a point estimate; what
 we rely on is that it moves the same way in both frames and under the
 comparisons below.
 
 \noindent\textbf{Detection-oriented metrics fall.} At the same budget, mAP
-drops $0.3324\!\to\!0.2023$ (sensor) and $0.3396\!\to\!0.2900$ (world), DetA
-drops $0.2184\!\to\!0.1537$ ($[{-}0.0700,{-}0.0593]$) and
-$0.1282\!\to\!0.1196$ ($[{-}0.0101,{-}0.0072]$), and detection recall drops
-$0.5182\!\to\!0.3859$ ($[{-}0.1483,{-}0.1170]$) and $0.5668\!\to\!0.5326$
-($[{-}0.0404,{-}0.0286]$); mAP is a dataset-level metric and is reported as a
+drops $0.5504\!\to\!0.3009$ (sensor) and $0.5598\!\to\!0.4921$ (world), DetA
+drops $0.3570\!\to\!0.2232$ ($[{-}0.1408,{-}0.1267]$) and
+$0.2133\!\to\!0.1973$ ($[{-}0.0183,{-}0.0138]$), and detection recall drops
+$0.6160\!\to\!0.4287$ ($[{-}0.2087,{-}0.1665]$) and $0.6550\!\to\!0.6141$
+($[{-}0.0477,{-}0.0350]$); mAP is a dataset-level metric and is reported as a
 point estimate. Because HOTA is the geometric mean of DetA
 and AssA, the DetA loss dominates and aggregate HOTA falls as well
-($[{-}0.0180,{-}0.0103]$ sensor; $[{-}0.0059,{-}0.0027]$ world). The trade-off
+($[{-}0.0323,{-}0.0231]$ sensor; $[{-}0.0100,{-}0.0063]$ world). The trade-off
 is explicit: the module buys association quality with detection quality rather
 than adding it on top.
 
-\noindent\textbf{IDF1 shows no detectable sensor-frame difference.} The
-sensor-frame IDF1 interval spans zero ($[{-}0.0046,{+}0.0064]$; paired
-$p{=}0.45$, $77/150$ scenes), so we report no difference there. In the world
+\noindent\textbf{IDF1 shows no reliable sensor-frame difference.} The
+sensor-frame IDF1 interval spans zero ($[{-}0.0108,{+}0.0037]$), while the
+paired per-scene test does reach significance ($p{=}7.3{\times}10^{-3}$,
+$65/150$ scenes); the dataset-level and per-scene estimators disagree, so we
+claim no reliable difference there. In the world
 frame IDF1 is slightly \emph{lower} for the confirmation module
-($[{-}0.0091,{-}0.0047]$).
+($[{-}0.0135,{-}0.0070]$).
 
 \noindent\textbf{Against confidence accumulation, the two rules split the
 metrics.} The accumulation control emits the same boxes and is the comparison
 that isolates \emph{which} temporal rule is used rather than whether one is
 used at all. Confirmation attains higher AssA in both frames
-($0.2217\!\to\!0.2535$ sensor, $0.4190\!\to\!0.4314$ world; intervals
-$[{+}0.0249,{+}0.0388]$ and $[{+}0.0089,{+}0.0163]$), and accumulation is ahead
+($0.2315\!\to\!0.2744$ sensor, $0.5110\!\to\!0.5293$ world; intervals
+$[{+}0.0337,{+}0.0524]$ and $[{+}0.0146,{+}0.0225]$), and accumulation is ahead
 on every other measured axis, also with intervals excluding zero: HOTA
-($[{-}0.0084,{-}0.0068]$ sensor, $[{-}0.0049,{-}0.0039]$ world), DetA
-($[{-}0.0393,{-}0.0315]$, $[{-}0.0092,{-}0.0074]$), IDF1
-($[{-}0.0076,{-}0.0054]$, $[{-}0.0099,{-}0.0084]$) and DetRe. Neither rule
+($[{-}0.0157,{-}0.0128]$ sensor, $[{-}0.0065,{-}0.0052]$ world), DetA
+($[{-}0.0805,{-}0.0645]$, $[{-}0.0162,{-}0.0131]$), IDF1
+($[{-}0.0115,{-}0.0071]$, $[{-}0.0123,{-}0.0099]$) and DetRe. Neither rule
 dominates: they occupy different points of the association--detection
 trade-off, and the choice between them is a choice of which axis to spend.
 Because mAP was not computed for this control, we make no mAP-based claim
