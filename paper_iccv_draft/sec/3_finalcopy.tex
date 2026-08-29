@@ -18,22 +18,23 @@ $N{-}1$ frames ($1.0$\,s at $2$\,Hz).
 Frame & Arm & Boxes & mAP & NDS & HOTA & AssA & DetA & DetRe & IDF1 & AMOTA \\
 \midrule
 \multirow{4}{*}{Sensor}
- & Baseline (unfiltered)      & 1{,}029{,}380 & 0.3408 & 0.3150 & 0.1372 & 0.1896 & 0.1007 & 0.5904 & 0.0759 & 0.0501 \\
- & Control (threshold)       &   360{,}309 & \textbf{0.3324} & \textbf{0.3110} & \textbf{0.2098} & 0.2044 & \textbf{0.2184} & \textbf{0.5182} & 0.1517 & 0.0547 \\
- & Control (accumulation)     &   360{,}309 & --- & --- & 0.2036 & 0.2217 & 0.1890 & 0.4601 & 0.1596 & 0.0701 \\
- & Confirmation ($N{=}3$)     &   360{,}309 & 0.2023 & 0.2518 & 0.1960 & \textbf{0.2535} & 0.1537 & 0.3859 & 0.1531 & \textbf{0.0887} \\
+ & Baseline (unfiltered)      &   718{,}786 & 0.5613 & 0.6480 & 0.1793 & 0.2007 & 0.1620 & 0.6690 & 0.1112 & 0.0858 \\
+ & Control (threshold)       &   257{,}259 & \textbf{0.5504} & \textbf{0.6450} & \textbf{0.2735} & 0.2119 & \textbf{0.3570} & \textbf{0.6160} & 0.2082 & 0.0942 \\
+ & Control (accumulation)     &   257{,}259 & --- & --- & 0.2604 & 0.2315 & 0.2954 & 0.5350 & 0.2146 & 0.1101 \\
+ & Confirmation ($N{=}3$)     &   257{,}259 & 0.3009 & 0.5229 & 0.2462 & \textbf{0.2744} & 0.2232 & 0.4287 & 0.2054 & \textbf{0.1338} \\
 \midrule
 \multirow{4}{*}{World}
- & Baseline (unfiltered)      & 1{,}029{,}380 & 0.3408 & 0.3150 & 0.2011 & 0.4089 & 0.0995 & 0.5838 & 0.1764 & 0.1580 \\
- & Control (threshold)       &   754{,}500 & \textbf{0.3396} & \textbf{0.3143} & 0.2307 & 0.4175 & 0.1282 & 0.5668 & 0.2190 & 0.1655 \\
- & Control (accumulation)     &   754{,}500 & --- & --- & 0.2307 & 0.4190 & 0.1278 & 0.5650 & 0.2212 & 0.1612 \\
- & Confirmation ($N{=}3$)     &   754{,}500 & 0.2900 & 0.3096 & 0.2263 & \textbf{0.4314} & 0.1196 & 0.5326 & 0.2121 & \textbf{0.2033} \\
+ & Baseline (unfiltered)      &   718{,}786 & 0.5613 & 0.6480 & 0.2837 & 0.5014 & 0.1613 & 0.6663 & 0.2715 & 0.2896 \\
+ & Control (threshold)       &   517{,}566 & \textbf{0.5598} & \textbf{0.6479} & 0.3305 & 0.5146 & 0.2133 & 0.6550 & 0.3391 & 0.3137 \\
+ & Control (accumulation)     &   517{,}565 & --- & --- & 0.3282 & 0.5110 & 0.2118 & 0.6511 & 0.3399 & 0.2931 \\
+ & Confirmation ($N{=}3$)     &   517{,}566 & 0.4921 & 0.6200 & 0.3224 & \textbf{0.5293} & 0.1973 & 0.6141 & 0.3288 & \textbf{0.3864} \\
 \bottomrule
 \end{tabular}
 \caption{\textbf{Detection-budget-matched comparison} on nuScenes val
 ($150$ scenes, frozen CenterPoint detections, retrospective emission). All
-three matched arms emit exactly the same number of boxes: a static score
-threshold ($0.1875$ sensor, $0.1211$ world), a confidence-accumulation control
+three matched arms emit the same number of boxes (the world-frame accumulation
+control differs by one): a static score
+threshold ($0.2214$ sensor, $0.1272$ world), a confidence-accumulation control
 in the manner of~\cite{cbmot}, and confirmation. At equal detection budget,
 confirmation attains the highest association accuracy (AssA) and class-aware
 tracking accuracy (AMOTA) in both frames, and the lowest detection-oriented
