@@ -1,0 +1,91 @@
+{
+  "1_multisweeps_removed": {
+    "pass": true,
+    "detail": {
+      "steps": [
+        "LoadPointsFromFile",
+        "MultiScaleFlipAug3D",
+        "Pack3DDetInputs"
+      ],
+      "dropped": [
+        "LoadPointsFromMultiSweeps"
+      ]
+    }
+  },
+  "2_point_count_preserved": {
+    "pass": true,
+    "detail": {
+      "in": 20000,
+      "out": 20000,
+      "ratio": 1.0
+    }
+  },
+  "3_five_channels": {
+    "pass": true,
+    "detail": {
+      "channels": 5
+    }
+  },
+  "4_dt_values_preserved": {
+    "pass": true,
+    "detail": {
+      "in_distinct": 10,
+      "out_distinct": 10,
+      "out_values": [
+        0.0,
+        0.05000000074505806,
+        0.10000000149011612,
+        0.15000000596046448,
+        0.20000000298023224,
+        0.25,
+        0.30000001192092896,
+        0.3499999940395355,
+        0.4000000059604645,
+        0.44999998807907104
+      ]
+    }
+  },
+  "5_dt_not_zeroed": {
+    "pass": true,
+    "detail": {
+      "max": 0.44999998807907104,
+      "mean": 0.22523999214172363
+    }
+  },
+  "6_single_velocity_rotation": {
+    "pass": true,
+    "detail": {
+      "rotations_in_native_evaluator": 1,
+      "detection_box_dict_passthrough": true
+    }
+  },
+  "7_official_model_path": {
+    "pass": true,
+    "detail": {
+      "detector": "CenterPoint",
+      "head": "CenterHead",
+      "coder_score_threshold": 0.1,
+      "nms_type": "circle",
+      "post_max_size": 83,
+      "max_per_img": 500,
+      "min_radius": [
+        4,
+        12,
+        10,
+        1,
+        0.85,
+        0.175
+      ]
+    }
+  },
+  "8_size_is_wlh": {
+    "pass": true,
+    "detail": {
+      "size": [
+        1.9,
+        4.6,
+        1.7
+      ]
+    }
+  }
+}

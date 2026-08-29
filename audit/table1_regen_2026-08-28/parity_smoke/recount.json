@@ -1,0 +1,63 @@
+{
+  "n_samples": 200,
+  "ours_raw_total": 19630,
+  "ours_raw_per_sample": 98.15,
+  "ours_after_class_range": 13380,
+  "ours_after_class_range_per_sample": 66.9,
+  "anchor_total": 13095,
+  "anchor_per_sample": 65.475,
+  "count_rel_err_vs_anchor": 0.021764032073310423,
+  "per_class": {
+    "car": {
+      "ours_ranged": 2611,
+      "anchor": 2517,
+      "rel_err": 0.03734604688120779
+    },
+    "truck": {
+      "ours_ranged": 682,
+      "anchor": 710,
+      "rel_err": -0.03943661971830986
+    },
+    "construction_vehicle": {
+      "ours_ranged": 863,
+      "anchor": 860,
+      "rel_err": 0.0034883720930232558
+    },
+    "bus": {
+      "ours_ranged": 244,
+      "anchor": 247,
+      "rel_err": -0.012145748987854251
+    },
+    "trailer": {
+      "ours_ranged": 385,
+      "anchor": 377,
+      "rel_err": 0.021220159151193633
+    },
+    "barrier": {
+      "ours_ranged": 738,
+      "anchor": 724,
+      "rel_err": 0.019337016574585635
+    },
+    "motorcycle": {
+      "ours_ranged": 1247,
+      "anchor": 1167,
+      "rel_err": 0.06855184233076264
+    },
+    "bicycle": {
+      "ours_ranged": 2873,
+      "anchor": 2851,
+      "rel_err": 0.007716590669940372
+    },
+    "pedestrian": {
+      "ours_ranged": 1534,
+      "anchor": 1551,
+      "rel_err": -0.01096067053513862
+    },
+    "traffic_cone": {
+      "ours_ranged": 2203,
+      "anchor": 2091,
+      "rel_err": 0.053562888570062174
+    }
+  },
+  "gate_count_within_10pct": true
+}

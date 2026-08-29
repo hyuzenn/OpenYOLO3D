@@ -437,8 +437,11 @@ def _detection_box_dict(global_id: int,
     """Build a DetectionBox-shaped dict for nuScenes-devkit eval.
 
     bbox_lidar: [x, y, z, dx, dy, dz, yaw, (vx, vy)] from CenterPoint.
-    We use dx, dy, dz as size in nuScenes convention (w, l, h) — exactly
-    matches CenterPoint output ordering.
+    mmdet3d's LiDARInstance3DBoxes dims are (x_size, y_size, z_size) =
+    (length, width, height); nuScenes `size` is (width, length, height). So dx
+    and dy must be swapped on the way out, exactly as mmdet3d itself does at
+    evaluation/metrics/nuscenes_metric.py:590
+    (`nus_box_dims = box_dims[:, [1, 0, 2]]`).
 
     velocity_global: global-frame (vx, vy) if the caller already rotated the
     LiDAR-frame CenterPoint velocity (nuScenes eval expects global frame).
@@ -453,7 +456,8 @@ def _detection_box_dict(global_id: int,
     return {
         "sample_token": sample_token,
         "translation": [float(x) for x in centroid_global],
-        "size": [float(bbox_lidar[3]), float(bbox_lidar[4]), float(bbox_lidar[5])],
+        # (l, w, h) -> (w, l, h); cf. mmdet3d nuscenes_metric.py:590
+        "size": [float(bbox_lidar[4]), float(bbox_lidar[3]), float(bbox_lidar[5])],
         "rotation": rotation_global_wxyz,  # list[float] length 4
         "velocity": [vx, vy],
         "ego_translation": [float(x) for x in ego_translation],

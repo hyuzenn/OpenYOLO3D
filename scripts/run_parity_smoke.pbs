@@ -1,0 +1,90 @@
+#!/bin/bash
+#PBS -N cp_parity_smoke
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=04:00:00
+#PBS -j oe
+
+# C1/C2 validation gate. Two stages, both cheap:
+#   A. input-pipeline validation (8 assertions, no inference)
+#   B. ~200-sample parity smoke vs the validated 10-sweep CenterPoint anchor
+#
+# This does NOT rebuild the frozen cache and does NOT regenerate Table 1.
+# It writes only into audit/table1_regen_2026-08-28/parity_smoke/ and a
+# throwaway proposal cache inside that directory.
+
+set -u
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+AUDIT="${PROJECT_ROOT}/audit/table1_regen_2026-08-28"
+SMOKE="${AUDIT}/parity_smoke"
+mkdir -p "$SMOKE/run" "$AUDIT/logs"
+LOG="$AUDIT/logs/parity_smoke.${PBS_JOBID%%.*}.log"
+exec >"$LOG" 2>&1
+
+echo "=== C1/C2 parity smoke — $(date) ==="
+hostname
+echo "git HEAD: $(git rev-parse HEAD)"
+git status --porcelain -- adapters method_scannet configs pretrained
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:${PATH:-}
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+export OMP_NUM_THREADS=8
+
+# --- GPU gate: A100 only, never ece-tgpu3 (known CUDA hang) ---------------
+nvidia-smi --query-gpu=name --format=csv,noheader
+GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)
+echo "GPU: $GPU_NAME"
+if [[ "$GPU_NAME" != *A100* ]]; then
+  echo "ABORT: scheduled on '$GPU_NAME', not an A100. Not switching GPU type silently."
+  exit 2
+fi
+if [[ "$(hostname)" == ece-tgpu3* ]]; then
+  echo "ABORT: ece-tgpu3 is excluded (previous CUDA hang)."
+  exit 2
+fi
+
+# --- Stage A: input-pipeline validation -----------------------------------
+echo "--- Stage A: input-pipeline validation ---"
+python -u "$SMOKE/validate_pipeline.py"
+if [ $? -ne 0 ]; then
+  echo "ABORT: input-pipeline validation FAILED. Not running the smoke."
+  exit 3
+fi
+
+# --- Stage B: ~200-sample parity smoke ------------------------------------
+# 5 val scenes (~200 keyframes) through the real harness, gamma source,
+# throwaway cache. Identical flags to the Table-1 baseline arm apart from
+# --scene-limit and --collect-track-metrics (needed to dump pred+GT).
+SMOKE_CACHE="$SMOKE/cache"
+rm -rf "$SMOKE_CACHE" "$SMOKE/run/outputs"; mkdir -p "$SMOKE_CACHE"
+echo "--- Stage B: 5-scene parity smoke ---"
+python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+  --nuscenes-config configs/nuscenes_trainval_multisweep.yaml \
+  --output          "$SMOKE/run/outputs" \
+  --axes            baseline \
+  --scene-split     val \
+  --scene-limit     5 \
+  --score-threshold 0.0 \
+  --association-threshold-m 2.0 \
+  --proposal-source gamma \
+  --collect-track-metrics \
+  --cp-cache-dir    "$SMOKE_CACHE"
+EC=$?
+NCACHE=$(ls "$SMOKE_CACHE" 2>/dev/null | wc -l)
+echo "smoke cache files: $NCACHE (exit $EC)"
+if [ "$NCACHE" -lt 100 ]; then
+  echo "ABORT: smoke produced only $NCACHE samples; proposal path is broken."
+  exit 4
+fi
+
+echo "--- Stage C: compare to anchor ---"
+python -u "$SMOKE/compare_to_anchor.py"
+GATE=$?
+echo "=== gate exit $GATE (0 = PASS) ==="
+exit $GATE

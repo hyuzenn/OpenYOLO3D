@@ -1,0 +1,35 @@
+#!/bin/bash
+#PBS -N cp_parity_probe
+#PBS -q coss_a6gpu
+#PBS -l select=1:ncpus=8:ngpus=0:mem=64gb:Qlist=a6000
+#PBS -l walltime=02:00:00
+#PBS -j oe
+
+# CenterPoint adapter parity audit -- CPU-only, model-free probe.
+# No inference, no checkpoint, no GPU. Read-only over the existing 10-sweep
+# cache and the official anchor JSON. Writes only into the new
+# audit/table1_regen_2026-08-28/parity_probe/ directory.
+
+set -u
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:${PATH:-}
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+export OMP_NUM_THREADS=8
+
+AUDIT="${PROJECT_ROOT}/audit/table1_regen_2026-08-28"
+mkdir -p "$AUDIT/logs" "$AUDIT/parity_probe"
+LOG="$AUDIT/logs/parity_probe.${PBS_JOBID%%.*}.log"
+exec >"$LOG" 2>&1
+
+echo "=== CenterPoint adapter parity probe — $(date) ==="
+hostname
+echo "git HEAD: $(git rev-parse HEAD)"
+python -u "$AUDIT/parity_probe/probe_parity.py"
+EC=$?
+echo "=== exit $EC ==="
+exit $EC

@@ -1,0 +1,188 @@
+{
+  "metrics": {
+    "ours_corrected": {
+      "mAP": 0.34941125301782233,
+      "NDS": 0.4630634193331401,
+      "tp_errors": {
+        "trans_err": 0.46235325505554925,
+        "scale_err": 0.439324177214902,
+        "orient_err": 0.4544505524082321,
+        "vel_err": 0.4866373163720507,
+        "attr_err": 0.27365677070697575
+      },
+      "counts": {
+        "n_pred_boxes": 13380,
+        "n_gt_boxes": 1866,
+        "n_samples": 200
+      }
+    },
+    "anchor": {
+      "mAP": 0.3492054757403088,
+      "NDS": 0.4583118568506226,
+      "tp_errors": {
+        "trans_err": 0.4657758880756381,
+        "scale_err": 0.4399443944248251,
+        "orient_err": 0.5067063232048714,
+        "vel_err": 0.47942873124997853,
+        "attr_err": 0.27105347324000506
+      },
+      "counts": {
+        "n_pred_boxes": 13089,
+        "n_gt_boxes": 1866,
+        "n_samples": 200
+      }
+    }
+  },
+  "comparison": {
+    "n_samples": 200,
+    "counts": {
+      "ours_raw_total": 19630,
+      "ours_raw_per_sample": 98.15,
+      "ours_after_class_range": 0,
+      "ours_after_class_range_per_sample": 0.0,
+      "anchor_total": 13095,
+      "anchor_per_sample": 65.475,
+      "count_rel_err_vs_anchor": -1.0
+    },
+    "score": {
+      "ours": {
+        "n": 19630,
+        "median": 0.14688076078891754,
+        "mean": 0.20990543805567574,
+        "p90": 0.4101334869861604
+      },
+      "anchor": {
+        "n": 13095,
+        "median": 0.15249143540859222,
+        "mean": 0.2288087434079548,
+        "p90": 0.5235743165016175
+      }
+    },
+    "matched_residuals_2m": {
+      "n_matched": 9983,
+      "match_rate_vs_anchor": 0.7623520427644139,
+      "center_distance_m": {
+        "n": 9983,
+        "median": 0.023732424612942008,
+        "mean": 0.10508386404799713,
+        "p90": 0.35884353611322767
+      },
+      "velocity_residual_ms": {
+        "n": 9983,
+        "median": 4.873846124794812e-17,
+        "mean": 0.062051546136176784,
+        "p90": 0.0810169431576435
+      },
+      "abs_yaw_residual_rad": {
+        "n": 9983,
+        "median": 0.05193938759108807,
+        "mean": 0.3292039765112027,
+        "p90": 1.031401480509387
+      },
+      "frac_yaw_gt_pi_over_2": 0.07292397075027547,
+      "size_residual_m": {
+        "n": 9983,
+        "median": 0.03729174733010021,
+        "mean": 0.09931789980278741,
+        "p90": 0.2057801519511654
+      }
+    },
+    "per_class": {
+      "car": {
+        "ours_ranged": 0,
+        "anchor": 2517,
+        "rel_err": -1.0,
+        "matched": 2209,
+        "median_center_m": 0.019902334855687456,
+        "median_vel_ms": 5.4316724446008617e-17,
+        "median_abs_yaw_rad": 0.019157907583133404
+      },
+      "truck": {
+        "ours_ranged": 0,
+        "anchor": 710,
+        "rel_err": -1.0,
+        "matched": 526,
+        "median_center_m": 0.02435454507176924,
+        "median_vel_ms": 1.0578712130401558e-16,
+        "median_abs_yaw_rad": 0.023984631156210634
+      },
+      "construction_vehicle": {
+        "ours_ranged": 0,
+        "anchor": 860,
+        "rel_err": -1.0,
+        "matched": 565,
+        "median_center_m": 0.042920289439352784,
+        "median_vel_ms": 9.871945947061718e-17,
+        "median_abs_yaw_rad": 0.06624379592617125
+      },
+      "bus": {
+        "ours_ranged": 0,
+        "anchor": 247,
+        "rel_err": -1.0,
+        "matched": 214,
+        "median_center_m": 0.02751592522473994,
+        "median_vel_ms": 0.13669706267811424,
+        "median_abs_yaw_rad": 0.007366138439826919
+      },
+      "trailer": {
+        "ours_ranged": 0,
+        "anchor": 377,
+        "rel_err": -1.0,
+        "matched": 242,
+        "median_center_m": 0.030637836203482156,
+        "median_vel_ms": 4.3879753288112355e-17,
+        "median_abs_yaw_rad": 0.05041301590616909
+      },
+      "barrier": {
+        "ours_ranged": 0,
+        "anchor": 724,
+        "rel_err": -1.0,
+        "matched": 522,
+        "median_center_m": 0.03315735075669594,
+        "median_vel_ms": 4.984312850930254e-17,
+        "median_abs_yaw_rad": 0.04078159650895663
+      },
+      "motorcycle": {
+        "ours_ranged": 0,
+        "anchor": 1167,
+        "rel_err": -1.0,
+        "matched": 809,
+        "median_center_m": 0.026403137999599025,
+        "median_vel_ms": 3.980376575967115e-17,
+        "median_abs_yaw_rad": 0.06410658686636195
+      },
+      "bicycle": {
+        "ours_ranged": 0,
+        "anchor": 2851,
+        "rel_err": -1.0,
+        "matched": 2036,
+        "median_center_m": 0.03074622414767555,
+        "median_vel_ms": 3.7833158769598277e-17,
+        "median_abs_yaw_rad": 0.08478735898729939
+      },
+      "pedestrian": {
+        "ours_ranged": 0,
+        "anchor": 1551,
+        "rel_err": -1.0,
+        "matched": 1206,
+        "median_center_m": 0.014448095892770706,
+        "median_vel_ms": 0.006603129569888663,
+        "median_abs_yaw_rad": 0.07073140655699706
+      },
+      "traffic_cone": {
+        "ours_ranged": 0,
+        "anchor": 2091,
+        "rel_err": -1.0,
+        "matched": 1654,
+        "median_center_m": 0.02009655246287575,
+        "median_vel_ms": 1.7159284540389416e-17,
+        "median_abs_yaw_rad": 0.13914163391551027
+      }
+    }
+  },
+  "gates": {
+    "count_within_10pct": false,
+    "median_velocity_residual_lt_0.3": true
+  },
+  "gate_all_pass": false
+}

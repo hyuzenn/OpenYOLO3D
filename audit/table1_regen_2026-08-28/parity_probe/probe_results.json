@@ -1,0 +1,126 @@
+{
+  "P1_test_pipeline_on_a_bin": {
+    "n_points_written": 20000,
+    "n_points_after_pipeline": 199892,
+    "duplication_factor": 9.9946,
+    "dt_channel_in": {
+      "min": 0.0,
+      "max": 0.44999998807907104,
+      "n_distinct": 10
+    },
+    "dt_channel_out": {
+      "min": 0.0,
+      "max": 0.0,
+      "n_distinct": 1
+    },
+    "pipeline": [
+      "LoadPointsFromFile",
+      "LoadPointsFromMultiSweeps",
+      "MultiScaleFlipAug3D",
+      "Pack3DDetInputs"
+    ]
+  },
+  "P23_cache_vs_anchor": {
+    "n_tokens_cache": 6019,
+    "n_tokens_anchor": 6019,
+    "n_tokens_common": 6019,
+    "counts": {
+      "cache_raw_total": 1111841,
+      "cache_raw_per_sample": 184.72188071108158,
+      "cache_after_class_range_total": 739122,
+      "cache_after_class_range_per_sample": 122.79813922578501,
+      "anchor_total": 497475,
+      "anchor_per_sample": 82.65077255358032,
+      "excess_ratio_after_range_filter": 1.4857470224634404
+    },
+    "score": {
+      "cache": {
+        "mean": 0.23290362190771507,
+        "median": 0.16262097656726837,
+        "p90": 0.4923745095729828,
+        "max": 0.956725537776947,
+        "min": 0.10000001639127731,
+        "frac_below_0.2ms": 0.6302142122839507
+      },
+      "anchor": {
+        "mean": 0.2927425534054738,
+        "median": 0.18108153343200684,
+        "p90": 0.7113781929016113,
+        "max": 0.9607713222503662,
+        "min": 0.10000038146972656,
+        "frac_below_0.2ms": 0.548526056585758
+      },
+      "cache_min_is_head_threshold": 0.10000001639127731
+    },
+    "speed_mps": {
+      "cache": {
+        "mean": 0.5834304355133301,
+        "median": 4.715463247779818e-09,
+        "p90": 1.2619284009979115,
+        "max": 18.49805688958759,
+        "min": 8.144246613696035e-10,
+        "frac_below_0.2ms": 0.7836084476107645
+      },
+      "anchor": {
+        "mean": 0.5134614894107513,
+        "median": 2.4183687306113536e-09,
+        "p90": 1.1927150451928288,
+        "max": 17.31830227679414,
+        "min": 8.102548911414008e-10,
+        "frac_below_0.2ms": 0.8335896276194784
+      }
+    },
+    "per_class_counts": {
+      "barrier": {
+        "cache_raw": 126236,
+        "cache_ranged": 51840,
+        "anchor": 45753
+      },
+      "bicycle": {
+        "cache_raw": 110163,
+        "cache_ranged": 83507,
+        "anchor": 65878
+      },
+      "bus": {
+        "cache_raw": 24619,
+        "cache_ranged": 13188,
+        "anchor": 5490
+      },
+      "car": {
+        "cache_raw": 196356,
+        "cache_ranged": 153119,
+        "anchor": 114647
+      },
+      "construction_vehicle": {
+        "cache_raw": 70848,
+        "cache_ranged": 53136,
+        "anchor": 20869
+      },
+      "motorcycle": {
+        "cache_raw": 106376,
+        "cache_ranged": 73920,
+        "anchor": 34341
+      },
+      "pedestrian": {
+        "cache_raw": 250184,
+        "cache_ranged": 146898,
+        "anchor": 92523
+      },
+      "traffic_cone": {
+        "cache_raw": 119779,
+        "cache_ranged": 81709,
+        "anchor": 65554
+      },
+      "trailer": {
+        "cache_raw": 39424,
+        "cache_ranged": 27916,
+        "anchor": 14855
+      },
+      "truck": {
+        "cache_raw": 67856,
+        "cache_ranged": 53889,
+        "anchor": 37565
+      }
+    }
+  }
+}

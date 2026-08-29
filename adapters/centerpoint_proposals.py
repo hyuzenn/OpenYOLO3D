@@ -22,8 +22,8 @@ import numpy as np
 
 # mmdet3d / torch loaded lazily so login-node imports don't fail
 def _load_mmdet3d():
-    from mmdet3d.apis import init_model, inference_detector
-    return init_model, inference_detector
+    from mmdet3d.apis import init_model
+    return init_model
 
 
 # CenterPoint label index → class name, in the EXACT order the checkpoint's
@@ -68,10 +68,49 @@ class CenterPointProposalGenerator:
             score_threshold=float(score_threshold),
             nms_iou_threshold=float(nms_iou_threshold),
         )
-        init_model, inference_detector = _load_mmdet3d()
-        self._inference_detector = inference_detector
+        init_model = _load_mmdet3d()
         self.model = init_model(config_path, checkpoint_path, device=device)
         self.device = device
+        self._pipeline, self._box_type_3d, self._box_mode_3d = self._build_pipeline()
+
+    # -- inference pipeline ------------------------------------------------
+    # We do NOT use mmdet3d.apis.inference_detector. It composes the model's
+    # *full* configured test pipeline (mmdet3d/apis/inference.py:142-176), which
+    # for this checkpoint is
+    #     LoadPointsFromFile -> LoadPointsFromMultiSweeps
+    #                        -> MultiScaleFlipAug3D -> Pack3DDetInputs
+    # and the cloud we hand it has ALREADY been aggregated over 10 sweeps by the
+    # nuScenes devkit (dataloaders/nuscenes_loader.py:_load_lidar_ego). Running
+    # LoadPointsFromMultiSweeps a second time is wrong twice over: with no
+    # 'lidar_sweeps' key in the data dict it (a) zeroes the per-point Δt channel
+    # unconditionally (mmdet3d/datasets/transforms/loading.py:413) and
+    # (b) appends 9 further copies of the whole cloud via pad_empty_sweeps
+    # (loading.py:416-422). Measured: 20,000 points -> 199,892, and the 10
+    # distinct Δt values collapse to a single 0.0 — i.e. the checkpoint never
+    # received the temporal channel it was trained with.
+    #
+    # So we compose exactly that pipeline MINUS that one stage and drive
+    # model.test_step ourselves, mirroring inference_detector otherwise line for
+    # line. Decode, score threshold, circle NMS, top-K, class mapping, yaw and
+    # the z convention all stay inside the official model and are untouched.
+    _SKIP_TRANSFORMS = ("LoadPointsFromMultiSweeps",)
+
+    def _build_pipeline(self):
+        from copy import deepcopy
+        from mmengine.dataset import Compose
+        from mmdet3d.structures import get_box_type
+
+        cfg_pipeline = self.model.cfg.test_dataloader.dataset.pipeline
+        kept = [t for t in deepcopy(cfg_pipeline)
+                if t["type"] not in self._SKIP_TRANSFORMS]
+        # Recorded so a validation probe can assert on the real runtime pipeline
+        # rather than on this comment.
+        self.pipeline_steps = [t["type"] for t in kept]
+        self.pipeline_dropped = [t["type"] for t in cfg_pipeline
+                                 if t["type"] in self._SKIP_TRANSFORMS]
+        box_type_3d, box_mode_3d = get_box_type(
+            self.model.cfg.test_dataloader.dataset.box_type_3d)
+        return Compose(kept), box_type_3d, box_mode_3d
 
     @property
     def config_dict(self) -> dict:
@@ -114,8 +153,19 @@ class CenterPointProposalGenerator:
         pc_5.tofile(tmp_bin_path)
         t1 = time.perf_counter()
 
-        # inference
-        result, _data = self._inference_detector(self.model, tmp_bin_path)
+        # inference — same steps inference_detector performs, minus the
+        # duplicate LoadPointsFromMultiSweeps (see _build_pipeline).
+        import torch
+        from mmengine.dataset import pseudo_collate
+
+        data = self._pipeline(dict(
+            lidar_points=dict(lidar_path=tmp_bin_path),
+            timestamp=1,
+            axis_align_matrix=np.eye(4),
+            box_type_3d=self._box_type_3d,
+            box_mode_3d=self._box_mode_3d))
+        with torch.no_grad():
+            result = self.model.test_step(pseudo_collate([data]))
         t2 = time.perf_counter()
 
         # parse
