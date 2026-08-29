@@ -24,11 +24,16 @@ ROOT = Path("/home/rintern16/OpenYOLO3D")
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "audit/cbmot"))
 
-AUDIT = ROOT / "audit/table1_regen_2026-08-28"
+# TABLE1_AUDIT_DIR lets the corrected-adapter rerun aggregate into its own
+# directory without touching the original artifacts. Default unchanged.
+AUDIT = Path(os.environ.get("TABLE1_AUDIT_DIR",
+                            str(ROOT / "audit/table1_regen_2026-08-28")))
 PHASE1 = AUDIT / "phase1_cpcache"
 PHASE2 = AUDIT / "phase2_arms/cells"
 PHASE3 = AUDIT / "phase3_cbmot/cells"
-CACHE_10 = ROOT / "results/outdoor_native_temporal_cpcache_thr000_10sweep_gravity"
+CACHE_10 = Path(os.environ.get(
+    "TABLE1_CACHE_DIR",
+    str(ROOT / "results/outdoor_native_temporal_cpcache_thr000_10sweep_gravity")))
 CACHE_SINGLE = ROOT / "results/outdoor_native_temporal_cpcache_thr000_single_gravity"
 
 # 10-sweep CenterPoint reference anchor (audit/official_centerpoint_ref,

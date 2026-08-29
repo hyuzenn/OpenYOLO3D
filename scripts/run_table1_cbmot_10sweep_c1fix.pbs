@@ -1,0 +1,61 @@
+#!/bin/bash
+#PBS -N t1_cbmot10_c1fix
+#PBS -q coss_a6gpu
+#PBS -l select=1:ncpus=8:ngpus=0:mem=64gb:Qlist=a6000
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+# Table-1 regeneration, phase 3: the accumulation controls (rows 3 and 7),
+# CBMOT-style score refinement, replayed against the 10-sweep phase-2 cells.
+#
+# Parameters are NOT re-chosen: parallel_addition / noise 0.05 / max_age 5 are
+# the pre-specified values in audit/cbmot/PRESPECIFICATION.md, and the emission
+# budget is still "match the retro arm's box count" via e2_thrmatch_pick.
+# The only thing redirected is WHICH cells it reads and writes -- through the
+# CBMOT_GRID / CBMOT_RUN_N3 / CBMOT_OUT env overrides, so the frozen
+# single-sweep audit under audit/cbmot/cells is left untouched.
+
+set -u
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:${PATH:-}
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+export OMP_NUM_THREADS=8
+
+AUDIT="${PROJECT_ROOT}/audit/table1_regen_c1fix_2026-08-29"
+PHASE2="${AUDIT}/phase2_arms"
+export CBMOT_GRID="${PHASE2}/cells"
+export CBMOT_RUN_N3="${PHASE2}"
+export CBMOT_OUT="${AUDIT}/phase3_cbmot"
+mkdir -p "$CBMOT_OUT/cells" "$AUDIT/logs"
+LOG="$AUDIT/logs/cbmot.${PBS_JOBID%%.*}.log"
+exec >"$LOG" 2>&1
+
+echo "== Table-1 phase 3: CBMOT accumulation controls  $(date)  host=$(hostname)"
+echo "== git HEAD  : $(git rev-parse HEAD)"
+echo "== CBMOT_GRID    = $CBMOT_GRID"
+echo "== CBMOT_RUN_N3  = $CBMOT_RUN_N3"
+echo "== CBMOT_OUT     = $CBMOT_OUT"
+
+for FRAME in ego global; do
+  if ! compgen -G "$PHASE2/cells/retro_${FRAME}"/axis_*/metrics.json >/dev/null; then
+    echo "ABORT: phase 2 cell retro_${FRAME} missing; run phase 2 first."
+    exit 2
+  fi
+done
+
+RC=0
+for FRAME in ego global; do
+  echo "== [cbmot_retro_${FRAME}_N3] $(date)"
+  python -u audit/cbmot/run_cbmot_matched_control.py \
+      --frame "$FRAME" --arm retro --N 3 \
+      --update parallel_addition --noise 0.05 \
+    || { echo "== [cbmot_retro_${FRAME}_N3] FAILED"; RC=1; }
+done
+
+echo "== phase 3 done rc=$RC  $(date)"
+exit $RC
