@@ -1,0 +1,161 @@
+#!/bin/bash
+#PBS -N t1_cpcache_c1fix
+#PBS -q coss_agpu
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb:Qlist=agpu
+#PBS -l walltime=24:00:00
+#PBS -j oe
+
+# Table-1 regeneration (corrected adapter), phase 1: rebuild the frozen
+# CenterPoint proposal cache with the C1 fix active.
+#
+# Identical to scripts/run_table1_cpcache_10sweep.pbs except for the output
+# cache directory and the added C1/C2 preflight. Checkpoint, model config,
+# score threshold (0.0), split, class set and the nuScenes config are the same.
+# The previous cache (..._10sweep_gravity) is left completely untouched.
+#
+# Resumable: the evaluator skips any <token>.pkl already present.
+
+set -u
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+
+AUDIT="${PROJECT_ROOT}/audit/table1_regen_c1fix_2026-08-29"
+RUN_DIR="${AUDIT}/phase1_cpcache"
+CACHE_DIR="${PROJECT_ROOT}/results/outdoor_native_temporal_cpcache_thr000_10sweep_gravity_c1fix"
+mkdir -p "$RUN_DIR" "$CACHE_DIR"
+LOG="$RUN_DIR/run.${PBS_JOBID%%.*}.log"
+exec >"$LOG" 2>&1
+
+echo "=== Table-1 phase 1 (C1 fix): 10-sweep CenterPoint cache build ==="
+date +"%F %T start"; hostname
+echo "cache dir : $CACHE_DIR"
+echo "git HEAD  : $(git rev-parse HEAD)"
+
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:${PATH:-}
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+export OMP_NUM_THREADS=8
+
+CKPT="/home/rintern16/pretrained/centerpoint_nuscenes/centerpoint_0075voxel_second_secfpn_circlenms_4x8_cyclic_20e_nus_20220810_011659-04cb3a3b.pth"
+CFG="/home/rintern16/pretrained/centerpoint_nuscenes/centerpoint_voxel0075_second_secfpn_head-circlenms_8xb4-cyclic-20e_nus-3d.py"
+
+# --- provenance: checkpoint / config hashes, and proof this commit touches no
+# --- manuscript file.
+echo "--- provenance ---"
+md5sum "$CKPT" "$CFG"
+echo "HEAD touches paper_iccv_draft: $(git show --stat --name-only --format= HEAD | grep -c paper_iccv_draft) file(s) (expect 0)"
+git show --stat --name-only --format= HEAD
+
+# --- GPU gate: A100 only, never ece-tgpu3 (known CUDA hang).
+nvidia-smi --query-gpu=name --format=csv,noheader
+GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)
+echo "GPU: $GPU_NAME"
+if [[ "$GPU_NAME" != *A100* ]]; then
+  echo "ABORT: scheduled on '$GPU_NAME', not an A100. Not switching GPU type silently."
+  exit 2
+fi
+if [[ "$(hostname)" == ece-tgpu3* ]]; then
+  echo "ABORT: ece-tgpu3 is excluded (previous CUDA hang)."
+  exit 2
+fi
+
+cp configs/nuscenes_trainval_multisweep.yaml "$RUN_DIR/nuscenes_config.yaml"
+
+# --- C1/C2 preflight: the same 8 assertions the parity smoke gated on, re-run
+# --- here so this job proves the corrected path is active in ITS process.
+echo "--- C1/C2 preflight ---"
+export PARITY_OUT="$RUN_DIR/preflight"
+mkdir -p "$PARITY_OUT"
+python -u "${PROJECT_ROOT}/audit/table1_regen_2026-08-28/parity_smoke/validate_pipeline.py"
+if [ $? -ne 0 ]; then
+  echo "ABORT: C1/C2 preflight FAILED. Not building a cache with the broken path."
+  exit 3
+fi
+
+# --- Sweep sanity on the ACTUAL runtime input, in this job's own process and
+# --- env, before a single box is computed. Config filenames are not evidence.
+python -u - <<'PY' > "$RUN_DIR/sweep_runtime_probe.json"
+import json, sys
+sys.path.insert(0, "/home/rintern16/OpenYOLO3D")
+import numpy as np
+from dataloaders.nuscenes_loader import NuScenesLoader
+from method_scannet.streaming.nuscenes_evaluator import _list_val_scenes
+
+ld = NuScenesLoader(config_path="configs/nuscenes_trainval_multisweep.yaml")
+scenes = _list_val_scenes(ld)
+probes, tok = [], None
+sc = ld.nusc.get("scene", scenes[0])
+tok = sc["first_sample_token"]
+# skip the scene's first sample: it has no sweep history by construction
+tok = ld.nusc.get("sample", tok)["next"]
+for _ in range(5):
+    s = ld.nusc.get("sample", tok)
+    sd = ld.nusc.get("sample_data", s["data"]["LIDAR_TOP"])
+    cs = ld.nusc.get("calibrated_sensor", sd["calibrated_sensor_token"])
+    p = ld._load_lidar_ego(s, sd, cs)
+    dt = p[:, 4] if p.shape[1] >= 5 else np.zeros(len(p))
+    probes.append({"sample_token": tok, "n_points": int(p.shape[0]),
+                   "n_channels": int(p.shape[1]), "dt_max_s": float(dt.max()),
+                   "n_distinct_dt_ms": int(len(set(np.round(dt, 3).tolist())))})
+    tok = s["next"]
+json.dump({"multi_sweep": bool(ld.multi_sweep), "num_sweeps": int(ld.num_sweeps),
+           "probes": probes}, sys.stdout, indent=2)
+PY
+cat "$RUN_DIR/sweep_runtime_probe.json"
+python - <<'PY' || { echo "ABORT: runtime input is not 10-sweep."; exit 4; }
+import json, sys
+d = json.load(open("/home/rintern16/OpenYOLO3D/audit/table1_regen_c1fix_2026-08-29/"
+                   "phase1_cpcache/sweep_runtime_probe.json"))
+ok = (d["multi_sweep"] and d["num_sweeps"] == 10
+      and all(p["n_channels"] == 5 and p["n_distinct_dt_ms"] == 10
+              and p["n_points"] > 150_000 for p in d["probes"]))
+print("sweep runtime gate:", "PASS" if ok else "FAIL")
+sys.exit(0 if ok else 1)
+PY
+
+# --- One-scene smoke through the REAL proposal path before committing GPU
+# --- hours. The evaluator catches per-scene exceptions and still exits 0, so a
+# --- broken path otherwise looks like success with an empty cache.
+SMOKE_CACHE="$RUN_DIR/smoke_cache"
+rm -rf "$SMOKE_CACHE" "$RUN_DIR/smoke_out"; mkdir -p "$SMOKE_CACHE"
+echo "--- 1-scene proposal smoke ---"
+python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+  --nuscenes-config configs/nuscenes_trainval_multisweep.yaml \
+  --output "$RUN_DIR/smoke_out" --axes baseline --scene-split val \
+  --scene-limit 1 --score-threshold 0.0 --association-threshold-m 2.0 \
+  --proposal-source gamma --cp-cache-dir "$SMOKE_CACHE"
+NSMOKE=$(ls "$SMOKE_CACHE" 2>/dev/null | wc -l)
+echo "smoke cache files: $NSMOKE"
+if [ "$NSMOKE" -lt 10 ]; then
+  echo "ABORT: 1-scene smoke produced $NSMOKE cached samples. Proposal path is broken."
+  exit 5
+fi
+echo "--- smoke OK, starting full build ---"
+
+python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+  --nuscenes-config configs/nuscenes_trainval_multisweep.yaml \
+  --output          "$RUN_DIR/outputs" \
+  --axes            baseline \
+  --scene-split     val \
+  --score-threshold 0.0 \
+  --association-threshold-m 2.0 \
+  --proposal-source gamma \
+  --cp-cache-dir    "$CACHE_DIR"
+EC=$?
+
+date +"%F %T end"
+NCACHE=$(ls "$CACHE_DIR" 2>/dev/null | wc -l)
+echo "cache file count: $NCACHE  (expect 6019)"
+NFAIL=$(grep -c "SCENE FAILED" "$LOG" || true)
+echo "scene failures: $NFAIL"
+# The evaluator swallows per-scene exceptions and still returns 0, so its exit
+# code alone is not evidence of success. Require a complete cache.
+if [ "$NCACHE" -ne 6019 ]; then
+  echo "=== INCOMPLETE: $NCACHE/6019 cached. Job exit was $EC but this is a FAILURE. ==="
+  exit 6
+fi
+echo "=== exit $EC ==="
+exit $EC

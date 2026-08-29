@@ -16,6 +16,7 @@ Exits nonzero on the first failure. Writes validate_pipeline.json.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -24,7 +25,10 @@ import numpy as np
 
 ROOT = Path("/home/rintern16/OpenYOLO3D")
 sys.path.insert(0, str(ROOT))
-OUT = ROOT / "audit/table1_regen_2026-08-28/parity_smoke"
+# PARITY_OUT lets a later job re-run this as a preflight without overwriting the
+# committed evidence from the original smoke.
+OUT = Path(os.environ.get(
+    "PARITY_OUT", str(ROOT / "audit/table1_regen_2026-08-28/parity_smoke")))
 
 CKPT = ("/home/rintern16/pretrained/centerpoint_nuscenes/"
         "centerpoint_0075voxel_second_secfpn_circlenms_4x8_cyclic_20e_nus_"
