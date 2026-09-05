@@ -119,7 +119,7 @@ scene, the $K$ highest-scoring tracks, $K$ being the number of identities the
 confirmation module emits ($64{,}428$ sensor, $108{,}225$ world; exact in both
 frames); the random-$K$ rows (``rand.'') give the range over five seeds of the
 same selection made at random, scored on AssA only. The box budgets are
-unequal here, which favours the control on volume-sensitive metrics. AMOTA is
+unequal here, in the control's disfavour on volume-sensitive metrics. AMOTA is
 omitted: identity matching does not equalise class-aware evaluation volume
 (Sec.~\ref{sec:stats}).}
 \label{tab:idmatch}
@@ -223,10 +223,10 @@ It is unbounded in principle (Sec.~\ref{supp:latency}).
 Arm & Boxes & mAP & NDS & HOTA & AssA & DetA & IDF1 & AMOTA \\
 \midrule
 Baseline (ungated) & 718{,}786 & 0.5613 & 0.6480 & 0.2837 & 0.5014 & 0.1613 & 0.2715 & 0.2896 \\
-Confirmation $N{=}3$ (prefix-deleting) & 368{,}724 & 0.4483 & 0.6013 & 0.3452 & 0.5265 & \textbf{0.2275} & 0.3662 & 0.4051 \\
+Confirmation $N{=}3$ (prefix-deleting) & 368{,}724 & 0.4483 & 0.6013 & 0.3452 & 0.5265 & 0.2275 & 0.3662 & 0.4051 \\
 \midrule
 \multicolumn{9}{l}{\emph{Ours, provisional emission, retraction horizon $H{=}0$}} \\
-\quad provisional & 295{,}403 & 0.3832 & 0.5651 & \textbf{0.3675} & \textbf{0.5619} & 0.2417 & \textbf{0.4198} & 0.3603 \\
+\quad provisional & 295{,}403 & 0.3832 & 0.5651 & \textbf{0.3675} & \textbf{0.5619} & \textbf{0.2417} & \textbf{0.4198} & 0.3603 \\
 \quad ${+}$ revision & 295{,}403 & 0.3950 & 0.5701 & --- & --- & --- & --- & 0.4200 \\
 \midrule
 \multicolumn{9}{l}{\emph{Ours, provisional emission, retraction horizon $H{=}4$}} \\
