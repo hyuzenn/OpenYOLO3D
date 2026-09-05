@@ -31,8 +31,8 @@
 
 \begin{document}
 
-\title{Retrospective Confirmation for Identity-Consistent
-Streaming 3D Perception}
+\title{Bought, Not Added: Provisional Emission with Retrospective
+Revision for Streaming 3D Perception}
 
 \author{Anonymous ICCV submission\\Paper ID 0000}
 \maketitle
@@ -42,7 +42,17 @@ Streaming 3D Perception}
 \input{sec/2_formatting}
 \input{sec/3_finalcopy}
 
+\makeatletter
+\pdfsavepos\write\@auxout{\string\newlabel{bodyend}{{}{\the\c@page}{\the\pdflastxpos}{}{\the\pdflastypos}}}%
+\phantomsection\label{page:bibstart}
+\makeatother
 \bibliographystyle{ieeenat_fullname}
 \bibliography{main}
+
+\clearpage
+\appendix
+\setcounter{table}{0}\renewcommand{\thetable}{S\arabic{table}}
+\setcounter{figure}{0}\renewcommand{\thefigure}{S\arabic{figure}}
+\input{sec/9_supp_nsweep}
 
 \end{document}

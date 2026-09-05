@@ -1,5 +1,4 @@
-% Supplementary: full confirmation-window sensitivity numbers.
-% Body shows Fig.~\ref{fig:nsweep} instead; not \input from main.tex.
+% Supplementary: numerical backing for claims made in the body.
 \begin{table*}[t]
 \centering\footnotesize
 \setlength{\tabcolsep}{5pt}
@@ -23,9 +22,51 @@ Frame & $N$ & Delay & Boxes & $\Delta$AssA & 95\% CI & $\Delta$AMOTA & $\Delta$D
 \caption{\textbf{Confirmation-window sensitivity.} Each row is confirmation at
 that $N$ with retrospective emission, minus \emph{its own}
 detection-budget-matched threshold control, matched exactly to the box count
-in the Boxes column. Delay is $N{-}1$ frames ($0.5$\,s each at $2$\,Hz). The
+in the Boxes column. Delay is $N{-}1$ observations. The
 $N{=}3$ rows are the comparison of Tab.~\ref{tab:detmatch}, reproduced here
 rather than recomputed. $\Delta$AMOTA is a whole-split point estimate; the
-DetRe intervals are omitted for space and exclude zero at every $N$. This sweep is an exploratory sensitivity analysis.}
+DetRe intervals are omitted for space and exclude zero at every $N$. The matched control's own AssA rises with $N$ as its budget tightens, from
+$0.1980$ at $N{=}2$ to $0.2107$ at $N{=}5$ in the sensor frame and from
+$0.4131$ to $0.4262$ in the world frame. This sweep is an exploratory
+sensitivity analysis.}
 \label{tab:nsweep}
 \end{table*}
+
+
+\section{Retraction horizon}
+\label{supp:horizon}
+At $H{=}4$ a track is confirmed or retracted within five frames ($2.5$\,s) of
+its last observation, instead of at scene end (up to $40$ frames, $20$\,s).
+The bound costs nothing in output --- the emitted set is byte-identical to
+$H{=}\infty$ --- and downstream event traffic is unchanged by it ($161.60$
+events per frame at every $H$).
+
+\section{Control ranking robustness}
+\label{supp:ranking}
+Ranking the identity-budget control by mean instead of peak refined score, or
+matching identities dataset-wide instead of per scene, moves its AssA by less
+than $0.004$ in both association frames.
+
+\section{Confirmation latency distribution}
+\label{supp:latency}
+The $N{-}1$ figure quoted for retrospective emission is a count of
+\emph{observations}. Over the $150$ scenes the confirmation \emph{frame}
+horizon has mean $3.29$, median $3$, $95$th percentile $7$ and maximum $10$;
+at the $2$\,Hz annotated-frame rate this is a median of $1.5$\,s with a tail of
+$5.0$\,s, against a constant $2$-observation horizon. It is unbounded in
+principle.
+
+\section{Indoor per-scene distribution}
+\label{supp:indoor}
+The per-scene label-switch reduction is $18.0$ switches at the median and
+$20.1$ on average ($95\%$ CI on the mean $[18.7, 21.5]$).
+
+\section{Confidence-accumulation control}
+\label{supp:cbmot}
+At the matched detection budget the accumulation control leads confirmation on
+HOTA ($[{-}0.0157,{-}0.0128]$ sensor, $[{-}0.0065,{-}0.0052]$ world), DetA
+($[{-}0.0805,{-}0.0645]$, $[{-}0.0162,{-}0.0131]$), IDF1
+($[{-}0.0115,{-}0.0071]$, $[{-}0.0123,{-}0.0099]$) and DetRe; all intervals
+exclude zero. In the world frame the control is not statistically separable
+from the static threshold on any of the five metrics we resample (all
+intervals span zero); in the sensor frame it is.

@@ -1,21 +1,19 @@
 \begin{abstract}
-Streaming 3D perception systems emit objects whose identities and class labels
-flicker: the same physical object is re-detected as a new instance, or changes
-class, from one frame to the next. We present a training-free
-\emph{retrospective confirmation} module that runs on frozen detector output
-and changes no box coordinate, score, or label. A track is emitted only after
-$N$ observations, the standard confirmation test; at confirmation the module
-retrospectively releases the withheld prefix, a step online trackers omit,
-recovering the trajectory whole. Because such a rule also reduces how much a
-system emits, and most metrics respond to volume alone, we validate it against
-\emph{matched controls}: a score threshold at the identical detection count,
-and a top-$K$ selection at the identical identity count. On nuScenes with a
-frozen detector, association accuracy improves against every control in both
-association frames ($\mathrm{AssA}\,{+}0.049$ in the sensor frame), with
-bootstrap intervals excluding zero. On ScanNet200 --- an indoor
-open-vocabulary pipeline sharing no detector, modality, or codebase --- the
-same module reduces class-label switching by $26.9\%$ against an
-identity-matched control, with segmentation accuracy unchanged. The gain is in
-consistency specifically, and it is paid for in detection recall and in
-$N{-}1$ frames of latency.
+Streaming 3D perception must emit objects immediately, yet its consumers need one
+physical object to stay one object. Temporal confirmation, which reports a track only after $N$
+observations, is the standard remedy, but it either delays those observations
+or discards them. At matched detection and identity budgets, and
+against a confidence-accumulation lifecycle, we find that its association gain
+is real but is paid for in detection recall, DetA and HOTA. The gain is bought rather than added.
+We therefore propose \emph{provisional emission with retrospective revision}:
+every observation is emitted at its own frame under a provisional status, and
+later confirmation revises the stream already delivered instead of withholding
+it. A four-frame retraction horizon exactly reproduces the unbounded
+retrospective output. On nuScenes it retains $160{,}938$ observations
+($+43.7\%$) that prefix-deleting confirmation discards, at zero emission
+latency, and revision raises AMOTA by $0.0823$ --- while giving up DetA, HOTA
+and IDF1 against that arm. On ScanNet200 the same rule reduces class-label
+switching by $26.9\%$ at a matched identity count. We offer a different
+operating point in the detection--association--latency--revisability
+trade-off, not a uniformly better tracker.
 \end{abstract}

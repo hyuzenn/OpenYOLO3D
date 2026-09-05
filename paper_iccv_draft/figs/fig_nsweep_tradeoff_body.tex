@@ -1,11 +1,11 @@
 % Confirmation-window trade-off curve. Numbers are Tab. tab:nsweep (supplementary).
 % Requires pgfplots (loaded in main.tex).
-\begin{figure}[t]
+\begin{figure}[tb]
 \centering
 \begin{tikzpicture}
 \pgfplotsset{
   every axis/.append style={
-    width=0.96\linewidth, height=4.2cm,
+    width=0.96\linewidth, height=3.9cm,
     tick label style={font=\scriptsize}, label style={font=\scriptsize},
     title style={font=\scriptsize\bfseries, yshift=-2pt},
     axis lines=left, xmin=0, ymin=0,
@@ -26,7 +26,7 @@
 \node[font=\tiny, anchor=south west] at (axis cs:0.004,0.0) {control};
 \end{axis}
 \begin{axis}[
-  at={(sensor.below south west)}, anchor=north west, yshift=-8mm,
+  at={(sensor.below south west)}, anchor=north west, yshift=-6mm,
   title={World frame},
   xmax=0.056, ymax=0.0245,
   xlabel={detection recall given up ($-\Delta$DetRe)},
@@ -42,11 +42,8 @@
 \caption{\textbf{Confirmation is a trade-off curve, not a tuned setting.} Each
 point is confirmation at that $N$ minus \emph{its own} detection-budget-matched
 threshold control, so the control sits at the origin. Moving right along the
-curve spends detection recall and $N{-}1$ frames of latency ($0.5$\,s each at
-$2$\,Hz) and buys association accuracy; $N$ is chosen by the latency a
-deployment can absorb rather than by a metric. The association gain is
-positive at every $N$ in both frames and all eight bootstrap intervals exclude
-zero. Full numbers, including intervals and $\Delta$AMOTA --- which, unlike
-$\Delta$AssA, turns over inside the range --- are in the supplementary.}
+curve spends detection recall and one further observation of latency, and buys
+association accuracy. The association gain is positive at every $N$ in both
+frames and all eight bootstrap intervals exclude zero.}
 \label{fig:nsweep}
 \end{figure}
