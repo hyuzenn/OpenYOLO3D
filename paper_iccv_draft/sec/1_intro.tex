@@ -23,17 +23,17 @@ differs in two things at once: a method emitting fewer instances, or
 maintaining fewer identities, can post a better association score without
 associating better. The benefit has to be measured at a
 \emph{matched budget}, against controls granted the same number of emitted
-detections and, separately, the same number of emitted identities. This paper
-is not another confirmation rule; it asks whether the consistency benefit
-attributed to confirmation survives that comparison, and what it costs when it
-does.
+detections and, separately, the same number of emitted identities. We study temporal
+confirmation as a streaming emission policy, and ask first whether its
+consistency benefit survives that comparison, then whether the benefit can be
+retained without delaying the stream.
 
-It survives. On nuScenes with a frozen detector, confirmation improves
+It survives. On nuScenes with a frozen CenterPoint detector, confirmation improves
 association consistency under both matchings, in both association frames, and
 against confidence accumulation~\cite{cbmot} as well as a static threshold, so
 the gain is not an artifact of carrying fewer identities. At the identical
 detection budget the same stream loses detection recall, DetA and aggregate
-HOTA. The gain is bought rather than added. Applied unchanged to an indoor
+HOTA: the gain is bought rather than added. Applied unchanged to an indoor
 open-vocabulary system sharing no detector or modality, the same rule reduces
 class-label switching by $26.9\%$ at a matched identity count.
 
@@ -43,26 +43,31 @@ fact delays them; discarding them instead reverses the association gain
 outright in the world frame. We therefore split
 the two decisions that rule fuses: \emph{when an output is emitted} and
 \emph{when its status is confirmed}. Every observation is emitted at the frame
-it occurs, marked provisional; later evidence revises the stream already
-delivered rather than withholding it, and a track that never confirms is
-retracted within a bounded window. Confirmation leaves the critical streaming
-path: the policy retains $160{,}938$ observations ($+43.7\%$) that
-prefix-deleting confirmation discards, at zero emission latency, and revision
+it occurs, marked provisional; confirmation later changes only its status, a
+shift in its track's class vote relabels it, and a track that never
+confirms is retracted within a bounded window. Confirmation leaves the critical streaming
+path: the policy retains $160{,}938$ observations ($+43.6\%$) that
+prefix-deleting causal emission discards, at zero emission latency, and revision
 raises AMOTA by $0.0823$. It is not free either: against that arm it gives up
-class-agnostic detection and identity quality.
+class-agnostic detection and identity quality, and a consumer that must hold
+each object the moment it comes close trades most of that arm's misses for a
+far larger false-alert load (Sec.~\ref{sec:consumer}).
 
 \noindent\textbf{Contributions.}
 \begin{itemize}\itemsep2pt
-\item \textbf{A matched-budget diagnosis of temporal selection.} We identify
-the budget confound in comparisons of temporal emission rules and evaluate
-confirmation under both matchings. The design is not specific to confirmation
-and applies to any component that alters output volume.
-\item \textbf{The detection--association trade-off, characterised.} The
-association gain is accompanied by a retention cost: confirmation occupies a
-point on a trade-off rather than improving tracking uniformly.
-\item \textbf{Provisional emission with retrospective revision.} A causal
-policy decoupling output availability from evidence maturity, evaluated
-against the prefix-deleting confirmation arm it replaces.
+\item \textbf{Streaming output policy.} We formulate streaming 3D perception
+as a provisional-output decision problem and develop a training-free policy
+that emits every observation at the frame it occurs and retrospectively
+confirms, relabels or retracts it as evidence accumulates, without
+emission-time latency; a bounded retraction horizon reproduces the unbounded
+retrospective output exactly.
+\item \textbf{Temporal-selection finding.} We show that temporal confirmation
+yields gains in outdoor identity consistency and indoor semantic consistency,
+and that these gains are not explained simply by reducing output volume.
+\item \textbf{Matched-budget evaluation.} We evaluate temporal confirmation
+under separately matched detection and identity budgets, and against a
+confidence-accumulation lifecycle, distinguishing temporal selection from
+changes in output volume and identity count.
 \end{itemize}
 
 
@@ -85,7 +90,10 @@ confirmed once it has been assigned a detection in $M$ of the last $N$ updates
 --- and designs confirmation, deletion, and track management
 together~\cite{blackmanpopoli}; the same literature established that reporting
 may lag estimation, \emph{retrodiction} revising earlier estimates once later
-measurements arrive~\cite{retrodiction}. Tracking-by-detection inherited the
+measurements arrive~\cite{retrodiction}. Our distinction is in the output
+semantics: we revise records already emitted to the streaming consumer, while
+retaining zero emission latency and allowing unconfirmed records to be
+retracted. Tracking-by-detection inherited the
 count-based half: SORT~\cite{sort} and DeepSORT~\cite{deepsort} withhold a
 tentative track until matched in $N$ consecutive frames and
 AB3DMOT~\cite{ab3dmot} carries the same minimum-hits rule onto 3D boxes, while
@@ -117,15 +125,13 @@ label} changes as observations accumulate is never quantified.
 
 \noindent\textbf{Evaluation metrics.} CLEAR MOTA~\cite{clearmot} and
 IDF1~\cite{idf1} weight detection and identity errors differently, while
-HOTA~\cite{hota} factorises the two into a detection accuracy DetA and an
-association accuracy AssA, which is what lets us read detection and
-association quality separately over an \emph{identical} box set. In 3D,
-nuScenes AMOTA~\cite{nuscenes_tracking}, following AB3DMOT's integral
-formulation~\cite{ab3dmot}, is class-aware and responds to labels the
-class-agnostic family ignores, whereas video-consistency and open-vocabulary
-tracking metrics (STQ~\cite{step}, VPQ~\cite{vpq}, TETA~\cite{teta},
-TAO~\cite{tao}, OVTrack~\cite{ovtrack}) require dense ground-truth tube
-identities over a fixed taxonomy; we use existing metrics where computable.
+HOTA~\cite{hota} factorises the two into DetA and AssA, which is what lets us
+read detection and association quality separately over an \emph{identical} box
+set. In 3D, nuScenes AMOTA~\cite{nuscenes_tracking,ab3dmot} is class-aware and
+responds to labels the class-agnostic family ignores; video-consistency and
+open-vocabulary tracking metrics~\cite{step,vpq,teta,tao,ovtrack} instead
+require dense ground-truth tube identities over a fixed taxonomy, so we use
+existing metrics where computable.
 
 Existing work targets streaming availability or instance-level consistency,
 but does not isolate temporal selection under matched output budgets, nor

@@ -1,80 +1,93 @@
 % Fig. 3 -- indoor semantic stability.
-% ============================ LAYOUT TEMPLATE ============================
-% The per-frame label sequence is NOT yet measured: no stored run persists it
-% (results/2026-08-26_qualitative_figure_mining_v01/FIGURE_SHORTLIST.md, Fig. 3
-% section). The label cells below are deliberately drawn as unknown, and the
-% number of label runs is taken from the measured switch count, not invented.
-% Do NOT publish this with guessed class names. When
-% mining_scripts/run_fig3_replay.pbs has run, replace the "?" chips with the
-% recorded labels and delete the template banner.
-% ========================================================================
-% Paste-ready TikZ body. Include from sec/*.tex with:
-%   \input{figs/fig3_semantic_stability_body}
+% ---------------------------------------------------------------------------
+% PROVENANCE (read before editing):
+%   Replay  : results/2026-08-26_qualitative_figure_mining_v01/fig3_replay/
+%             history_{baseline,gate_m11,ctrl_topk}.json  (PBS job 119908)
+%   Instance: scene0696_02, instance 28, 50 observed frames, frames 230..
+%   Arms    : baseline = no gate; ours = install_method_streaming("M11", N=3),
+%             the same gate setting as the canonical Tab. 5 control.
+%
+%   NOT THE TAB. 5 CACHE. The frozen results/2026-05-13_mask3d_cache no longer
+%   exists on disk, so this replay used a regenerated cache
+%   (results/2026-08-26_mask3d_cache_regen_v01). lsc_check.json reports
+%   FAIL 16/17: Mask3D regeneration is not bit-reproducible, so per-scene switch
+%   counts differ from the frozen run. The MECHANISM drawn here is exact --
+%   602/604 instances have gate output identical to a suffix of the baseline --
+%   but the specific frame numbers are from the replay, not from Tab. 5.
+%
+%   The figure shows what the gate actually does: it withholds the unconfirmed
+%   prefix. It does NOT relabel a confirmed track -- 0/604 instances had a
+%   mid-sequence label change. Do not redraw this as a wobble being corrected.
+% ---------------------------------------------------------------------------
 % Drawn at 17.3cm == \textwidth (6.875in = 17.46cm) -- do NOT wrap in \resizebox.
-\usetikzlibrary{positioning, arrows.meta, backgrounds, fit}
+\usetikzlibrary{positioning, arrows.meta, backgrounds, fit, calc, decorations.pathreplacing}
 
 \definecolor{idred}{HTML}{E41A1C}
 \definecolor{idblue}{HTML}{377EB8}
-\definecolor{idpurple}{HTML}{984EA3}
-\definecolor{idorange}{HTML}{FF7F00}
-\definecolor{boxbg}{HTML}{F8F9FA}
 \definecolor{bordergray}{HTML}{D1D5DB}
-\definecolor{pend}{HTML}{8A6D1F}
+\definecolor{boxbg}{HTML}{F8F9FA}
+\definecolor{holdgray}{HTML}{9AA0A6}
 
 \begin{figure*}[t]
 \centering
 \begin{tikzpicture}[
     font=\small\sffamily,
     framebox/.style={draw=bordergray, fill=boxbg, rounded corners=2pt, minimum width=1.55cm, minimum height=0.95cm, align=center, inner sep=2pt},
-    lab/.style={rounded corners=2pt, font=\scriptsize\bfseries, inner sep=2pt, minimum width=1.30cm, align=center},
-    labA/.style={lab, fill=idred!12,    text=idred,    draw=idred},
-    labB/.style={lab, fill=idblue!12,   text=idblue,   draw=idblue},
-    labC/.style={lab, fill=idpurple!12, text=idpurple, draw=idpurple},
-    labD/.style={lab, fill=idorange!14, text=idorange!75!black, draw=idorange},
+    lab/.style={rounded corners=2pt, font=\scriptsize\bfseries, inner sep=2pt, minimum width=1.62cm, align=center},
+    labA/.style={lab, fill=idred!12,  text=idred,  draw=idred},
+    labB/.style={lab, fill=idblue!12, text=idblue, draw=idblue},
+    labHold/.style={lab, fill=holdgray!10, text=holdgray, draw=holdgray, dashed, font=\scriptsize\itshape},
     subpanel/.style={draw=black!30, fill=white, rounded corners=4pt}
 ]
 % ---------------- header ----------------
 \node[anchor=north west, font=\small\sffamily] (title) at (0.25, -0.2)
-  {\textbf{Indoor semantic stability} --- ScanNet200, one instance over consecutive observed frames};
-\node[anchor=north east, font=\scriptsize\bfseries, text=pend, align=right] at (17.05, -0.18)
-  {LAYOUT TEMPLATE\\[-1pt]labels pending replay};
+  {\textbf{Indoor semantic stability} --- ScanNet200 \texttt{scene0696\_02}, instance 28, consecutive observed frames};
+
 % ---------------- frame strip ----------------
-\foreach \i/\t in {0/{$t_1$}, 1/{$t_2$}, 2/{$t_3$}, 3/{$t_4$}, 4/{$t_5$}, 5/{$t_6$}} {
-    \node[anchor=center, font=\scriptsize\bfseries] (time\i) at (3.55 + \i*2.05, -1.05) {\t};
+\foreach \i/\t in {0/{230}, 1/{240}, 2/{250}, 3/{260}, 4/{270}, 5/{280}} {
+    \node[anchor=center, font=\scriptsize\bfseries] (time\i) at (3.75 + \i*2.15, -1.05) {frame \t};
     \node[framebox, below=0.12cm of time\i] (frame\i) {
         \textcolor{gray!80}{\scriptsize [RGB]}\\[-2pt]
         \scriptsize instance mask
     };
 }
 % ---------------- rows ----------------
-\node[anchor=east, align=right, font=\footnotesize] (lblBase) at (2.55, -2.52)
-  {\textbf{Per-frame}\\\textbf{prediction}\\[1pt]{\scriptsize 4 label switches}};
-\node[anchor=east, align=right, font=\footnotesize] (lblOurs) at (2.55, -3.50)
-  {\textbf{Ours}\\[1pt]{\scriptsize 0 label switches}};
-% baseline row: 5 label runs == the measured 4 switches. Identity of each run unknown.
-% 6 cells, 4 switches (the measured count): A A | B | A | C | A
-\node[labA] (b0) at (frame0 |- lblBase) {?};
-\node[labA] (b1) at (frame1 |- lblBase) {?};
-\node[labB] (b2) at (frame2 |- lblBase) {?};
-\node[labA] (b3) at (frame3 |- lblBase) {?};
-\node[labC] (b4) at (frame4 |- lblBase) {?};
-\node[labA] (b5) at (frame5 |- lblBase) {?};
-\foreach \a/\b in {b1/b2, b2/b3, b3/b4, b4/b5}
+\node[anchor=east, align=right, font=\footnotesize] (lblBase) at (2.62, -2.52)
+  {\textbf{Per-frame}\\\textbf{prediction}\\[1pt]{\scriptsize 2 label switches}};
+\node[anchor=east, align=right, font=\footnotesize] (lblOurs) at (2.62, -3.52)
+  {\textbf{Ours} {\scriptsize($N\!=\!3$)}\\[1pt]{\scriptsize 0 label switches}};
+
+% baseline row: the recorded sequence -- pillow, cushion, then pillow held.
+\node[labA] (b0) at (frame0 |- lblBase) {pillow};
+\node[labB] (b1) at (frame1 |- lblBase) {cushion};
+\node[labA] (b2) at (frame2 |- lblBase) {pillow};
+\node[labA] (b3) at (frame3 |- lblBase) {pillow};
+\node[labA] (b4) at (frame4 |- lblBase) {pillow};
+\node[labA] (b5) at (frame5 |- lblBase) {pillow};
+\foreach \a/\b in {b0/b1, b1/b2}
   \draw[-{Stealth[length=3.5pt]}, dashed, red!80, line width=0.8pt] (\a) -- (\b);
-% ours row: one label, held
-\foreach \i in {0,...,5} \node[labA] (o\i) at (frame\i |- lblOurs) {?};
-\draw[double, double distance=1.2pt, idred, line width=0.9pt] (o0) -- (o1) -- (o2) -- (o3) -- (o4) -- (o5);
-\node[anchor=center, font=\scriptsize\bfseries\color{idred!90!black}] at (9.7, -4.30)
-  {$\checkmark$ one label held across the window};
-\node[anchor=center, font=\scriptsize\itshape\color{pend}] at (9.7, -4.72)
-  {Each \textbf{?} is one recorded label; a colour change marks a switch. The count is measured, the names are not yet.};
+
+% ours row: nothing is emitted until the track is confirmed.
+\node[labHold] (o0) at (frame0 |- lblOurs) {no output};
+\node[labHold] (o1) at (frame1 |- lblOurs) {no output};
+\foreach \i in {2,3,4,5} \node[labA] (o\i) at (frame\i |- lblOurs) {pillow};
+\draw[double, double distance=1.2pt, idred, line width=0.9pt] (o2) -- (o3) -- (o4) -- (o5);
+\draw[decorate, decoration={brace, amplitude=4pt, mirror}, holdgray, line width=0.7pt]
+  ($(o0.south west)+(0,-0.10)$) -- ($(o1.south east)+(0,-0.10)$)
+  node[midway, below=3pt, font=\scriptsize, text=holdgray, align=center] {withheld:\\track unconfirmed};
+
+\node[anchor=east, font=\scriptsize, align=right] at (17.05, -4.45)
+  {The unstable prediction is \textbf{never emitted}:\\confirmation withholds it, it is not corrected later.};
+
 \begin{scope}[on background layer]
     \draw[subpanel] (0, 0) rectangle (17.3, -4.95);
 \end{scope}
 \end{tikzpicture}
-\caption{\textbf{LAYOUT TEMPLATE --- not yet a result.}
-Intended structure of the indoor figure: one instance, consecutive observed frames, the per-frame open-vocabulary prediction above and our emitted label below.
-The number of label runs shown matches the measured switch count for the candidate instance; the class names are deliberately left as \textbf{?} because no stored run persists the per-frame label sequence, and recovering it requires a replay that has not been run.
-Candidate instances, with measured switch count, track length and mask IoU, are listed in the accompanying shortlist; the chosen one fills this layout unchanged.}
+\caption{\textbf{Confirmation removes the unstable warm-up rather than correcting it.}
+One ScanNet200 instance (\texttt{scene0696\_02}, instance 28) over its first six observed frames.
+The per-frame open-vocabulary prediction (top) disagrees with itself on the second observation, giving two label switches on a track that is otherwise a single class for all 50 observed frames.
+Our $N\!=\!3$ confirmation (bottom) emits nothing until the track is confirmed, so the disagreement never reaches the map; once confirmed, the label is held.
+Measured over all 17 candidate scenes, the confirmed output is identical to a suffix of the unconfirmed output for 602 of 604 instances, and \emph{no} instance has its label changed after emission --- the entire switch reduction comes from withholding the unconfirmed prefix, at a cost of two frames of latency here.
+Sequences are recorded per frame from a three-arm replay; the proposal cache was regenerated, so per-scene switch counts are not bit-identical to Tab.~\ref{tab:indoor} (Sec.~\ref{supp:fig3}).}
 \label{fig:semantic_stability}
 \end{figure*}

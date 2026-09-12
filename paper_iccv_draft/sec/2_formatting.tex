@@ -10,19 +10,21 @@
 \resizebox{\columnwidth}{!}{%
 \begin{tikzpicture}
   \node[font=\small\bfseries, anchor=west] at (-1.75, 3.2) {(a)};
-  \node[font=\tiny, gray, anchor=west] at (-1.05, 3.2) {nuScenes \texttt{scene-0925}, one pedestrian, six consecutive annotated frames};
+  \node[font=\tiny, gray, anchor=west] at (-1.05, 3.2) {nuScenes \texttt{scene-0966}, one pedestrian, six consecutive annotated frames};
   \foreach \x in {1,...,6} {\node[font=\tiny, gray] at (\x*0.9, 2.75) {\x};}
   \node[font=\tiny, gray, anchor=east] at (0.35, 2.75) {frame};
-  % row 1: score threshold -- measured identities
-  \node[anchor=east, align=right, font=\tiny] at (0.35, 2.1) {score\\threshold};
-  \foreach \x in {1,3,4,5} {\fill[blue!65!black] (\x*0.9, 2.1) circle (0.09);}
-  \fill[orange!85!black] (1.8, 2.1) circle (0.09);
-  \fill[teal!65!black] (5.4, 2.1) circle (0.09);
-  \foreach \x/\lab in {1/000, 2/056, 3/000, 4/000, 5/000, 6/131} {
+  % Canonical c1fix values: results/2026-09-11_canonical_figure_remining_v01/figure_values.json
+  % row 1: score threshold -- identities from the control's OWN association pass
+  \node[anchor=east, align=right, font=\tiny] at (0.35, 2.1) {score threshold\\(own association)};
+  \fill[violet!70!black] (0.9, 2.1) circle (0.09);
+  \foreach \x in {2,3,4} {\fill[orange!85!black] (\x*0.9, 2.1) circle (0.09);}
+  \foreach \x in {5,6} {\fill[teal!65!black] (\x*0.9, 2.1) circle (0.09);}
+  \foreach \x/\lab in {1/007, 2/041, 3/041, 4/041, 5/121, 6/121} {
     \node[font=\tiny, gray] at (\x*0.9, 1.79) {\lab};}
   \node[font=\tiny, orange!85!black] at (1.8, 2.40) {new id};
-  \node[font=\tiny, teal!65!black] at (5.4, 2.40) {new id};
+  \node[font=\tiny, teal!65!black] at (4.5, 2.40) {new id};
   \node[font=\tiny, anchor=west] at (5.85, 2.1) {3 identities};
+  % rows 2-4 share the frozen association: track 129000007 throughout
   % row 2: causal confirmation
   \node[anchor=east, align=right, font=\tiny] at (0.35, 1.05) {causal\\confirmation};
   \foreach \x in {1,2} {
@@ -37,18 +39,18 @@
   \draw[->, blue!65!black] (2.7, -0.22) .. controls (2.1, -0.62) and (1.5, -0.62) .. (0.95, -0.22);
   \node[font=\tiny, blue!65!black] at (3.3, -0.72) {prefix emitted at confirmation};
 
-  % row 4: provisional emission + revision (ours)
-  \node[anchor=east, align=right, font=\tiny] at (0.35, -1.6) {provisional\\${+}$ revision};
-  \foreach \x in {1,2} {\fill[orange!85!black] (\x*0.9, -1.6) circle (0.09);
+  % row 4: provisional emission (ours) -- ledger: running vote pedestrian at
+  % every frame, 0 relabel events, confirmed at frame index 2, never retracted
+  \node[anchor=east, align=right, font=\tiny] at (0.35, -1.6) {provisional\\(ours)};
+  \foreach \x in {1,2} {\fill[blue!65!black] (\x*0.9, -1.6) circle (0.09);
                         \draw[dashed, gray!70] (\x*0.9, -1.6) circle (0.16);}
   \foreach \x in {3,...,6} {\fill[blue!65!black] (\x*0.9, -1.6) circle (0.09);}
   \node[font=\tiny, anchor=west] at (5.85, -1.6) {1 identity, latency 0};
-  \draw[->, blue!65!black] (2.6, -1.86) .. controls (2.0, -2.24) and (1.4, -2.24) .. (0.85, -1.86);
-  \node[font=\tiny, blue!65!black, anchor=west] at (3.15, -2.20)
-       {prefix revised in place at confirmation (label), not released};
   \node[font=\tiny, gray, anchor=west] at (0.55, -1.24) {emitted at once, provisional};
+  \node[font=\tiny, blue!65!black, anchor=west] at (0.55, -2.05)
+       {running vote \emph{pedestrian} throughout, 0 relabels: confirmation changes status only};
   % confirmation marker
-  \draw[dashed, gray] (2.7, -1.95) -- (2.7, 1.55);
+  \draw[dashed, gray] (2.7, -1.85) -- (2.7, 1.55);
   \node[font=\tiny, gray, anchor=west] at (2.82, 1.45) {confirmed ($N{=}3$)};
 \end{tikzpicture}}
 \\[4pt]
@@ -70,43 +72,18 @@
   \node[align=center, font=\tiny] at (4.9, 1.35) {$=$ identity count,\\fewer boxes};
 \end{tikzpicture}}
 \caption{\textbf{Emission policies over the same frozen detections.}
-\textbf{(a)} Six consecutive annotated frames of nuScenes \texttt{scene-0925}
-under a score threshold, causal confirmation, retrospective confirmation, and
-our provisional emission with revision. Confirmation requires $N{=}3$; the
-threshold carries no history and assigns three identities (last three digits
-shown), while ours emits each observation immediately (dashed ring) and
-revises its label after confirmation. \textbf{(b)} The detection- and
+\textbf{(a)} One pedestrian over six annotated frames of nuScenes
+\texttt{scene-0966}; the emitted box is identical wherever it is emitted.
+Threshold identities (last three digits) come from the control's own
+association pass; the other rows share one frozen association. Ours emits the
+first two observations at once as provisional (dashed ring) with the track's
+running class vote, pedestrian throughout, so confirmation ($N{=}3$, third
+frame) changes their status, not their label. \textbf{(b)} The detection- and
 identity-budget controls match emitted boxes and emitted tracks respectively
 (Sec.~\ref{sec:controls}).}
 \label{fig:overview}
 \end{figure}
 
-% ---------------------------------------------------------------------------
-% Fig. 1 goes here. Panel (a): four policy rows over the same six frames of
-% nuScenes scene-0925 --- score threshold, causal confirmation, retrospective
-% confirmation, provisional+revision. Panel (b): the matched-control diagram,
-% unchanged. Caption:
-%
-% \caption{Emission policies over one frozen detection stream. (a) One
-% pedestrian over six consecutive annotated frames of nuScenes
-% \texttt{scene-0925}; all four rows select from the same frozen detections, so
-% the emitted box is identical wherever a box is emitted at all and the rows
-% differ only in \emph{when} a detection appears, under \emph{which} identity,
-% and with \emph{which} label. A per-frame score threshold carries no history
-% and assigns three identities to the object. Confirmation requires $N{=}3$
-% observations: the \emph{causal} policy drops the pre-confirmation prefix, so
-% the object first appears at its third observation; the \emph{retrospective}
-% policy releases the withheld prefix at confirmation and recovers the whole
-% trajectory under one identity, at the cost of emission latency. The
-% \emph{provisional} policy emits every observation at its own frame (hollow
-% markers, provisional status) and, at confirmation, revises the already
-% emitted prefix in place (recoloured) instead of releasing it; a track that
-% dies unconfirmed within the retraction horizon is retracted. (b) Every arm
-% selects from the same frozen detection set; the detection-budget control is a
-% score threshold calibrated to the module's exact box count, and the
-% identity-budget control keeps the module's track count per sequence, which
-% necessarily emits fewer boxes (Sec.~\ref{sec:controls}).}
-% ---------------------------------------------------------------------------
 
 \subsection{Temporal lifecycle}
 \label{sec:pipeline}
@@ -116,14 +93,15 @@ detector output: no box coordinate or score is modified and no model is
 retrained, and the operator's only freedoms are which detections enter the
 output stream, under which persistent identity, with which label, and at which
 frame. Per-frame detections --- a 3D box with a score and a class label --- are
-linked across frames into tracks by a class-agnostic nearest-centroid
+linked across frames into tracks by a nearest-centroid
 associator with a $2.0$\,m bird's-eye-view \textbf{association threshold} and a
 \textbf{gap tolerance} of $5$ frames; no score threshold is applied before
-association, and the associator is identical in every arm of every experiment.
-Association runs either in the \emph{sensor frame} (raw detector coordinates)
-or in the \emph{world frame} (ego-motion-compensated global coordinates), and
-both are evaluated throughout, because ego-motion compensation changes how hard
-association is. A track is \textbf{confirmed} once it has accumulated $N$
+association. Association runs either in the \emph{sensor frame} (raw detector
+coordinates), where a detection can continue only a track of its own class, or
+in the \emph{world frame} (ego-motion-compensated global coordinates), where
+class is not consulted. Both are evaluated throughout, because ego-motion
+compensation changes how hard association is, and within each frame the
+associator is identical in every arm of every experiment. A track is \textbf{confirmed} once it has accumulated $N$
 observations; we use $N{=}3$ throughout, the conventional setting in
 tracking-by-detection systems, and do not tune it per dataset or per metric.
 Counting is \emph{cumulative} over the scene rather than over consecutive
@@ -132,6 +110,15 @@ track is \textbf{retracted} once $t - t_{\text{last seen}} > H$, where $H$ is
 the \emph{retraction horizon} in frames; confirmed tracks are never retracted,
 and $H{=}\infty$ applies no death rule and defers to a scene-end decision,
 which serves as the reference endpoint.
+
+Throughout, the \textbf{confirmation module} denotes the standard composite
+that this test anchors: the confirmation test above, track-level majority-vote
+relabelling, which overwrites each emitted box's class with its track's voted
+class, and track merging. All three are active in every arm labelled
+\emph{Confirmation}; we write \emph{confirmation test} when we mean the
+initialisation rule alone. The composite is conventional rather than an addition
+of ours, and holding it fixed is what lets our policy differ from it in
+emission only.
 
 \subsection{Emission policies}
 \label{sec:emission}
@@ -143,20 +130,20 @@ permanently. \textbf{Retrospective confirmation} emits nothing until
 confirmation, at which point the withheld prefix is released alongside the
 current observation, completing the trajectory at the price of emission
 latency. \textbf{Provisional emission with revision} (ours) emits every
-observation at its own frame and revises it once the evidence completes.
+observation at its own frame and updates it as evidence accumulates.
 
 \subsection{Provisional emission and revision}
-\label{sec:latency}
+\label{sec:provisional}
 
 Every observation is emitted at the frame it occurs under a \emph{provisional
 status}: a flag on an emitted observation recording that the evidence
 supporting it is not yet complete. It is a property of an emitted record, not
-of a withheld one. Confirmation issues no prefix, because none was withheld;
-it issues a \emph{revision} over the observations already delivered. In our
-instantiation the revision rewrites the class label of the track's
-already-emitted observations and the nuScenes attribute derived from it; box
-geometry, detection score, and the persistent identity are not rewritten, so
-the set of emitted boxes is unchanged by a revision. A track that reaches the
+of a withheld one. Confirmation issues no prefix, since none was withheld; it
+changes only the status of the track and its observations. A \emph{revision} is
+the module's track-vote relabelling, read causally: when the running vote
+changes, before or after confirmation, it rewrites the label of the
+track's emitted observations and their derived nuScenes attribute; geometry,
+score and identity are kept, so the emitted box set is unchanged. A track that reaches the
 retraction horizon unconfirmed is retracted.
 
 Retrospective confirmation incurs $N{-}1$ observations of latency, and a
@@ -198,9 +185,9 @@ has already received.
 \section{Evaluation Protocol}
 \label{sec:protocol}
 
-Every claim in this paper is made against a \emph{matched control} --- a
-non-temporal selection rule granted the same output budget --- rather than
-against the unfiltered baseline.
+For the controlled comparisons of temporal confirmation, we match two output
+budgets --- emitted detections and emitted identities --- against
+non-temporal selection rules rather than against the unfiltered baseline.
 
 \subsection{Datasets and pipelines}
 \label{sec:datasets}
@@ -229,21 +216,21 @@ non-temporal score rule and against the other established temporal rule.
 frozen baseline detections is calibrated so the control emits \emph{exactly} as
 many boxes as the temporal module --- $257{,}259$ in the sensor frame
 (threshold $0.2214$), $517{,}566$ in the world frame ($0.1272$), both with zero
-count error. The match is exact because the count is a step function of the
-threshold whose breakpoints are the observed scores: the matched threshold is
-the $K$-th largest observed score, ties resolved upward so the count never
-exceeds $K$.
+count error. The match is exact because the matched threshold is the $K$-th
+largest observed score, ties resolved upward so the count never exceeds $K$.
 
 \noindent\textbf{Identity-budget-matched control.} Per sequence, the control
-keeps the $K$ highest-scoring tracks (ranked by mean detection score), $K$
+keeps the $K$ tracks with the highest whole-track mean detection score, $K$
 being the number of identities the temporal module emits there; counts match
-exactly ($64{,}428$ tracks sensor, $108{,}225$ world). Five additional arms
+exactly ($41{,}207$ tracks sensor, $68{,}222$ world). Five additional arms
 select the same $K$ tracks \emph{at random} (five seeds), scored on association
-accuracy, separating score-based selection from selection per se. The two
+accuracy, separating score-based selection from selection per se. Every
+identity-budget arm here uses a per-sequence budget known only once the
+sequence ends, and the score-ranked ones whole-track scores: they are
+budget-matched references, not streaming policies, and comparisons against
+them hold emitted identities fixed. The two
 budgets cannot hold at once: at equal track count the control emits fewer boxes
-than the module ($190{,}708$ vs.\ $360{,}309$ sensor; $608{,}168$ vs.\
-$754{,}500$ world), because score-ranked tracks are shorter than
-persistence-selected ones.
+than the module (Tab.~\ref{tab:idmatch}).
 
 \noindent\textbf{Confidence-accumulation control.} To compare persistence
 against confidence rather than against a static score, a third control
@@ -251,10 +238,11 @@ propagates a track score by constant decay and fuses it with each matched
 detection score, following CBMOT's reported best update
 rule~\cite{cbmot}; its parameters are transcribed from the authors' released
 implementation, not tuned here, except that the gap tolerance is our
-associator's rather than theirs, since the frozen association is shared by
-every arm. A single threshold on the refined score is calibrated to the same
-budget as the arm it is compared with, by the rule above, so this control is
-matched under both budgets. Its trained score-regression variant is not
+associator's rather than theirs, since the associator configuration is shared by
+every arm. At the detection budget a single threshold on the refined score is
+calibrated by the rule above; at the identity budget the control keeps, per
+sequence, the $K$ tracks with the highest whole-track peak refined score, so
+it is matched under both budgets. Its trained score-regression variant is not
 reproduced: it is fit on nuScenes and would give the control supervision no
 other arm receives.
 
@@ -307,15 +295,13 @@ improvement only when its interval excludes zero; intervals that span zero are
 reported as no detectable difference, whatever their sign.
 
 Intervals are available for the class-agnostic metrics, which are defined
-per scene and aggregate linearly over scenes. AMOTA is not, and neither are
-the nuScenes devkit metrics mAP and NDS: AMOTA integrates MOTA over recall
-thresholds estimated on the whole split, and mAP and NDS are likewise computed
-over the whole split, so a per-scene resample does not yield the same
-estimator. All three are reported as point estimates, and we claim no interval
-support for AMOTA anywhere; the evidence we offer for it is that its sign and rough
-magnitude are stable across four independent detection-budget-matched cells
---- retrospective and causal emission, each in both association frames --- and
-against both the score-threshold and the confidence-accumulation control. The
-two budgets cannot hold at once: matching emitted identities does not equalise
+per scene and aggregate linearly over scenes. AMOTA, mAP and NDS are not: all
+three are estimated over the whole split, so a per-scene resample does not
+yield the same estimator. We report them as point estimates and claim no
+interval support anywhere; the evidence we offer for AMOTA is that its sign and
+rough magnitude are stable across the four detection-budget-matched cells ---
+retrospective and causal emission, each in both association frames --- against
+both controls, and on a second detector
+(Sec.~\ref{supp:crossdet}). Matching emitted identities does not equalise
 the identities reaching the class-aware evaluation, which scores a subset of
 classes, so we report AMOTA only under detection matching.

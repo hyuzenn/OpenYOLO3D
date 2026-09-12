@@ -5,7 +5,7 @@
 \begin{tikzpicture}
 \pgfplotsset{
   every axis/.append style={
-    width=0.96\linewidth, height=3.9cm,
+    width=0.96\linewidth, height=3.2cm,
     tick label style={font=\scriptsize}, label style={font=\scriptsize},
     title style={font=\scriptsize\bfseries, yshift=-2pt},
     axis lines=left, xmin=0, ymin=0,
@@ -15,27 +15,25 @@
 }
 \begin{axis}[
   name=sensor, title={Sensor frame},
-  xmax=0.205, ymax=0.115,
+  xmax=0.2769, ymax=0.1404,
   xlabel={detection recall given up ($-\Delta$DetRe)},
   ylabel={association gained ($\Delta$AssA)},
 ]
 \addplot[thick, mark=*, mark size=1.6pt, color=black!80,
          nodes near coords={$N{=}\pgfplotspointmeta$}, point meta=explicit symbolic]
-  coordinates {(0,0)[\!\!] (0.0817,0.0219)[2] (0.1323,0.0491)[3]
-               (0.1606,0.0767)[4] (0.1794,0.1038)[5]};
+  coordinates {(0,0)[\!\!] (0.1210,0.0296)[2] (0.1873,0.0625)[3] (0.2217,0.0933)[4] (0.2408,0.1221)[5]};
 \node[font=\tiny, anchor=south west] at (axis cs:0.004,0.0) {control};
 \end{axis}
 \begin{axis}[
-  at={(sensor.below south west)}, anchor=north west, yshift=-6mm,
+  at={(sensor.below south west)}, anchor=north west, yshift=-4mm,
   title={World frame},
-  xmax=0.056, ymax=0.0245,
+  xmax=0.064, ymax=0.0229,
   xlabel={detection recall given up ($-\Delta$DetRe)},
   ylabel={association gained ($\Delta$AssA)},
 ]
 \addplot[thick, mark=*, mark size=1.6pt, color=black!80,
          nodes near coords={$N{=}\pgfplotspointmeta$}, point meta=explicit symbolic]
-  coordinates {(0,0)[\!\!] (0.0219,0.0058)[2] (0.0342,0.0139)[3]
-               (0.0412,0.0184)[4] (0.0470,0.0220)[5]};
+  coordinates {(0,0)[\!\!] (0.0278,0.0103)[2] (0.0409,0.0148)[3] (0.0492,0.0181)[4] (0.0556,0.0199)[5]};
 \node[font=\tiny, anchor=south west] at (axis cs:0.001,0.0) {control};
 \end{axis}
 \end{tikzpicture}

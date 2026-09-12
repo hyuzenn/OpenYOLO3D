@@ -3,13 +3,17 @@
 
 We report three outdoor comparisons on nuScenes val and one indoor comparison
 on ScanNet200 val, each between the confirmation-based module and a control
-granted the same output budget over shared frozen detections. Unless stated
+granted the same output budget over shared frozen detections, and measure what
+the provisional stream is worth to a latency-sensitive consumer
+(Sec.~\ref{sec:consumer}). Unless stated
 otherwise, outdoor results use retrospective emission, whose latency cost is
 $N{-}1$ observations; the corresponding frame-index delay is reported in
 Sec.~\ref{sec:emissionabl}.
 
-\subsection{Detection-budget-matched comparison}
+\subsection{Association improves at a matched detection budget}
 \label{sec:detmatch}
+
+\input{figs/fig2_identity_consistency_body}
 
 \begin{table*}[t]
 \centering\footnotesize
@@ -34,8 +38,12 @@ Frame & Arm & Boxes & mAP & NDS & HOTA & AssA & DetA & DetRe & IDF1 & AMOTA \\
 \caption{\textbf{Detection-budget-matched comparison} on nuScenes val
 ($150$ scenes, frozen CenterPoint detections, retrospective emission). The
 three matched arms --- a static score threshold ($0.2214$ sensor, $0.1272$
-world), a confidence-accumulation control in the manner of~\cite{cbmot}, and
-confirmation --- emit the same number of boxes. Bold marks the best
+world), a confidence-accumulation control in the manner of~\cite{cbmot}, and the
+confirmation module (confirmation test, relabelling and merging;
+Sec.~\ref{sec:pipeline}) --- are each calibrated to the module's emitted-box
+budget: the threshold control matches it exactly in both frames, the
+accumulation control exactly in the sensor frame and to within one box in the
+world frame. Bold marks the best
 matched arm, omitted where the leading interval spans zero; the unfiltered
 baseline is reference only and is not budget-matched.}
 \label{tab:detmatch}
@@ -56,9 +64,7 @@ $150$ scenes
 \noindent\textbf{Class-aware tracking accuracy rises.} AMOTA goes from
 $0.0942$ to $0.1338$ (sensor) and $0.3137$ to $0.3864$ (world), the largest
 relative effect we measure. AMOTA admits no per-scene resampling
-(Sec.~\ref{sec:stats}), so this is a point estimate that we rely on only
-because it moves the same way in both frames and under the comparisons
-below.
+(Sec.~\ref{sec:stats}); this is a point estimate.
 
 \noindent\textbf{Detection-oriented metrics fall.} At the same budget, mAP
 drops $0.5504\!\to\!0.3009$ (sensor) and $0.5598\!\to\!0.4921$ (world), DetA
@@ -93,7 +99,7 @@ concern our reproduction under the configuration of Sec.~\ref{sec:controls},
 not the original system or its published results
 (Sec.~\ref{supp:cbmot}).
 
-\subsection{Identity-budget-matched comparison}
+\subsection{The gain survives at a matched identity budget}
 \label{sec:idmatch}
 
 \begin{table}[tb]
@@ -104,19 +110,20 @@ not the original system or its published results
 Arm & Boxes & HOTA & AssA & DetA & IDF1 \\
 \midrule
 \multicolumn{6}{l}{\emph{Sensor frame}} \\
-Control (top-$K$)  & 190{,}708 & \textbf{0.2461} & 0.2346 & \textbf{0.2607} & \textbf{0.2081} \\
-Control (rand.) & --- & --- &.2321--.2460 & --- & --- \\
-Confirmation       & 360{,}309 & 0.1960 & \textbf{0.2535} & 0.1537 & 0.1531 \\
+Control (top-$K$)  & 138{,}053 & \textbf{0.2959} & 0.2607 & \textbf{0.3383} & \textbf{0.2542} \\
+Control (rand.) & --- & --- &.2595--.2765 & --- & --- \\
+Confirmation       & 257{,}259 & 0.2462 & \textbf{0.2744} & 0.2232 & 0.2054 \\
 \midrule
 \multicolumn{6}{l}{\emph{World frame}} \\
-Control (top-$K$)  & 608{,}168 & \textbf{0.2538} & 0.4173 & \textbf{0.1553} & \textbf{0.2596} \\
-Control (rand.) & --- & --- &.3878--.3934 & --- & --- \\
-Confirmation       & 754{,}500 & 0.2263 & \textbf{0.4314} & 0.1196 & 0.2121 \\
+Control (top-$K$)  & 412{,}203 & \textbf{0.3630} & 0.5074 & \textbf{0.2610} & \textbf{0.3969} \\
+Control (rand.) & --- & --- &.4705--.4776 & --- & --- \\
+Confirmation       & 517{,}566 & 0.3224 & \textbf{0.5293} & 0.1973 & 0.3288 \\
 \bottomrule
 \end{tabular}
 \caption{\textbf{Identity-budget-matched comparison.} The control keeps, per
-scene, the $K$ highest-scoring tracks, $K$ being the number of identities the
-confirmation module emits ($64{,}428$ sensor, $108{,}225$ world; exact in both
+scene, the $K$ tracks with the highest whole-track mean score, a budget-matched
+reference rather than a streaming policy, $K$ being the number of identities the
+confirmation module emits ($41{,}207$ sensor, $68{,}222$ world; exact in both
 frames); the random-$K$ rows (``rand.'') give the range over five seeds of the
 same selection made at random, scored on AssA only. The box budgets are
 unequal here, in the control's disfavour on volume-sensitive metrics. AMOTA is
@@ -128,23 +135,29 @@ omitted: identity matching does not equalise class-aware evaluation volume
 Matching emitted identities rather than boxes
 (Tab.~\ref{tab:idmatch}) tests whether the association gain merely reflects
 having fewer identities to confuse. It does not. AssA remains higher for the
-confirmation module in both frames ($0.2346\!\to\!0.2535$ sensor,
-$0.4173\!\to\!0.4314$ world), with intervals excluding zero
-($[{+}0.0129,{+}0.0258]$ and $[{+}0.0101,{+}0.0185]$) and per-scene wins in
-$117/150$ and $111/150$ scenes ($p{=}2.2{\times}10^{-16}$ and
-$4.1{\times}10^{-11}$). Selecting the same number of tracks \emph{at random}
-rather than by score reproduces none of it: the seeded arms reach at most
-$0.2460$ (sensor) and $0.3934$ (world), both below the confirmation module.
+confirmation module in both frames ($0.2607\!\to\!0.2744$ sensor,
+$0.5074\!\to\!0.5293$ world), with intervals excluding zero
+($[{+}0.0071,{+}0.0216]$ and $[{+}0.0177,{+}0.0267]$) and per-scene wins in
+$107/150$ and $116/150$ scenes ($p{=}3.9{\times}10^{-15}$ and
+$2.9{\times}10^{-16}$). Selecting the same number of tracks \emph{at random}
+rather than by score does not reproduce the world-frame result: the seeded arms
+reach at most $0.4776$, well below the confirmation module's $0.5293$. In the
+sensor frame the random arms are \emph{not} separated from it --- they span
+$0.2595$--$0.2765$ and straddle the confirmation module's $0.2744$ --- so the
+sensor-frame identity result rests on the score-ranked control alone.
 
 \noindent\textbf{The rule separation survives identity matching.} Repeating the
 comparison against confidence accumulation with \emph{identities} rather than
-boxes held fixed --- the accumulation control ranked by its own refined score
+boxes held fixed --- the accumulation control ranked by its own whole-track peak refined score
 and cut at the confirmation module's per-scene identity count, matched exactly
---- leaves the association separation unchanged: $+0.0252$ sensor
-($[{+}0.0200,{+}0.0316]$) and $+0.0172$ world ($[{+}0.0089,{+}0.0161]$),
-against $+0.0253$ and $+0.0170$ at matched boxes, with the accompanying losses
+--- leaves the association separation unchanged. The paired per-scene mean
+$\Delta$AssA is $+0.0327$ sensor $[{+}0.0262,{+}0.0397]$ and $+0.0244$ world
+$[{+}0.0189,{+}0.0301]$, both intervals excluding zero. The same per-scene mean
+estimator at matched boxes gives $+0.0341$ $[{+}0.0273,{+}0.0414]$ and
+$+0.0251$ $[{+}0.0196,{+}0.0310]$, with
+the accompanying losses
 on HOTA, DetA, IDF1 and DetRe keeping their sign and significance. The
-separation is the same size whichever currency is held fixed, which excludes
+separation is similar in magnitude under either matched-budget constraint, which excludes
 the simplest reading of it --- that persistence gains association accuracy by
 carrying fewer identities. The result is robust to the control's ranking and
 matching granularity (Sec.~\ref{supp:ranking}).
@@ -156,13 +169,36 @@ control --- so the AssA result here is conservative --- and we therefore read
 DetA, HOTA and IDF1 from Tab.~\ref{tab:detmatch}, where boxes are matched
 exactly.
 
-\subsection{What the association gain is bought with}
+\subsection{Confirmation-window sensitivity}
+\label{sec:nsweep}
+
+All results so far fix $N{=}3$. Table~\ref{tab:nsweep} (supplementary) varies it over
+$\{2,3,4,5\}$, each against its own exactly matched control ($N{=}1$ is
+excluded: it reproduces the unfiltered baseline detection-for-detection, so
+every difference is zero by construction). The association gain is positive at
+every $N$ in both frames and all eight intervals exclude zero. It grows
+monotonically with $N$, close to linearly in the sensor frame and with visible
+deceleration in the world frame, while AMOTA flattens in the sensor frame and
+peaks at $N{=}4$ in the world frame, and the detection cost rises without
+turning over at any $N$ we measured.
+
+No single $N$ is best on every metric, and $N{=}3$ is best on none of them. We
+report this rather than re-select: tuning $N$ on the test metrics is the
+practice the matched controls exist to guard against, and $N$ is a latency
+budget --- the $N{-}1$ observations of delay a deployment can absorb --- not a
+hyperparameter. What the sweep establishes is that the consistency gain is a
+property of confirmation over the whole range tested, and that larger windows
+buy more of it at proportionally more detection cost and latency.
+
+\subsection{Policy behaviour and its trade-off}
 \label{sec:emissionabl}
 
 Sections~\ref{sec:detmatch} and~\ref{sec:idmatch} price confirmation in
 detection retention. This section asks what \emph{else} it pays. All results so
 far release a confirmed track's withheld prefix retrospectively; we first
-measure the causal alternative, then a policy that avoids both costs.
+measure the causal alternative, then a policy that avoids both costs. Two things
+change here: these arms are not budget-matched, since the emitted box count is what an emission policy acts on, and the comparator is the confirmation test
+alone, without the module's relabelling and merging.
 
 \begin{table}[tb]
 \centering\footnotesize
@@ -172,17 +208,17 @@ measure the causal alternative, then a policy that avoids both costs.
 Arm & Boxes & mAP & HOTA & AssA & AMOTA \\
 \midrule
 \multicolumn{6}{l}{\emph{Sensor frame}} \\
-Control (threshold)  & 221{,}297 & \textbf{0.3213} & \textbf{0.2417} & 0.2105 & 0.0574 \\
-Confirmation, causal & 221{,}297 & 0.1360 & 0.2056 & \textbf{0.2861} & \textbf{0.0800} \\
+Control (threshold)  & 168{,}193 & \textbf{0.5287} & \textbf{0.3044} & 0.2147 & 0.0997 \\
+Confirmation, causal & 168{,}193 & 0.2047 & 0.2484 & \textbf{0.3088} & \textbf{0.1290} \\
 \midrule
 \multicolumn{6}{l}{\emph{World frame}} \\
-Control (threshold)  & 503{,}619 & \textbf{0.3367} & \textbf{0.2729} & \textbf{0.4315} & 0.1825 \\
-Confirmation, causal & 503{,}619 & 0.2569 & 0.2456 & 0.4199 & \textbf{0.2089} \\
+Control (threshold)  & 361{,}426 & \textbf{0.5562} & \textbf{0.3864} & \textbf{0.5308} & 0.3417 \\
+Confirmation, causal & 361{,}426 & 0.4480 & 0.3451 & 0.5184 & \textbf{0.4050} \\
 \bottomrule
 \end{tabular}
 \caption{\textbf{Causal emission is not free either: detection-budget-matched}
-($221{,}297$ boxes sensor at threshold $0.2519$, $503{,}619$ world at
-$0.1539$; both arms exact). The causal arm drops the pre-confirmation prefix
+($168{,}193$ boxes sensor at threshold $0.3320$, $361{,}426$ world at
+$0.1673$; both arms exact). The causal arm drops the pre-confirmation prefix
 instead of releasing it retrospectively. Intervals are reported for AssA only,
 the metric the comparison turns on; the remaining columns are point
 estimates.}
@@ -192,16 +228,16 @@ estimates.}
 \noindent\textbf{Causal emission loses the prefix, and with it the world-frame
 gain.} Table~\ref{tab:causal} repeats the detection-budget-matched comparison
 with the prefix permanently dropped. The result splits by association frame.
-The AMOTA gain survives in both ($0.0574\!\to\!0.0800$ sensor,
-$0.1825\!\to\!0.2089$ world), and in the sensor frame the association gain is
+The AMOTA gain survives in both ($0.0997\!\to\!0.1290$ sensor,
+$0.3417\!\to\!0.4050$ world), and in the sensor frame the association gain is
 not merely preserved but larger than under retrospective emission
-($0.2105\!\to\!0.2861$; interval $[{+}0.0577,{+}0.0922]$ against
-$[{+}0.0370,{+}0.0615]$ retrospectively, $110$ of $150$ scenes). In the world
+($0.2147\!\to\!0.3088$; interval $[{+}0.0722,{+}0.1162]$ against
+$[{+}0.0471,{+}0.0785]$ retrospectively, $112$ of $150$ scenes). In the world
 frame, however, causal emission \emph{loses} association accuracy relative to
-the control ($0.4315\!\to\!0.4199$), with a bootstrap interval entirely below
-zero ($[{-}0.0183,{-}0.0047]$; paired $p{=}0.008$, rank-biserial $-0.25$,
-confirmation ahead in only $53$ of $150$ scenes). The detection cost is larger
-throughout than under retrospective emission (mAP $0.3213\!\to\!0.1360$
+the control ($0.5308\!\to\!0.5184$), with a bootstrap interval entirely below
+zero ($[{-}0.0195,{-}0.0049]$; paired $p{=}0.036$, rank-biserial $-0.20$,
+confirmation ahead in only $59$ of $150$ scenes). The detection cost is larger
+throughout than under retrospective emission (mAP $0.5287\!\to\!0.2047$
 sensor).
 
 Causal emission is worse where association was already easy: ego-motion
@@ -210,7 +246,7 @@ there the discarded prefix costs more than confirmation cleans up.
 
 \noindent\textbf{How much latency, in which unit.} The $N-1$ figure routinely
 quoted for retrospective emission is correct only in observations
-(Sec.~\ref{sec:latency}): over the $150$ scenes the confirmation \emph{frame}
+(Sec.~\ref{sec:provisional}): over the $150$ scenes the confirmation \emph{frame}
 horizon has median $3$ and $95$th percentile $7$ --- $1.5$\,s and $3.5$\,s at
 the $2$\,Hz annotated-frame rate, against a constant $2$-observation horizon.
 It is unbounded in principle (Sec.~\ref{supp:latency}).
@@ -223,7 +259,7 @@ It is unbounded in principle (Sec.~\ref{supp:latency}).
 Arm & Boxes & mAP & NDS & HOTA & AssA & DetA & IDF1 & AMOTA \\
 \midrule
 Baseline (ungated) & 718{,}786 & 0.5613 & 0.6480 & 0.2837 & 0.5014 & 0.1613 & 0.2715 & 0.2896 \\
-Confirmation $N{=}3$ (prefix-deleting) & 368{,}724 & 0.4483 & 0.6013 & 0.3452 & 0.5265 & 0.2275 & 0.3662 & 0.4051 \\
+Causal emission, confirmation test only & 368{,}724 & 0.4483 & 0.6013 & 0.3452 & 0.5265 & 0.2275 & 0.3662 & 0.4051 \\
 \midrule
 \multicolumn{9}{l}{\emph{Ours, provisional emission, retraction horizon $H{=}0$}} \\
 \quad provisional & 295{,}403 & 0.3832 & 0.5651 & \textbf{0.3675} & \textbf{0.5619} & \textbf{0.2417} & \textbf{0.4198} & 0.3603 \\
@@ -239,32 +275,41 @@ Confirmation $N{=}3$ (prefix-deleting) & 368{,}724 & 0.4483 & 0.6013 & 0.3452 & 
 Tab.~\ref{tab:detmatch}). These arms are \textbf{not budget-matched}: the box
 count \emph{is} what the emission policy acts on. Revision changes no box,
 score, or identity, so the class-agnostic metrics are \emph{identical} by
-construction (``---''). Bold marks the best policy/confirmation value.}
+construction (``---''). The comparator is causal (prefix-deleting) emission
+under the confirmation test alone: unlike every arm labelled \emph{Confirmation}
+elsewhere in this paper, it applies neither the track-vote relabelling nor the
+merging of the confirmation module (Sec.~\ref{sec:pipeline}). Bold marks the
+best value among the policy arms and that comparator.}
 \label{tab:policy}
 \end{table*}
 
 \noindent\textbf{Provisional emission retains the prefix at zero latency.}
-Table~\ref{tab:policy} measures the proposed policy against the
-prefix-deleting $N{=}3$ confirmation arm over the identical frozen stream. At a retraction
+Table~\ref{tab:policy} measures the proposed policy against causal emission
+under the $N{=}3$ confirmation test alone --- the prefix-deleting comparator,
+which applies neither the relabelling nor the merging of the confirmation
+module (Sec.~\ref{sec:pipeline}) --- over the identical frozen stream. At a retraction
 horizon of $H{=}4$ frames the policy emits $529{,}662$ boxes against that arm's
-$368{,}724$: it retains $160{,}938$ observations ($+43.7\%$) that the arm
+$368{,}724$: it retains $160{,}938$ observations ($+43.6\%$) that the arm
 deletes, and it does so at an emission latency of exactly zero frames. Detection
 quality on the emitted set rises accordingly (mAP $0.4483\!\to\!0.4927$, NDS
 $0.6013\!\to\!0.6206$) and so does association consistency
-(AssA $0.5265\!\to\!0.5378$).
+(AssA $0.5265\!\to\!0.5378$); that same final volume selected by score alone
+($529{,}662$ boxes, own association) reaches only $0.5132$
+($+0.0246$, $[{+}0.0198,{+}0.0300]$), so this final-state figure is not a
+volume effect.
 
 \noindent\textbf{And it is not free.} Over the same comparison the policy
 gives up class-agnostic detection and identity quality: DetA
 $0.2275\!\to\!0.1936$, aggregate HOTA $0.3452\!\to\!0.3219$, IDF1
 $0.3662\!\to\!0.3305$, and AMOTA before revision falls
 $0.4051\!\to\!0.3823$. Emitting a provisional record means emitting records
-that causal confirmation would have suppressed and that ground truth does not support, and
+that the prefix-deleting comparator would have suppressed and that ground truth does not support, and
 the class-agnostic metrics price exactly that.
 
 \noindent\textbf{Revision recovers the class-aware endpoint.} Applying the
 completed-evidence label to the already-emitted stream takes AMOTA
 $0.3823\!\to\!0.4646$ at $H{=}4$ ($+0.0823$), leaving the net effect against
-the prefix-deleting confirmation arm at $+0.0594$: revision restores, and then
+the prefix-deleting comparator at $+0.0594$: revision restores, and then
 exceeds, an AMOTA the emission step had lost rather than adding one on top of
 it. It says nothing about association --- the class-agnostic matcher does not
 read the class label, so those columns are a mechanical identity, not a null
@@ -281,7 +326,7 @@ in output (Sec.~\ref{supp:horizon}).
 
 \noindent\textbf{The horizon is itself a trade-off.} Tightening it to $H{=}0$
 --- retract at the first missed frame --- reverses the picture: the policy then
-emits fewer boxes than the confirmation arm ($295{,}403$) and is the \emph{best} arm in the
+emits fewer boxes than the prefix-deleting comparator ($295{,}403$) and is the \emph{best} arm in the
 table on every class-agnostic metric (AssA $0.5619$, HOTA $0.3675$, DetA
 $0.2417$, IDF1 $0.4198$), while giving up mAP and AMOTA. We report both
 endpoints rather than selecting the one that flatters a chosen column: $H$
@@ -289,43 +334,81 @@ buys retention and detection quality with class-agnostic identity quality,
 and $H{=}4$ is the setting at which the unbounded-horizon result is recovered
 in full at bounded latency.
 
+\subsection{What zero latency buys a consumer}
+\label{sec:consumer}
+
+\begin{table}[tb]
+\centering\footnotesize
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{lcccc}
+\toprule
+& \multicolumn{2}{c}{Miss rate $\downarrow$} & \multicolumn{2}{c}{False alerts $\downarrow$} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+Arm & Sensor & World & Sensor & World \\
+\midrule
+Causal emission, confirmation test only & $69.9\%$ & $47.9\%$ & $533$ & $884$ \\
+Score-ranked control, whole-track & $14.4\%$ & $2.5\%$ & $542$ & $1{,}036$ \\
+Ours, provisional, $H{=}4$ & $2.6\%$ & $2.2\%$ & $2{,}098$ & $1{,}545$ \\
+\bottomrule
+\end{tabular}
+\caption{\textbf{What zero latency buys a consumer}, nuScenes val ($150$
+scenes, $N{=}3$). Miss rate: fraction of objects the consumer does not hold at
+the frame they first come within $20$\,m of the ego vehicle, mean over scenes.
+False alerts: held records within $20$\,m that match no object, per $100$
+object-frames within $20$\,m. The first and last rows are the arms of
+Tab.~\ref{tab:policy} (and their sensor-frame counterparts); revision changes
+no entry. The consumer applies every record as it arrives and ignores the
+provisional status. The score-ranked control, matched to the same identity
+count, is a reference rather than a streaming policy: it ranks tracks by
+whole-track peak score, which is not available when a track is first
+emitted.}
+\label{tab:consumer}
+\end{table}
+
+Zero emission latency is a property of the stream; whether it is worth
+anything depends on what reads it. We measure it with the simplest consumer
+for which timing is the whole question: an object memory that must hold each
+ground-truth object at the frame the object first comes within $R{=}20$\,m of
+the ego vehicle. The memory applies every emitted record, revision and
+retraction as it arrives; an object is \emph{missed} if no held record is
+assigned to it at that frame under one-to-one matching at the associator's
+$2.0$\,m threshold, regardless of class, and a held record within $R$ assigned to no object is a \emph{false
+alert}. The $5{,}487$ critical objects are defined from ground truth and ego
+pose alone, before any arm is read, and $R$ lies inside the smallest official
+per-class evaluation range ($30$\,m), so no class is truncated.
+
+\noindent\textbf{The prefix-deleting arm is still waiting when it matters.}
+Against the causal comparator the policy cuts the miss rate by $67.4$ points in
+the sensor frame ($[{+}64.1,{+}70.6]$, fewer misses in all $149$ scenes that
+contain a critical object) and $45.7$ points in the world frame
+($[{+}41.6,{+}49.9]$, $147$ of $149$; Tab.~\ref{tab:consumer}). These are not
+late arrivals: $1{,}725$ of the comparator's $3{,}262$ sensor-frame misses are
+never held before the object leaves the $20$\,m radius. The reduction keeps its
+sign with objects visible from a scene's first frame excluded, at a $1.0$\,m
+matching distance, and at $R{=}10$ and $30$\,m (Tab.~\ref{tab:consumer-robust}).
+
+\noindent\textbf{The consumer pays for it.} The same memory holds far more
+records that correspond to nothing: about $95$ additional false-alert frames
+per recovered object in the sensor frame ($60$ in the world frame). Against the
+score-ranked control the policy misses fewer
+objects in the sensor frame ($[{+}9.7,{+}14.1]$ points) at nearly four times
+its false alerts, and in the world frame the two miss rates show no detectable
+difference ($[{-}0.02,{+}0.67]$ points, $p{=}0.078$) while the control raises
+fewer false alerts. The advantage measured here is over waiting for
+confirmation; superiority over immediate emission is not established. A consumer that instead admits only
+confirmed records holds exactly the comparator's memory, so the two arms are
+the endpoints of consumer policy rather than two points on a curve. Waiting
+cost is converted into correction cost, not removed. Revision's share of the
+correction is narrow: in the world frame it cuts label reversals on critical
+objects from $1{,}296$ to $887$, and it changes no entry of
+Tab.~\ref{tab:consumer}.
 
 
-\subsection{Confirmation-window sensitivity}
-\label{sec:nsweep}
-
-\input{figs/fig_nsweep_tradeoff_body}
-
-All results so far fix $N{=}3$. Figure~\ref{fig:nsweep} varies it over
-$\{2,3,4,5\}$, giving each $N$ its own exactly matched control, and asks what
-the choice is worth. $N{=}1$ is excluded: it reproduces the unfiltered baseline
-detection-for-detection, so its matched control is the same box set and every
-difference is zero by construction.
-
-The association gain does not depend on the operating point. It is positive at
-every $N$ in both association frames, and all eight intervals exclude zero. It
-also grows monotonically with $N$, close to linearly in the sensor frame and
-with visible deceleration in the world frame, while AMOTA flattens in the
-sensor frame and turns over in the world frame, peaking at $N{=}4$
-(Tab.~\ref{tab:nsweep}). The
-detection cost, meanwhile, rises without turning over at any $N$ we measured,
-and the latency rises linearly by construction.
-
-No single $N$ in this range is best on every metric, and $N{=}3$ is not the
-best on any of them. We report this rather than adjust the operating point:
-re-selecting $N$ from the sweep would convert an inherited constant into a
-value tuned on the test metrics, the practice the matched controls exist to
-guard against. We keep $N{=}3$ because $N$ is a latency budget, not a tuned
-hyperparameter: it is fixed by the $N{-}1$ observations of delay a deployment
-can absorb. What the sweep establishes is that the consistency gain is a
-property of confirmation over the whole range tested, not an artifact of one
-setting, and that larger windows buy more of it at proportionally more
-detection cost and latency. The widening gap is driven by the confirmed arm
-rather than by a failing control, whose own AssA also rises as the matched
-budget tightens (Tab.~\ref{tab:nsweep}).
 
 \subsection{Indoor: semantic stability}
 \label{sec:indoor}
+
+\input{figs/fig3_semantic_stability_body}
 
 \begin{table}[tb]
 \centering\footnotesize
@@ -340,17 +423,13 @@ Control (random $K$)   & --- & 23{,}275--23{,}288 & --- & --- \\
 Confirmation ($N{=}3$) & 10{,}413 & \textbf{17{,}045} & 0.1954 & 0.2532 \\
 \bottomrule
 \end{tabular}
-% TODO(pending indoor re-run): add a "Switches / opportunity" rate column.
-% Denominator now logged by scripts/indoor_matched_control.py (n_obs_total -
-% n_unique_total); it falls out of the indoor N-sweep run at no extra cost.
 \caption{\textbf{Indoor comparison} on ScanNet200 val ($312$ scenes, frozen
-Mask3D proposals with per-frame open-vocabulary labels). The primary endpoint
-is the per-scene label-switch count (lower is better, bold); the control keeps
-the $K$ highest-scoring instances per scene, $K$ matched to the confirmation
-module's emitted-instance count, and the random-$K$ row spans three seeds
-($23{,}275$, $23{,}277$, $23{,}288$). The AP columns are secondary and untested.
-The unfiltered baseline is a validity anchor rather than an arm, and only its
-AP was recorded, hence its empty cells.}
+Mask3D proposals with per-frame open-vocabulary labels). Primary endpoint: the
+per-scene label-switch count (lower is better, bold). The control keeps the $K$
+highest-scoring instances per scene, $K$ matched to the confirmation module's
+emitted-instance count; the random-$K$ row spans three seeds. AP is secondary
+and untested. The unfiltered baseline is a validity anchor rather than an arm,
+and only its AP was recorded.}
 \label{tab:indoor}
 \end{table}
 
@@ -358,9 +437,9 @@ The indoor experiment asks whether the same rule improves \emph{semantic}
 stability in the pipeline of Sec.~\ref{sec:datasets}, which shares nothing with
 the outdoor one. Against the identity-matched control, confirmation reduces label
 switches from $23{,}303$ to $17{,}045$, a $26.9\%$ reduction at an essentially
-equal instance budget ($10{,}413$ vs.\ $10{,}410$). The reduction is $18.0$ switches at the median
-(Sec.~\ref{supp:indoor}) and holds in $309$ of $312$ scenes (Wilcoxon
-$p{=}1.5{\times}10^{-52}$, rank-biserial $0.99$). The three random-$K$ arms are
+equal instance budget ($10{,}413$ vs.\ $10{,}410$). It holds in $309$ of $312$ scenes (Wilcoxon
+$p{=}1.5{\times}10^{-52}$, rank-biserial $0.99$; per-scene distribution in
+Sec.~\ref{supp:indoor}). The three random-$K$ arms are
 indistinguishable from the score-ranked control and far from the confirmation
 module, so the reduction is specific to temporal selection rather than to
 emitting fewer instances by any rule.
@@ -372,36 +451,46 @@ pipelines differ in whether the withheld detections carry segmentation mass,
 and we report the difference in effect without claiming the outdoor trade-off
 is avoidable in general.
 
+\input{figs/fig_provretro_frontier_body}
+
+\noindent\textbf{The waiting is separable from the gain.} Provisional
+emission moves the window's waiting cost after emission rather than removing
+it. Figure~\ref{fig:provretro} sweeps both on these scenes and proposals:
+provisional emission here fixes each emitted label $H$ observations later
+(\emph{revision horizon}); unlike the outdoor retraction horizon, $H$ does not
+govern retraction, which removes the same $104$ observations at every $H$. Confirmation
+at $N{=}2{\ldots}5$ pays $2.31$ to $9.53$ frames of mean initial
+latency, provisional emission pays none, and the two
+families coincide pairwise --- $H{=}2$ reaches the $17{,}152$ switches of
+$N{=}3$, $H{=}4$ the $13{,}502$ of $N{=}5$ --- by construction rather than by
+measurement, so this is not an additional consistency gain, only a change in
+when the cost falls. Revision is that cost: $7.98\%$ of emitted observations
+are revised at $H{=}2$ and $11.29\%$ at $H{=}4$, at unchanged AP ($0.19607$
+across every confirmation and provisional arm). At the wide end $N{=}5$ spends
+$9.53$ frames of waiting and never emits $169$ instances, against immediate
+emission with $11.29\%$ revisions and $104$ retractions.
+
 
 \section{Discussion}
 \label{sec:discussion}
 
-\subsection{Confirmation is a trade-off, not a free gain}
-
-Against an unfiltered baseline, temporal confirmation appears to improve
-nearly every tracking metric. Against a non-temporal rule granted the same
-output budget, most of that apparent improvement is the effect of emitting
-less, and what survives is both sharper and smaller: association consistency
-improves, and detection-oriented accuracy degrades over an \emph{identical}
-box set. The gain is bought rather than added, and each additional observation
-of delay buys more of it at proportionally more detection cost. Against
-confidence accumulation the picture is a split rather than an ordering ---
-persistence takes association consistency, accumulation keeps the detection-
-and identity-oriented measures --- so the choice between them is a choice of
-which axis a system is consumed along, not a ranking.
-
-\subsection{Provisional emission changes the currency of the cost}
+Over an identical box set, association consistency improves and
+detection-oriented accuracy degrades: the gain is bought rather than added, and
+each further observation of delay buys more of it at proportionally more
+detection cost. Against confidence accumulation it is a split rather than an
+ordering --- persistence takes association consistency, accumulation keeps the
+detection- and identity-oriented measures --- so the choice is which axis a
+system is consumed along, not a ranking.
 
 Confirmation must decide what to do with the observations that precede it, and
-the classical rule offers only two answers: release them late, or drop them
-and lose the world-frame association gain with them. Neither is compatible
-with a consumer that must act immediately on output whose reliability improves
-later. The policy's content is a separation --- \emph{when output becomes
-available} is decoupled from \emph{when evidence becomes reliable} --- which
-converts the currency of the cost from latency or retention into
-revisability: the consumer must accept that a record it holds may be updated
-or withdrawn, and the retraction horizon bounds how long that obligation
-lasts. It is an operating-point change, not a new confirmation mechanism.
+the classical rule offers two answers: release them late, or drop them and
+lose the world-frame association gain with them. Neither suits a consumer that
+must act immediately on output whose reliability improves later. The policy
+separates \emph{when output becomes available} from \emph{when evidence
+becomes reliable}, converting the cost from latency or retention into
+revisability (Sec.~\ref{sec:consumer}): a record already held may be updated or withdrawn, and the
+retraction horizon bounds how long that obligation lasts. It is an
+operating-point change, not a new confirmation mechanism.
 
 \subsection{Limitations}
 
@@ -414,23 +503,36 @@ and do not claim. Nor do we separate the label change from the nuScenes
 attribute recomputation it entails, so the AMOTA gain is attributed to the
 pair.
 
-\noindent\textbf{Scope.} We do not measure what a downstream planner or mapper
-pays to apply a revision or a retraction. The full tracking evaluation is
-nuScenes only, over a single frozen CenterPoint detection set, so we make no
-cross-detector claim; ScanNet200 has no instance-tracking ground truth, so the
-indoor endpoint is label switching rather than an identity metric and tests
-whether the confirmation rule transfers, not whether the streaming claim holds
-there.
+\noindent\textbf{The association gain does not transfer across detectors.}
+Repeating the budget-matched comparison on BEVFusion-L --- LiDAR-only
+BEVFusion with a TransFusion head --- reproduces the sensor-frame gain against
+all three controls ($+0.0471$, $+0.0280$, $+0.0217$ AssA, every interval
+excluding zero) but not the world-frame gain, which is negative against the
+threshold control ($-0.0080$, $[{-}0.0144,{-}0.0015]$) and indistinguishable
+from zero against both accumulation controls. The primary criterion of
+Sec.~\ref{sec:stats} therefore fails on this detector, and we narrow the
+association claim to the sensor frame; AMOTA stays positive in every cell, as
+a point estimate. The tested arm is confirmation, so this bounds
+Sec.~\ref{sec:detmatch} rather than the provisional policy;
+Sec.~\ref{supp:crossdet} reports the analysis.
+
+\noindent\textbf{Scope.} The consumer of Sec.~\ref{sec:consumer} is a proxy on
+one detector: it shows whether an object is held when it comes close, not what
+a planner does with it or whether the false-alert load is tolerable. ScanNet200 has no instance-tracking
+ground truth, so the indoor endpoint is label switching rather than an identity
+metric and tests whether the confirmation rule transfers, not whether the
+streaming claim holds there.
 
 \section{Conclusion}
 \label{sec:conclusion}
 
 Temporal confirmation provides a genuine association-consistency gain under
 matched detection and identity budgets, but the gain is coupled to detection
-retention and to latency. Provisional emission separates immediate output from
+retention and to latency, and on a second detector it survives only in the
+sensor frame. Provisional emission separates immediate output from
 evidence maturity: observations are emitted causally, then revised or retracted
-as evidence accumulates. On nuScenes, $H{=}4$ retains $43.7\%$ more
-observations than the prefix-deleting confirmation arm and revision raises
+as evidence accumulates. On nuScenes, $H{=}4$ retains $43.6\%$ more
+observations than the prefix-deleting comparator and revision raises
 AMOTA by $0.0823$ over the provisional output. Against the prefix-deleting arm
 the policy gives up class-agnostic detection and identity quality. On
 ScanNet200 the same rule reduces class-label switching by $26.9\%$ at a matched

@@ -7,27 +7,27 @@
 Frame & $N$ & Delay & Boxes & $\Delta$AssA & 95\% CI & $\Delta$AMOTA & $\Delta$DetRe \\
 \midrule
 \multirow{4}{*}{Sensor}
- & 2 & $1$ & 551{,}452 & $+0.0219$ & $[{+}0.0155,{+}0.0286]$ & $+0.0177$ & $-0.0817$ \\
- & 3 & $2$ & 360{,}309 & $+0.0491$ & $[{+}0.0370,{+}0.0615]$ & $+0.0339$ & $-0.1323$ \\
- & 4 & $3$ & 269{,}330 & $+0.0767$ & $[{+}0.0596,{+}0.0936]$ & $+0.0393$ & $-0.1606$ \\
- & 5 & $4$ & 217{,}295 & $+0.1038$ & $[{+}0.0820,{+}0.1249]$ & $+0.0414$ & $-0.1794$ \\
+ & 2 & $1$ & 375{,}982 & ${+}0.0296$ & $[{{+}0.0217},{{+}0.0383}]$ & ${+}0.0176$ & ${-}0.1210$ \\
+ & 3 & $2$ & 257{,}259 & ${+}0.0625$ & $[{{+}0.0471},{{+}0.0785}]$ & ${+}0.0396$ & ${-}0.1873$ \\
+ & 4 & $3$ & 203{,}019 & ${+}0.0933$ & $[{{+}0.0720},{{+}0.1149}]$ & ${+}0.0478$ & ${-}0.2217$ \\
+ & 5 & $4$ & 171{,}395 & ${+}0.1221$ & $[{{+}0.0960},{{+}0.1480}]$ & ${+}0.0529$ & ${-}0.2408$ \\
 \midrule
 \multirow{4}{*}{World}
- & 2 & $1$ & 869{,}354 & $+0.0058$ & $[{+}0.0021,{+}0.0096]$ & $+0.0228$ & $-0.0219$ \\
- & 3 & $2$ & 754{,}500 & $+0.0139$ & $[{+}0.0086,{+}0.0195]$ & $+0.0378$ & $-0.0342$ \\
- & 4 & $3$ & 658{,}099 & $+0.0184$ & $[{+}0.0120,{+}0.0252]$ & $+0.0424$ & $-0.0412$ \\
- & 5 & $4$ & 576{,}711 & $+0.0220$ & $[{+}0.0148,{+}0.0297]$ & $+0.0381$ & $-0.0470$ \\
+ & 2 & $1$ & 594{,}547 & ${+}0.0103$ & $[{{+}0.0068},{{+}0.0140}]$ & ${+}0.0614$ & ${-}0.0278$ \\
+ & 3 & $2$ & 517{,}566 & ${+}0.0148$ & $[{{+}0.0098},{{+}0.0203}]$ & ${+}0.0726$ & ${-}0.0409$ \\
+ & 4 & $3$ & 457{,}121 & ${+}0.0181$ & $[{{+}0.0120},{{+}0.0250}]$ & ${+}0.0736$ & ${-}0.0492$ \\
+ & 5 & $4$ & 409{,}463 & ${+}0.0199$ & $[{{+}0.0130},{{+}0.0276}]$ & ${+}0.0682$ & ${-}0.0556$ \\
 \bottomrule
 \end{tabular}
 \caption{\textbf{Confirmation-window sensitivity.} Each row is confirmation at
 that $N$ with retrospective emission, minus \emph{its own}
 detection-budget-matched threshold control, matched exactly to the box count
 in the Boxes column. Delay is $N{-}1$ observations. The
-$N{=}3$ rows are matched at a larger budget than
-Tab.~\ref{tab:detmatch} and are not the same comparison. $\Delta$AMOTA is a whole-split point estimate; the
+$N{=}3$ rows are the same comparison as Tab.~\ref{tab:detmatch}, matched at the
+same budget. $\Delta$AMOTA is a whole-split point estimate; the
 DetRe intervals are omitted for space and exclude zero at every $N$. The matched control's own AssA rises with $N$ as its budget tightens, from
-$0.1980$ at $N{=}2$ to $0.2107$ at $N{=}5$ in the sensor frame and from
-$0.4131$ to $0.4262$ in the world frame. This sweep is an exploratory
+$0.2080$ at $N{=}2$ to $0.2146$ at $N{=}5$ in the sensor frame and from
+$0.5061$ to $0.5260$ in the world frame. This sweep is an exploratory
 sensitivity analysis.}
 \label{tab:nsweep}
 \end{table*}
@@ -45,7 +45,7 @@ events per frame at every $H$).
 \label{supp:ranking}
 Ranking the identity-budget control by mean instead of peak refined score, or
 matching identities dataset-wide instead of per scene, moves its AssA by less
-than $0.004$ in both association frames.
+than $0.007$ in both association frames.
 
 \section{Confirmation latency distribution}
 \label{supp:latency}
@@ -56,10 +56,91 @@ at the $2$\,Hz annotated-frame rate this is a median of $1.5$\,s with a tail of
 $5.0$\,s, against a constant $2$-observation horizon. It is unbounded in
 principle.
 
+\section{Proximity-critical consumer: robustness}
+\label{supp:consumer}
+Numeric backing for the robustness statement of Sec.~\ref{sec:consumer}.
+
+\begin{table}[h]
+\centering\footnotesize
+\setlength{\tabcolsep}{3pt}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lccccr}
+\toprule
+& \multicolumn{2}{c}{Sensor frame} & \multicolumn{2}{c}{World frame} & \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+Setting & $\Delta$ miss & 95\% CI & $\Delta$ miss & 95\% CI & Scenes \\
+\midrule
+$R{=}20$\,m, $2.0$\,m match (main text) & ${+}67.4$ & $[{+}64.1,{+}70.6]$ & ${+}45.7$ & $[{+}41.6,{+}49.9]$ & $149$ \\
+First-frame objects excluded & ${+}54.1$ & $[{+}49.8,{+}58.5]$ & ${+}25.8$ & $[{+}21.6,{+}30.4]$ & $145$ \\
+$1.0$\,m match & ${+}67.9$ & $[{+}64.7,{+}71.1]$ & ${+}43.9$ & $[{+}39.9,{+}47.9]$ & $149$ \\
+$R{=}10$\,m & ${+}57.2$ & $[{+}53.1,{+}61.3]$ & ${+}35.4$ & $[{+}30.7,{+}40.3]$ & $147$ \\
+$R{=}30$\,m & ${+}70.4$ & $[{+}67.6,{+}73.4]$ & ${+}50.6$ & $[{+}47.1,{+}54.1]$ & $150$ \\
+\bottomrule
+\end{tabular}}
+\caption{\textbf{Robustness of the consumer result.} Each entry is the
+per-scene mean miss rate of causal emission under the confirmation test minus
+that of ours (provisional, $H{=}4$), in percentage points, with a $95\%$
+scene-bootstrap interval; Scenes counts those containing at least one critical
+object. Each row below the first changes one setting of the main-text
+comparison. ``First-frame objects excluded'' drops objects already visible at a
+scene's first frame, which no confirming arm can hold at that frame. The
+critical set contains $2{,}656$, $5{,}487$ and $7{,}302$ objects at $R{=}10$,
+$20$ and $30$\,m.}
+\label{tab:consumer-robust}
+\end{table}
+
+\section{Waiting versus revision: per-arm counts}
+\label{supp:provretro}
+Full numeric backing for Fig.~\ref{fig:provretro}. Every arm is derived from a
+single streaming pass over the $312$ ScanNet200 val scenes and one frozen
+proposal cache, verified byte-identical before and after the run; the
+confirmation rows are recomputed from that pass rather than quoted from the
+separate run behind Tab.~\ref{tab:indoor}, which is why their switch counts
+differ slightly from it.
+
+\begin{table}[h]
+\centering\footnotesize
+\setlength{\tabcolsep}{3pt}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{llrrrrr}
+\toprule
+Policy & Conf.\ horizon & Initial lat.\ $\downarrow$ & LSC $\downarrow$ & Rev.\ rate & Retract. & AP \\
+\midrule
+Immediate & -- & \textbf{0} & 23,645 & 0\% & 0 & 0.19626 \\
+\midrule
+Confirmation & $N{=}2$ & 2.31 & 19,912 & -- & 0 & -- \\
+Provisional & $H{=}1 \equiv N{=}2$ & \textbf{0} & 19,912 & 5.56\% & 104 & 0.19607 \\
+\addlinespace[2pt]
+Confirmation & $N{=}3$ & 4.56 & 17,152 & -- & 0 & 0.19607 \\
+Provisional & $H{=}2 \equiv N{=}3$ & \textbf{0} & 17,152 & 7.98\% & 104 & 0.19607 \\
+\addlinespace[2pt]
+Confirmation & $N{=}5$ & 9.53 & 13,502 & -- & 0 & -- \\
+Provisional & $H{=}4 \equiv N{=}5$ & \textbf{0} & 13,502 & 11.29\% & 104 & 0.19607 \\
+\midrule
+\textcolor{gray}{Provisional (bound)} & \textcolor{gray}{$H{=}\infty$} & \textcolor{gray}{0} & \textcolor{gray}{0} & \textcolor{gray}{20.94\%} & \textcolor{gray}{104} & \textcolor{gray}{0.19607} \\
+\bottomrule
+\end{tabular}}
+\caption{\textbf{Waiting versus revision} on ScanNet200 val ($312$ scenes,
+$448{,}690$ emitted observations). Initial latency is the mean over emitted
+instances, in stream frames. LSC is the label-switch count; revision rate is
+revised observations over emitted observations. $H$ is the revision horizon
+in observations: an emitted label is final $H$ observations later. Retraction
+does not depend on $H$. Each provisional row is paired
+with the confirmation setting whose switch count it matches \emph{by
+construction} ($H \equiv N{-}1$), not by measurement. AP is blank for
+$N{=}2$ and $N{=}5$: it was not computed in this evaluation, and we do not
+import it from another run. The grey row is the $H{\to}\infty$ retrospective
+bound --- every observation carries the instance's final label --- which is a
+bound on what revision can recover, not an operating point.}
+\label{tab:provretro-supp}
+\end{table}
+
 \section{Indoor per-scene distribution}
 \label{supp:indoor}
 The per-scene label-switch reduction is $18.0$ switches at the median and
 $20.1$ on average ($95\%$ CI on the mean $[18.7, 21.5]$).
+The three random-$K$ seeds of Tab.~\ref{tab:indoor} give $23{,}275$,
+$23{,}277$ and $23{,}288$ switches.
 
 \section{Confidence-accumulation control}
 \label{supp:cbmot}
@@ -70,3 +151,189 @@ HOTA ($[{-}0.0157,{-}0.0128]$ sensor, $[{-}0.0065,{-}0.0052]$ world), DetA
 exclude zero. In the world frame the control is not statistically separable
 from the static threshold on any of the five metrics we resample (all
 intervals span zero); in the sensor frame it is.
+
+\section{Indoor qualitative replay}
+\label{supp:fig3}
+The sequence in Fig.~\ref{fig:semantic_stability} comes from a three-arm
+per-frame replay, not from the run behind Tab.~\ref{tab:indoor}: the frozen
+proposal cache no longer exists and Mask3D regeneration is not
+bit-reproducible, so per-scene switch counts differ from the table. The
+mechanism the figure draws is exact --- over the replayed scenes the confirmed
+output is identical to a suffix of the unconfirmed output for $602$ of $604$
+instances, and no instance has its label changed after emission --- but the
+frame indices are the replay's own.
+
+
+\section{Cross-detector stress test: BEVFusion-L}
+\label{supp:crossdet}
+
+\subsection*{Detector and protocol}
+The body's tracking evaluation runs on one frozen CenterPoint detection set.
+To test whether the association gain of Sec.~\ref{sec:detmatch} is a property
+of the confirmation rule or of that detector, we repeat the same
+budget-matched comparison on a second LiDAR detector: \textbf{BEVFusion-L},
+LiDAR-only BEVFusion with a TransFusion head, at $\mathrm{mAP}=0.6435$ and
+$\mathrm{NDS}=0.6918$ on nuScenes val. It is not a re-parameterisation of the
+first: it is query-based and NMS-free, emitting a fixed $200$ queries per
+sample, where CenterPoint is anchor-based with NMS in the loop. Proposal
+density, score distribution and duplicate structure all differ, which is what
+makes the swap informative.
+
+Everything else is held fixed: nuScenes val, $150$ scenes, $6{,}019$ samples,
+$N{=}3$, retrospective emission, both association frames, and the same matched
+controls. Every control is a mask over one frozen box stream, so association,
+geometry, scores and timestamps are shared by construction and only the
+surviving set differs. The arm under test is \emph{confirmation}, so this
+section bounds the premise of Sec.~\ref{sec:detmatch}; it does not evaluate the
+provisional policy of Sec.~\ref{sec:provisional}, which we run on one detector
+only.
+
+\subsection*{Budget-matched comparison}
+Tab.~\ref{tab:bevphase1} repeats the detection-budget-matched comparison of
+Sec.~\ref{sec:detmatch} on this detector; Tab.~\ref{tab:bevphase2} adds the two
+confidence-accumulation controls. The three budgets are met in different ways.
+The threshold control cuts a ranked list of boxes and so matches exactly. The
+emission-budget accumulation control admits whole tracks, so it can only
+approach its budget from below and stops one box short in each frame. The
+identity-budget control matches surviving identities per scene exactly and
+leaves the box count free, which is why its box count moves in opposite
+directions in the two frames.
+
+\begin{table*}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{6pt}
+\begin{tabular}{llrccccc}
+\toprule
+Frame & Arm & Boxes & mAP & NDS & HOTA & AssA & AMOTA \\
+\midrule
+\multirow{3}{*}{Sensor}
+ & Baseline    & 1{,}203{,}751 & 0.6435 & 0.6918 & 0.1404 & 0.1964 & 0.0977 \\
+ & Threshold   &   460{,}905 & \textbf{0.6423} & \textbf{0.6918} & \textbf{0.2222} & 0.2062 & 0.1149 \\
+ & Confirmation&   460{,}905 & 0.3500 & 0.5497 & 0.1979 & \textbf{0.2532} & \textbf{0.1306} \\
+\midrule
+\multirow{3}{*}{World}
+ & Baseline    & 1{,}203{,}751 & 0.6435 & 0.6918 & 0.2175 & 0.4721 & 0.2077 \\
+ & Threshold   &   858{,}279 & \textbf{0.6435} & \textbf{0.6918} & \textbf{0.2615} & \textbf{0.4949} & 0.2400 \\
+ & Confirmation&   858{,}279 & 0.5706 & 0.6610 & 0.2483 & 0.4869 & \textbf{0.3121} \\
+\bottomrule
+\end{tabular}
+\caption{\textbf{BEVFusion-L, detection-budget matched.} The threshold control
+emits exactly the confirmation arm's box count in both frames. Bold marks the
+better of the two matched arms. In the world frame the control takes AssA,
+which it does not in Tab.~\ref{tab:detmatch}.}
+\label{tab:bevphase1}
+\end{table*}
+
+\begin{table*}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{6pt}
+\begin{tabular}{llrrcccc}
+\toprule
+Frame & Control & Boxes & Ids & HOTA & AssA & DetA & AMOTA \\
+\midrule
+\multirow{2}{*}{Sensor}
+ & Emission & 460{,}904 &  80{,}952 & 0.2056 & 0.2253 & 0.1889 & 0.1205 \\
+ & Identity & 453{,}716 &  78{,}290 & 0.2050 & 0.2316 & 0.1825 & 0.1208 \\
+\midrule
+\multirow{2}{*}{World}
+ & Emission & 858{,}278 & 105{,}381 & 0.2541 & 0.4858 & 0.1334 & 0.2111 \\
+ & Identity & 894{,}559 & 117{,}023 & 0.2493 & 0.4843 & 0.1288 & 0.2106 \\
+\bottomrule
+\end{tabular}
+\caption{\textbf{Confidence-accumulation controls on BEVFusion-L.} The
+emission-budget control is track-granular --- a track is emitted whole or not
+at all --- so it never exceeds its budget and a small shortfall is reported
+rather than removed: $460{,}904$ of $460{,}905$ in the sensor frame and
+$858{,}278$ of $858{,}279$ in the world frame. The identity-budget control
+matches the confirmation arm's surviving identity count exactly, per scene, in
+all $150$ scenes ($78{,}290$ and $117{,}023$); its box count is unconstrained
+by construction and drifts in both directions.}
+\label{tab:bevphase2}
+\end{table*}
+
+\subsection*{Transfer}
+Tab.~\ref{tab:bevtransfer} subtracts each control from the confirmation arm and
+attaches the scene-bootstrap interval of Sec.~\ref{sec:stats}. The sensor-frame
+rows reproduce the body's result on a detector the body never saw; the
+world-frame rows do not.
+
+\begin{table*}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{7pt}
+\begin{tabular}{llcc}
+\toprule
+Frame & Control & $\Delta$AssA \ [95\% CI] & $\Delta$AMOTA \\
+\midrule
+\multirow{3}{*}{Sensor}
+ & Threshold & $+0.0471$ \ $[{+}0.0356,{+}0.0588]$ & $+0.0156$ \\
+ & Emission  & $+0.0280$ \ $[{+}0.0220,{+}0.0340]$ & $+0.0101$ \\
+ & Identity  & $+0.0217$ \ $[{+}0.0168,{+}0.0268]$ & $+0.0097$ \\
+\midrule
+\multirow{3}{*}{World}
+ & Threshold & $-0.0080$ \ $[{-}0.0144,{-}0.0015]$ & $+0.0393$ \\
+ & Emission  & $+0.0011$ \ $[{-}0.0017,{+}0.0041]$ & $+0.0682$ \\
+ & Identity  & $+0.0025$ \ $[{-}0.0003,{+}0.0056]$ & $+0.0687$ \\
+\bottomrule
+\end{tabular}
+\caption{\textbf{Confirmation minus control on BEVFusion-L.} Intervals are the
+scene-bootstrap protocol of Sec.~\ref{sec:stats}, unchanged
+($10{,}000$ resamples, seed $20260718$). In the sensor frame all three
+intervals exclude zero. In the world frame the threshold interval excludes
+zero \emph{below} it and both accumulation intervals span zero, so the
+world-frame effect is zero or negative under every control --- the opposite of
+the world-frame result in Tab.~\ref{tab:detmatch} and Tab.~\ref{tab:nsweep}.
+$\Delta$AMOTA is a point estimate with no interval (Sec.~\ref{sec:stats}); the
+world-frame values are emission-only, from the control of \S E. We do not
+tabulate CenterPoint deltas beside these, because the CenterPoint
+accumulation arms were matched at a different budget than
+Tab.~\ref{tab:detmatch} and the two are not one comparison.}
+\label{tab:bevtransfer}
+\end{table*}
+
+\subsection*{Isolating emission from revision (both detectors)}
+The confirmation module includes track-voted relabelling after emission
+(Sec.~\ref{sec:pipeline}); in the world frame it overwrites $244{,}943$
+emitted boxes. Its AMOTA therefore mixes the emission
+decision with a semantic revision, while the accumulation controls only ever
+change which boxes survive. We remove the confound with an arm that keeps the
+confirmation arm's emission decision and restores the original per-box labels
+--- same $858{,}279$ boxes, same $117{,}023$ identities, labels untouched.
+
+Its class-agnostic metrics come back \emph{bit-identical} to the confirmation
+arm (HOTA $0.2483$, AssA $0.4869$, DetA $0.1272$, IDF1 $0.2241$). This is
+mechanical, not a null result: those metrics are computed by a class-agnostic
+matcher and cannot respond to a label change, the same invariance noted in
+Sec.~\ref{sec:discussion}. It also means the world-frame AssA result of
+Tab.~\ref{tab:bevtransfer} is unaffected by the relabelling.
+
+AMOTA does respond: it falls from $0.3121$ to $0.2793$, and AMOTP rises from
+$0.8781$ to $0.9448$. So $0.0328$ of the confirmation arm's world-frame AMOTA
+margin was the revision rather than the emission decision. Tab.~\ref{tab:bevtransfer}
+reports the emission-only figures.
+
+\subsection*{Detection cost}
+The cost the body reports is larger on this detector. In the sensor frame
+confirmation takes mAP from $0.6435$ to $0.3500$ and NDS from $0.6918$ to
+$0.5497$, while the threshold control spending the identical box budget holds
+mAP at $0.6423$ and NDS at $0.6918$. In the world frame the same policy takes
+mAP to $0.5706$ and NDS to $0.6610$ against a control that gives up nothing.
+The association gain, where it exists at all, is bought at a detection price
+that a matched non-temporal rule does not pay.
+
+\subsection*{What this section does and does not establish}
+$\Delta$AMOTA carries no confidence interval, for the reason given in
+Sec.~\ref{sec:stats}: AMOTA integrates MOTA over recall thresholds estimated on
+the whole split and has no per-scene decomposition, so the scene-resample
+protocol does not yield the same estimator. Producing one would require
+re-running the official evaluation once per resample, which is a different
+protocol from the one fixed before the run; we did not do it. The AMOTA pattern here
+is therefore a replicated point estimate --- positive in all six cells of
+Tab.~\ref{tab:bevtransfer} and in the CenterPoint cells of the body --- and not
+a statistically bounded effect.
+
+Two further limits. DetRe is not reported for this detector, so
+Tab.~\ref{tab:bevphase1} is not directly comparable to
+Tab.~\ref{tab:detmatch} column for column. And this is one additional detector:
+it is enough to refute a detector-independent reading of the association gain,
+which is what we use it for, and not enough to characterise how the gain varies
+with detector design.

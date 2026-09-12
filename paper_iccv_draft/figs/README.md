@@ -1,12 +1,11 @@
 # figs/ — qualitative figure assets
 
-**Status (2026-08-26): `fig:overview` panel (a) in `sec/2_formatting.tex` is now the
-real-data version** — the same measured pedestrian described below, drawn in the
-existing single-column three-row style (score threshold / causal / retrospective).
-That replaced the old schematic in place, so the standalone full-width figure in
-this folder is **not currently included in the body**. It is kept as the
-two-panel alternative (identity strip + failure inset) for the additional
-qualitative figures planned for the next revision.
+**Status (2026-09-11): both figures are in the body.** `fig:overview` panel (a)
+in `sec/2_formatting.tex` is the four-row real-data version (score threshold /
+causal / retrospective / provisional), and `fig2_identity_consistency_body.tex`
+is `\input` in `sec/3_finalcopy.tex` (Sec. `sec:detmatch`) as a full-width float.
+Both draw the canonical examples re-mined on 2026-09-11 (scene-0966 pedestrian,
+scene-0104 car); provenance below.
 
 Added 2026-08-26. Answers the supervisor's manuscript comment #6 ("qualitative
 figure 없음 → 추가") and 2-week TODO #7.
@@ -17,7 +16,7 @@ figure 없음 → 추가") and 2-week TODO #7.
 | `fig2_identity_consistency_body.tex` | **paste-ready**: `\input{figs/fig2_identity_consistency_body}` from a `sec/*.tex` |
 | `fig2_identity_consistency.tex` | standalone, compiles on its own (for quick preview) |
 | `fig2_identity_consistency.pdf` / `.png` | rendered preview |
-| `fig3_semantic_stability_body.tex` | **paste-ready** indoor layout --- currently a TEMPLATE, see below |
+| `fig3_semantic_stability_body.tex` | indoor figure, in the body (see Fig. 3 status below) |
 | `fig3_semantic_stability.tex` | standalone preview at the CVPR `\textwidth` |
 | `fig3_semantic_stability.pdf` / `.png` | rendered preview |
 
@@ -26,40 +25,56 @@ full-width float in the two-column ICCV layout. It needs
 `\usetikzlibrary{positioning, arrows.meta, backgrounds, fit}` (included at the
 top of the body file) and `amssymb` for `\checkmark` (already in `main.tex`).
 
-## Fig. 3 is a template, not a result
-`fig3_semantic_stability_body.tex` draws the intended indoor layout with every
-label chip left as `?`. This is deliberate: **no stored run persists the
-per-frame label sequence**, so the class names do not exist yet. The number of
-label runs drawn matches the measured switch count of the leading candidate
-(scene0655_00 instance 4: 4 switches over 20 frames, mask IoU 1.000). Recovering
-the real sequence needs
-`results/2026-08-26_qualitative_figure_mining_v01/mining_scripts/run_fig3_replay.pbs`
-(three arms, no production-code change, cross-checked against the frozen
-per-scene switch counts). **Never fill the chips with guessed class names, and
-do not put this in the body until the replay has run and the banner is removed.**
-Candidate instances: `.../FIGURE_SHORTLIST.md`.
+## Fig. 3 status (updated 2026-09-11)
+Two separate facts; do not conflate them.
+
+- **Inclusion:** in the body. `sec/3_finalcopy.tex` inputs it under
+  `sec:indoor`. It is no longer a template: no `?` chips, no banner. Whether it
+  stays in the body is an open editorial decision, not settled here.
+- **Validation:** the replay has run (PBS 119908,
+  `results/2026-08-26_qualitative_figure_mining_v01/fig3_replay/`). The figure
+  draws scene0696_02 instance 28 from that replay, not the earlier template
+  candidate scene0655_00. It used a regenerated Mask3D cache
+  (`results/2026-08-26_mask3d_cache_regen_v01`) because the frozen Tab. 5
+  cache is gone. `lsc_check.json` against the frozen run
+  (`results/2026-08-01_indoor_matched_control_v02`) is **FAIL, 16/17 scenes
+  differ**: regeneration is not bit-reproducible. The mechanism drawn is exact
+  (602/604 instances have gate output identical to a suffix of the baseline, 0
+  have a mid-sequence label change), but the frame numbers come from the
+  replay, not from Tab. 5. Full provenance is in the header of
+  `fig3_semantic_stability_body.tex`. Never fill label chips with guessed
+  class names.
 
 ## Data provenance — every value is from stored output
-Source run: `results/2026-07-30_e2c_retro_thrmatch_v01/` (150 nuScenes val
-scenes), detection-budget-matched arms, **sensor frame**:
+**Re-mined 2026-09-11 from canonical c1fix cells.** The 2026-08-26 values came from
+the superseded `results/2026-07-30_e2c_retro_thrmatch_v01/` run and are retired; on
+the canonical stream the old `scene-0925` example reverses the claim.
+Run directory: `results/2026-09-11_canonical_figure_remining_v01/` (`notes.md`,
+selection criteria, cell md5s). **The only file the figures may quote is its
+`figure_values.json`.** Sensor frame; cells
+`audit/table1_regen_c1fix_2026-08-29/phase2_arms/cells/{ctrl_ego/axis_baseline,
+retro_ego/axis_phase1, gamma_ego/axis_baseline}` (Tab. 1 arms, 257,259 boxes).
+The threshold control re-runs association on its thresholded boxes, so its
+identities come from a separate pass; the other rows share the frozen association.
 
-- control = score threshold t = 0.187537, `cells/ctrl_ego/axis_baseline/tracks.json`
-- ours    = confirmation N = 3 + retrospective emission, `cells/retro_ego/axis_phase1/tracks.json`
-- box budget matched exactly: 360,309 = 360,309
+Fig. 1(a) and Fig. 2(a) — `scene-0966`, GT pedestrian `46af915cdf034fc093620f883ddcdf6b`,
+frames 0–5. Selected by the original rule plus two recorded additions (zero class
+errors; pre-confirmation prefix inside the window). Threshold IDs
+`129000007 → …041 → …041 → …041 → …121 → …121` (2 switches); confirmation and
+frozen stream `129000007` throughout. Displayed IDs are the last three digits.
+Scores 0.7076/0.5883/0.8067/0.7246/0.7323/0.8692, centre distance ≤ 0.168 m,
+pedestrian in every frame. The emitted box is identical in all three streams in
+every frame. Ledger: confirmed at frame 2, running vote pedestrian at every
+frame, 0 relabels, never retracted — confirmation changes status, not label.
 
-Panel (a) — `scene-0925`, GT pedestrian `1a2b708d2e2240c987b17c823713fd24`, frames 0–5.
-Control IDs `120000000 → …056 → …000 → …000 → …000 → …131`; ours `120000000` throughout.
-Displayed IDs are the last three digits. Scores 0.726/0.779/0.792/0.754/0.789/0.833,
-centre distance ≤ 0.27 m, correct class in every frame. **The emitted box is identical
-between the two arms in all six frames** (same translation/size/rotation/score), so the
-panel isolates identity with no detection-quality confound.
+Fig. 2(b) — `scene-0104`, GT car `ad00b4de161548a09912a35d9ebca4c2`, frames 33–34
+(kept by decision; canonical rank 4 under the original ranking). Threshold emits
+`24000967` (0.7443, 0.237 m) then `24000996` (0.7357, 0.262 m). Late release never
+emits it. The frozen stream holds it as two one-observation tracks, `24002581`
+(t=33) and `24002664` (t=34): neither confirms; provisional emission emits both and
+retracts both by t=38 (the first by the H=4 rule, the second at scene end).
 
-Panel (b) — `scene-0104`, GT car `ad00b4de161548a09912a35d9ebca4c2`, frames 33–34 only
-(mid-scene). Control emits `24001399` (0.753) then `24001450` (0.470), both correctly
-classified, ≤ 0.35 m. Ours never emits it: 2 frames < N = 3.
-
-Full candidate mining, ranked alternatives and the failure-case pool:
-`results/2026-08-26_qualitative_figure_mining_v01/CANDIDATES.md`.
+Superseded history: `results/2026-08-26_qualitative_figure_mining_v01/CANDIDATES.md`.
 
 ## Open issues
 1. ~~One-figure rule~~ — retired in `CLAUDE.md` §1.8 on 2026-08-26.
@@ -79,8 +94,8 @@ Full candidate mining, ranked alternatives and the failure-case pool:
    candidates vs. 31 for ego, but under the figure filter (5–8 frames, ≥2 control
    switches, 0 class errors) only 7 survive and **all 7 have just 2 switches**;
    the only world-frame pedestrian among them (scene 96) has a 0.70 m centre
-   error. `scene-0925` (ego) remains the sole 3-switch candidate and is far more
-   tightly localised (0.27 m), so it stays.
+   error. (That comparison was made on the superseded run; the 2026-09-11
+   canonical re-mining keeps the sensor frame, see the provenance section.)
 5. **Detector soundness.** These sequences come from the same pipeline whose detector
    numbers are under review (TODO #1). If that changes `tracks.json`, re-mine before
    final rendering — the scripts are saved next to the candidate report.

@@ -24,9 +24,12 @@
     subpanel/.style={draw=black!30, fill=white, rounded corners=4pt}
 ]
 % ---------------- panel (a) : 0 .. 12.2 ----------------
+% Canonical c1fix values: results/2026-09-11_canonical_figure_remining_v01/figure_values.json
+% scene-0966, GT pedestrian 46af915c..., frames 0-5. Static row: control cell's own
+% association pass (129000007, ...041 x3, ...121 x2). Confirmation row: 129000007 x6.
 \node[anchor=north west, font=\small\sffamily] (titleA) at (0.25, -0.2) {\textbf{(a) Identity consistency under identical detections}};
-\node[anchor=east, align=right, font=\footnotesize] (lblStaticA) at (2.05, -2.32) {\textbf{Static}\\\textbf{threshold}\\[1pt]{\scriptsize 3 ID switches}};
-\node[anchor=east, align=right, font=\footnotesize] (lblOursA)   at (2.05, -3.30) {\textbf{Ours}\\[1pt]{\scriptsize 0 ID switches}};
+\node[anchor=east, align=right, font=\footnotesize] (lblStaticA) at (2.05, -2.32) {\textbf{Static}\\\textbf{threshold}\\[1pt]{\scriptsize 2 ID switches}};
+\node[anchor=east, align=right, font=\footnotesize] (lblOursA)   at (2.05, -3.30) {\textbf{Confirmation}\\[1pt]{\scriptsize 0 ID switches}};
 \foreach \i/\t in {0/{$t{=}0$}, 1/{$t{=}1$}, 2/{$t{=}2$}, 3/{$t{=}3$}, 4/{$t{=}4$}, 5/{$t{=}5$}} {
     \node[anchor=center, font=\scriptsize\bfseries] (timeA\i) at (2.95 + \i*1.68, -0.85) {\t};
     \node[framebox, below=0.12cm of timeA\i] (frameA\i) {
@@ -34,44 +37,49 @@
         \scriptsize Pedestrian
     };
 }
-\node[tagred]    (s0) at (frameA0 |- lblStaticA) {ID 000};
-\node[tagblue]   (s1) at (frameA1 |- lblStaticA) {ID 056};
-\node[tagred]    (s2) at (frameA2 |- lblStaticA) {ID 000};
-\node[tagred]    (s3) at (frameA3 |- lblStaticA) {ID 000};
-\node[tagred]    (s4) at (frameA4 |- lblStaticA) {ID 000};
-\node[tagpurple] (s5) at (frameA5 |- lblStaticA) {ID 131};
+\node[tagred]    (s0) at (frameA0 |- lblStaticA) {ID 007};
+\node[tagblue]   (s1) at (frameA1 |- lblStaticA) {ID 041};
+\node[tagblue]   (s2) at (frameA2 |- lblStaticA) {ID 041};
+\node[tagblue]   (s3) at (frameA3 |- lblStaticA) {ID 041};
+\node[tagpurple] (s4) at (frameA4 |- lblStaticA) {ID 121};
+\node[tagpurple] (s5) at (frameA5 |- lblStaticA) {ID 121};
 \draw[-{Stealth[length=3.5pt]}, dashed, red!80, line width=0.8pt] (s0) -- (s1);
-\draw[-{Stealth[length=3.5pt]}, dashed, red!80, line width=0.8pt] (s1) -- (s2);
-\draw[-{Stealth[length=3.5pt]}, dashed, red!80, line width=0.8pt] (s4) -- (s5);
-\node[tagred] (o0) at (frameA0 |- lblOursA) {ID 000};
-\node[tagred] (o1) at (frameA1 |- lblOursA) {ID 000};
-\node[tagred] (o2) at (frameA2 |- lblOursA) {ID 000};
-\node[tagred] (o3) at (frameA3 |- lblOursA) {ID 000};
-\node[tagred] (o4) at (frameA4 |- lblOursA) {ID 000};
-\node[tagred] (o5) at (frameA5 |- lblOursA) {ID 000};
+\draw[-{Stealth[length=3.5pt]}, dashed, red!80, line width=0.8pt] (s3) -- (s4);
+\node[tagred] (o0) at (frameA0 |- lblOursA) {ID 007};
+\node[tagred] (o1) at (frameA1 |- lblOursA) {ID 007};
+\node[tagred] (o2) at (frameA2 |- lblOursA) {ID 007};
+\node[tagred] (o3) at (frameA3 |- lblOursA) {ID 007};
+\node[tagred] (o4) at (frameA4 |- lblOursA) {ID 007};
+\node[tagred] (o5) at (frameA5 |- lblOursA) {ID 007};
 \draw[double, double distance=1.2pt, idred, line width=0.9pt] (o0) -- (o1) -- (o2) -- (o3) -- (o4) -- (o5);
 \node[anchor=center, font=\scriptsize\bfseries\color{idred!90!black}] (noteA) at (7.15, -4.10) {$\checkmark$ one identity across all six frames};
-% ---------------- panel (b) : 12.45 .. 17.3 ----------------
+% ---------------- panel (b) : 12.35 .. 16.95 ----------------
+% scene-0104, GT car ad00b4de..., frames 33-34. Static: 24000967, 24000996 (control's own
+% association pass). Late release: never emitted. Frozen stream / provisional: two
+% one-observation tracks 24002581 (t=33), 24002664 (t=34), never confirmed, retracted by t=38.
 \node[anchor=north west, font=\small\sffamily] (titleB) at (12.50, -0.2) {\textbf{(b) Failure case}};
-\node[anchor=east, align=right, font=\footnotesize] (lblStaticB) at (13.65, -2.32) {\textbf{Static}};
-\node[anchor=east, align=right, font=\footnotesize] (lblOursB)   at (13.65, -3.30) {\textbf{Ours}};
-\node[anchor=center, font=\scriptsize\bfseries] (timeB0) at (14.60, -0.85) {$t{=}33$};
-\node[anchor=center, font=\scriptsize\bfseries] (timeB1) at (16.10, -0.85) {$t{=}34$};
-\node[framebox, minimum width=1.40cm, below=0.12cm of timeB0] (fb0) {\textcolor{gray!80}{\scriptsize [BEV]}\\[-2pt]\scriptsize Car};
-\node[framebox, minimum width=1.40cm, below=0.12cm of timeB1] (fb1) {\textcolor{gray!80}{\scriptsize [BEV]}\\[-2pt]\scriptsize Car};
-\node[tagblue,   minimum width=1.05cm] (sb0) at (fb0 |- lblStaticB) {\#1399};
-\node[tagpurple, minimum width=1.05cm] (sb1) at (fb1 |- lblStaticB) {\#1450};
+\node[anchor=center, font=\scriptsize\bfseries] (timeB0) at (14.85, -0.85) {$t{=}33$};
+\node[anchor=center, font=\scriptsize\bfseries] (timeB1) at (16.20, -0.85) {$t{=}34$};
+\node[framebox, minimum width=1.25cm, below=0.12cm of timeB0] (fb0) {\textcolor{gray!80}{\scriptsize [BEV]}\\[-2pt]\scriptsize Car};
+\node[framebox, minimum width=1.25cm, below=0.12cm of timeB1] (fb1) {\textcolor{gray!80}{\scriptsize [BEV]}\\[-2pt]\scriptsize Car};
+\node[anchor=east, align=right, font=\scriptsize\bfseries] (lblStaticB) at (14.12, -2.30) {Static};
+\node[anchor=east, align=right, font=\scriptsize\bfseries] (lblLateB)   at (14.12, -2.95) {Late release};
+\node[anchor=east, align=right, font=\scriptsize\bfseries] (lblProvB)   at (14.12, -3.60) {Provisional};
+\node[tagblue,   minimum width=1.05cm] (sb0) at (fb0 |- lblStaticB) {\#0967};
+\node[tagpurple, minimum width=1.05cm] (sb1) at (fb1 |- lblStaticB) {\#0996};
 \draw[-{Stealth[length=3.5pt]}, dashed, red!80, line width=0.8pt] (sb0) -- (sb1);
-\node[text=gray!70, font=\small] (ob0) at (fb0 |- lblOursB) {\textemdash};
-\node[text=gray!70, font=\small] (ob1) at (fb1 |- lblOursB) {\textemdash};
-\node[anchor=center, align=center, font=\scriptsize\color{black!80}] (noteB) at (15.35, -4.05) {2 frames ${<}\,N{=}3$:\\ not confirmed};
+\node[text=gray!70, font=\small] (lb0) at (fb0 |- lblLateB) {\textemdash};
+\node[text=gray!70, font=\small] (lb1) at (fb1 |- lblLateB) {\textemdash};
+\node[tagblue,   dashed, minimum width=1.05cm] (pb0) at (fb0 |- lblProvB) {\#2581};
+\node[tagpurple, dashed, minimum width=1.05cm] (pb1) at (fb1 |- lblProvB) {\#2664};
+\node[anchor=center, align=center, font=\scriptsize\color{black!80}] (noteB) at (14.95, -4.18) {1 obs.\ per track ${<}\,N{=}3$:\\ both retracted by $t{=}38$};
 \begin{scope}[on background layer]
     \draw[subpanel] (0, 0) rectangle (12.10, -4.6);
     \draw[subpanel] (12.35, 0) rectangle (16.95, -4.6);
 \end{scope}
 \end{tikzpicture}
-\caption{\textbf{Identity consistency under identical detections} (nuScenes \emph{val}, sensor frame, detection-budget-matched arms; dashed red arrows mark identity switches).
-\textbf{(a)} One pedestrian in \texttt{scene-0925} over six consecutive keyframes. The emitted 3D box is identical in both arms in every frame --- same centre, size, orientation and score (0.726--0.833, centre error $\le 0.27$\,m, correctly classified throughout) --- so the two rows differ only in the identity attached to that box. The static score threshold assigns three distinct identities, returning to the first one in between; confirmation-based initialisation with retrospective emission assigns one.
-\textbf{(b)} The corresponding cost: a correctly classified, well-localised car in \texttt{scene-0104} visible for only two keyframes, one short of the $N{=}3$ confirmation window. The threshold emits it, already split across two identities; our policy does not emit it at all.}
+\caption{\textbf{Identity consistency under identical detections} (nuScenes \emph{val}, sensor frame, detection-budget-matched arms; dashed red arrows mark identity switches; threshold identities come from the control's own association pass).
+\textbf{(a)} The pedestrian of Fig.~\ref{fig:overview}a (\texttt{scene-0966}). The emitted 3D box is identical in both arms in every frame --- same centre, size, orientation and score (0.588--0.869, centre error $\le 0.17$\,m, correctly classified throughout) --- so the rows differ only in the identity attached to it. The threshold assigns three identities; confirmation with retrospective emission assigns one.
+\textbf{(b)} The cost: a correctly classified, well-localised car in \texttt{scene-0104}, annotated in two keyframes and held by the frozen association as two one-observation tracks, two short of $N{=}3$. The threshold emits it under two identities; late release never emits it; provisional emission emits both observations and retracts both tracks by $t{=}38$.}
 \label{fig:identity_consistency}
 \end{figure*}
