@@ -2,11 +2,7 @@
 Streaming 3D perception must emit objects immediately, yet its consumers need one
 physical object to stay one object. Temporal confirmation, which reports a track only after $N$
 observations, is the standard remedy, but it either delays those observations
-or discards them. At matched detection and identity budgets, and
-against a confidence-accumulation lifecycle, we find that the module's association gain
-is real but is paid for in detection recall, DetA and HOTA. The gain is bought rather than added.
-A second detector narrows it further: it holds in the sensor frame and is zero
-or negative in the world frame.
+or discards them.
 We therefore propose \emph{provisional emission with retrospective revision}:
 every observation is emitted at its own frame under a provisional status, and
 later evidence confirms, relabels or retracts it instead of withholding it. A four-frame retraction horizon exactly reproduces the unbounded
@@ -14,7 +10,12 @@ provisional output. On nuScenes it retains $160{,}938$ observations
 ($+43.6\%$) that prefix-deleting causal emission discards, at zero emission
 latency, and revision raises AMOTA by $0.0823$ --- while giving up DetA, HOTA
 and IDF1 against that arm. On ScanNet200 the same rule reduces class-label
-switching by $26.9\%$ at a matched identity count. We offer a different
+switching by $26.9\%$ at a matched identity count.
+At matched detection and identity budgets, and against a confidence-accumulation lifecycle, temporal
+confirmation's association gain is real but is paid for in detection recall,
+DetA and HOTA. The gain is bought rather than added.
+A second detector narrows it further: it holds in the sensor frame and is zero
+or negative in the world frame. We offer a different
 operating point in the detection--association--latency--revisability
 trade-off, not a uniformly better tracker.
 \end{abstract}
