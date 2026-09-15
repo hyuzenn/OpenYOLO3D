@@ -190,6 +190,69 @@ class GlobalCentroidAssociator(ClassAgnosticAssociator):
         return [int(g) for g in gid_assignments]  # type: ignore
 
 
+class _ConstantVelocityMixin:
+    """Constant-velocity prediction on top of an unmodified greedy matcher.
+
+    The detector provides a per-box ground-plane velocity (``bbox_lidar[7:9]``,
+    LiDAR frame). Before each matching pass we dead-reckon every active track
+    forward by that velocity, so a track is compared against where it is
+    *expected* to be rather than where it was last seen. This is an
+    associator-sensitivity variant of the static matcher, not a
+    reimplementation of any released tracker: gate, gap tolerance, class
+    handling and greedy score order are inherited untouched, and the only change
+    is the stored centroid the gate is measured against.
+
+    The stored centroid lives in the parent's working frame (ego for the
+    sensor-frame variants, global for :class:`GlobalCentroidAssociator`), so
+    the raw LiDAR-frame velocity is rotated into that frame by
+    :meth:`set_frame_context` before use. Unmatched tracks keep integrating,
+    which is what lets a prediction bridge a missed frame.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._vel_R: Optional[np.ndarray] = None   # lidar -> working frame
+        self._dt: float = 0.5                      # seconds since previous sample
+
+    def set_frame_context(self, R_lidar_to_working: np.ndarray, dt: float) -> None:
+        self._vel_R = np.asarray(R_lidar_to_working, dtype=np.float64)
+        self._dt = float(dt)
+
+    def _vel_working(self, p: dict) -> np.ndarray:
+        b = p.get("bbox_lidar") or ()
+        if len(b) < 9 or self._vel_R is None:
+            return np.zeros(3, dtype=np.float64)
+        v = np.array([float(b[7]), float(b[8]), 0.0], dtype=np.float64)
+        if not np.all(np.isfinite(v)):
+            return np.zeros(3, dtype=np.float64)
+        return self._vel_R @ v
+
+    def step(self, proposals: list[dict]) -> list[int]:
+        # Dead-reckon before the inherited matcher reads the centroids.
+        for st in self._active.values():
+            v = st.get("vel")
+            if v is not None:
+                st["centroid"] = st["centroid"] + v * self._dt
+        gids = super().step(proposals)
+        for j, gid in enumerate(gids):
+            st = self._active.get(int(gid))
+            if st is not None:
+                st["vel"] = self._vel_working(proposals[j])
+        return gids
+
+
+class VelocityCentroidAssociator(_ConstantVelocityMixin, CentroidAssociator):
+    """Class-aware sensor-frame matcher with constant-velocity prediction."""
+
+
+class VelocityClassAgnosticAssociator(_ConstantVelocityMixin, ClassAgnosticAssociator):
+    """Class-agnostic sensor-frame matcher with constant-velocity prediction."""
+
+
+class VelocityGlobalCentroidAssociator(_ConstantVelocityMixin, GlobalCentroidAssociator):
+    """World-frame matcher with constant-velocity prediction."""
+
+
 # ---------------------------------------------------------------------------
 # Geometry helpers for the M31 box→vertex-set IoU realization.
 # ---------------------------------------------------------------------------
@@ -241,6 +304,7 @@ class NativeTemporalNuScenesEvaluator:
         proposal_score_threshold: float = 0.0,  # reliability gate (applied on read)
         class_agnostic_association: bool = False,  # task_3_1 counterfactual
         association_frame: str = "ego",      # ego | global (ego-motion-compensated)
+        association_velocity: bool = False,  # constant-velocity prediction in the matcher
         collect_track_metrics: bool = False,  # opt-in OV-TCS / frag / track-length probe
         frag_inject_p: float = 0.0,           # controlled fragmentation injection rate
         fuse_allow=None,                      # 2D->3D label-fusion overlay (None=off,
@@ -256,6 +320,7 @@ class NativeTemporalNuScenesEvaluator:
         self.detguided = detguided_generator
         self.class_agnostic_association = bool(class_agnostic_association)
         self.association_frame = str(association_frame)
+        self.association_velocity = bool(association_velocity)
         if self.association_frame not in ("ego", "global"):
             raise ValueError(f"association_frame must be ego|global, got {association_frame!r}")
         self.collect_track_metrics = bool(collect_track_metrics)
@@ -412,11 +477,15 @@ class NativeTemporalNuScenesEvaluator:
             self.audit["n_pending_at_axis_end"] += sum(len(r) for _e, r in leftover.values())
         self._scene_records: dict[str, tuple[np.ndarray, list[dict]]] = {}
         if self.association_frame == "global":
-            Associator = GlobalCentroidAssociator
+            Associator = (VelocityGlobalCentroidAssociator if self.association_velocity
+                          else GlobalCentroidAssociator)
         elif self.class_agnostic_association:
-            Associator = ClassAgnosticAssociator
+            Associator = (VelocityClassAgnosticAssociator if self.association_velocity
+                          else ClassAgnosticAssociator)
         else:
-            Associator = CentroidAssociator
+            Associator = (VelocityCentroidAssociator if self.association_velocity
+                          else CentroidAssociator)
+        self._prev_sample_ts = None
         self.associator = Associator(
             threshold_m=self.association_threshold_m,
             max_age=self.association_max_age,
@@ -732,6 +801,14 @@ class NativeTemporalNuScenesEvaluator:
         # --- association -> global ids ---------------------------------
         if hasattr(self.associator, "set_ego_pose"):     # global-frame variant
             self.associator.set_ego_pose(ego_pose)
+        if hasattr(self.associator, "set_frame_context"):  # velocity variant
+            ts = float(self.loader.nusc.get("sample", sample_token)["timestamp"]) * 1e-6
+            prev = getattr(self, "_prev_sample_ts", None)
+            dt = ts - prev if (prev is not None and 0.0 < ts - prev < 2.0) else 0.5
+            self._prev_sample_ts = ts
+            R_lid2ego = np.asarray(T_lidar_to_ego[:3, :3], dtype=np.float64)
+            R = ego_pose[:3, :3] @ R_lid2ego if self.association_frame == "global" else R_lid2ego
+            self.associator.set_frame_context(R, dt)
         global_ids = self.associator.step(proposals)
 
         # --- controlled fragmentation injection ------------------------
@@ -1291,6 +1368,10 @@ def main():
                          "(ClassAgnosticAssociator). Exposes proposal-level "
                          "label flicker that the class-aware default "
                          "structurally hides at lsc=0 (task_3_1 finding).")
+    ap.add_argument("--association-velocity", action="store_true",
+                    help="dead-reckon tracks by the detector's predicted velocity "
+                         "before matching (associator-sensitivity variant). "
+                         "Default off: the matcher is unchanged.")
     ap.add_argument("--association-frame", choices=["ego", "global"], default="ego",
                     help="Tracker matching frame. ego = production "
                          "(no ego-motion compensation); global = "
@@ -1375,6 +1456,7 @@ def main():
         proposal_score_threshold=args.proposal_score_threshold,
         class_agnostic_association=args.association_class_agnostic,
         association_frame=args.association_frame,
+        association_velocity=args.association_velocity,
         collect_track_metrics=args.collect_track_metrics,
         frag_inject_p=args.frag_inject_p,
         fuse_allow=fuse_allow,

@@ -1,0 +1,268 @@
+{
+ "seed": 20260718,
+ "n_boot": 10000,
+ "delta": "confirmation - control",
+ "canonical_reference_static_associator": {
+  "ego": {
+   "AssA": 0.0625,
+   "ci": [
+    0.0471,
+    0.0785
+   ]
+  },
+  "global": {
+   "AssA": 0.0148,
+   "ci": [
+    0.0098,
+    0.0203
+   ]
+  }
+ },
+ "frames": {
+  "ego": {
+   "n_scenes": 150,
+   "arms": {
+    "confirmation": {
+     "boxes": 253999,
+     "n_tracks": 40884,
+     "AssA": 0.2659183210369543,
+     "HOTA": 0.24001744829943697,
+     "IDF1": 0.20269996687157213,
+     "DetA": 0.21888608292047187
+    },
+    "control": {
+     "boxes": 253999,
+     "n_tracks": 133124,
+     "AssA": 0.19921599438356863,
+     "HOTA": 0.26606961732202244,
+     "IDF1": 0.20335715519374128,
+     "DetA": 0.35977730334446756
+    }
+   },
+   "paired_stats": {
+    "HOTA": {
+     "mean_delta": -0.050624568532022574,
+     "median_delta": -0.04261063166756193,
+     "wilcoxon_W": 0.0,
+     "p": 2.2996057560669792e-26,
+     "rank_biserial": -1.0,
+     "n_scenes": 150,
+     "n_scenes_gate_better": 0,
+     "ci95_mean_delta": [
+      -0.0558731056361506,
+      -0.045689249438891064
+     ]
+    },
+    "AssA": {
+     "mean_delta": 0.020502410041102394,
+     "median_delta": 0.007023417941088107,
+     "wilcoxon_W": 3344.0,
+     "p": 1.3609952289959841e-05,
+     "rank_biserial": 0.409448123620309,
+     "n_scenes": 150,
+     "n_scenes_gate_better": 94,
+     "ci95_mean_delta": [
+      0.012947618085289525,
+      0.02839455742637802
+     ]
+    },
+    "DetA": {
+     "mean_delta": -0.1420711164971553,
+     "median_delta": -0.14205964967418724,
+     "wilcoxon_W": 0.0,
+     "p": 2.2996057560669792e-26,
+     "rank_biserial": -1.0,
+     "n_scenes": 150,
+     "n_scenes_gate_better": 0,
+     "ci95_mean_delta": [
+      -0.14968764248076907,
+      -0.1345558451567015
+     ]
+    },
+    "IDF1": {
+     "mean_delta": -0.025481456621174077,
+     "median_delta": -0.008157675058064317,
+     "wilcoxon_W": 3372.0,
+     "p": 1.7271459740901643e-05,
+     "rank_biserial": -0.40450331125827815,
+     "n_scenes": 150,
+     "n_scenes_gate_better": 56,
+     "ci95_mean_delta": [
+      -0.03480420192290952,
+      -0.016647479640543365
+     ]
+    },
+    "DetRe": {
+     "mean_delta": -0.23644748601586932,
+     "median_delta": -0.2308041856797875,
+     "wilcoxon_W": 175.0,
+     "p": 7.355613364480698e-25,
+     "rank_biserial": -0.9690949227373068,
+     "n_scenes": 150,
+     "n_scenes_gate_better": 16,
+     "ci95_mean_delta": [
+      -0.26275026793737893,
+      -0.2104237093792271
+     ]
+    }
+   },
+   "bootstrap_ci_combined_delta": {
+    "HOTA": [
+     -0.03071101245497839,
+     -0.022458245362286265
+    ],
+    "AssA": [
+     0.04849394981086746,
+     0.08533316038124683
+    ],
+    "DetA": [
+     -0.14817364864107668,
+     -0.1336448174587511
+    ],
+    "IDF1": [
+     -0.008550533581285833,
+     0.005610282183375915
+    ],
+    "DetRe": [
+     -0.22092069402074274,
+     -0.1722552692884752
+    ]
+   },
+   "exact_box_match": true,
+   "AssA_delta": 0.06670232665338566,
+   "AssA_ci_excludes_zero": true
+  },
+  "global": {
+   "n_scenes": 150,
+   "arms": {
+    "confirmation": {
+     "boxes": 529329,
+     "n_tracks": 67774,
+     "AssA": 0.5709564352565117,
+     "HOTA": 0.34599571346737656,
+     "IDF1": 0.35855729751247783,
+     "DetA": 0.21057803671682573
+    },
+    "control": {
+     "boxes": 529329,
+     "n_tracks": 134453,
+     "AssA": 0.5907572781830219,
+     "HOTA": 0.3512710191807702,
+     "IDF1": 0.3694186952117163,
+     "DetA": 0.20971142063014117
+    }
+   },
+   "paired_stats": {
+    "HOTA": {
+     "mean_delta": -0.00489023351587635,
+     "median_delta": -0.004484960793518927,
+     "wilcoxon_W": 3519.0,
+     "p": 5.777487779001095e-05,
+     "rank_biserial": -0.3785430463576159,
+     "n_scenes": 150,
+     "n_scenes_gate_better": 57,
+     "ci95_mean_delta": [
+      -0.007170432135411035,
+      -0.002701145374046183
+     ]
+    },
+    "AssA": {
+     "mean_delta": -0.02039293140354088,
+     "median_delta": -0.017597228009228194,
+     "wilcoxon_W": 1426.0,
+     "p": 1.8849627831918303e-15,
+     "rank_biserial": -0.7481677704194261,
+     "n_scenes": 150,
+     "n_scenes_gate_better": 27,
+     "ci95_mean_delta": [
+      -0.02587034157664756,
+      -0.015398275902731746
+     ]
+    },
+    "DetA": {
+     "mean_delta": 0.0015424967869264506,
+     "median_delta": 0.002186558887793358,
+     "wilcoxon_W": 4644.0,
+     "p": 0.05601101837003622,
+     "rank_biserial": 0.17986754966887417,
+     "n_scenes": 150,
+     "n_scenes_gate_better": 86,
+     "ci95_mean_delta": [
+      -0.0005791304150357535,
+      0.0036098171796512197
+     ]
+    },
+    "IDF1": {
+     "mean_delta": -0.008626756046735073,
+     "median_delta": -0.008474304912519659,
+     "wilcoxon_W": 2983.0,
+     "p": 4.972168909158052e-07,
+     "rank_biserial": -0.47320088300220753,
+     "n_scenes": 150,
+     "n_scenes_gate_better": 50,
+     "ci95_mean_delta": [
+      -0.011730498928941924,
+      -0.005533288333793809
+     ]
+    },
+    "DetRe": {
+     "mean_delta": -5.37106731398244e-05,
+     "median_delta": 0.0018972879587285663,
+     "wilcoxon_W": 4838.0,
+     "p": 0.12187302395857989,
+     "rank_biserial": 0.14560706401766005,
+     "n_scenes": 150,
+     "n_scenes_gate_better": 89,
+     "ci95_mean_delta": [
+      -0.0017657102832982956,
+      0.0015876355313108822
+     ]
+    }
+   },
+   "bootstrap_ci_combined_delta": {
+    "HOTA": [
+     -0.00731536829617137,
+     -0.003249501070938313
+    ],
+    "AssA": [
+     -0.023094158531217907,
+     -0.016621272000618043
+    ],
+    "DetA": [
+     -0.0013787214943376293,
+     0.0031195852030883545
+    ],
+    "IDF1": [
+     -0.014008441890179425,
+     -0.007703716312113527
+    ],
+    "DetRe": [
+     0.0010174808407320158,
+     0.003125702024089821
+    ]
+   },
+   "exact_box_match": true,
+   "AssA_delta": -0.019800842926510187,
+   "AssA_ci_excludes_zero": true
+  }
+ },
+ "PASS": false,
+ "flagless_regression_3_scenes": {
+  "ego": {
+   "old_code_ref": "e35a174",
+   "old_tracks_md5": "3bbf3b0db1c22b1c24ae3b95eff1ff47",
+   "new_code_flagless_tracks_md5": "3bbf3b0db1c22b1c24ae3b95eff1ff47",
+   "identical": true
+  },
+  "global": {
+   "old_code_ref": "e35a174",
+   "old_tracks_md5": "eea162c2ce027c7e09c8ba9e831814de",
+   "new_code_flagless_tracks_md5": "eea162c2ce027c7e09c8ba9e831814de",
+   "identical": true
+  }
+ },
+ "flagless_regression_note": "Pre-change evaluator (clean worktree at e35a174) vs post-change evaluator, both without --association-velocity, same 3 scenes, phase1 N=3 retro emission: tracks.json byte-identical in both frames; metrics.json differs only in axis_walltime_s.",
+ "interpretation": "The observed temporal-selection effect is associator- and frame-sensitive: the sensor-frame gain survives the tested association change, whereas the world-frame effect reverses sign. Therefore the world-frame result should not be presented as an associator-independent improvement.",
+ "scope": "Tested change: the existing greedy nearest-centroid matcher (2.0 m gate, gap tolerance 5, unchanged class handling) plus constant-velocity prediction from the detector's own velocity. No released tracker and no class-wise gating was implemented or tested; no claim is made about them.",
+ "d4_gate_grid": "abandoned 2026-09-12: disk quota exceeded before any usable cell; partial outputs removed"
+}

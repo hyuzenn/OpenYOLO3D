@@ -1,0 +1,47 @@
+#!/bin/bash
+#PBS -N e4_regress
+#PBS -q coss_a6gpu
+#PBS -l select=1:ncpus=8:ngpus=0:mem=64gb:Qlist=a6000
+#PBS -l walltime=04:00:00
+#PBS -j oe
+#PBS -o /home/rintern16/OpenYOLO3D/results/pbs_logs/
+# No-op regression: run the PRE-CHANGE evaluator (clean worktree at HEAD) on the
+# same 3 scenes, flagless, and compare tracks.json against the post-change run in
+# .../staticref/smoke (which used the new code, also flagless). Identical md5 =>
+# the --association-velocity addition changed nothing for existing experiments.
+# Pinned pre-change ref: e35a174 is the last commit before --association-velocity.
+# The worktree is created on demand (code only; data/ and pretrained/ are
+# symlinked because they are gitignored) and never writes to the cache.
+set -u
+MAIN=/home/rintern16/OpenYOLO3D
+OLD_REF=e35a174
+OLD=$MAIN/.claude/worktrees/e4-regress
+[ -d "$OLD" ] || git -C "$MAIN" worktree add --detach "$OLD" "$OLD_REF"
+for d in data pretrained; do [ -e "$OLD/$d" ] || ln -s "$MAIN/$d" "$OLD/$d"; done
+cd "$OLD"
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:${PATH:-}
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}
+export PYTHONPATH="${OLD}:${PYTHONPATH:-}"
+
+CACHE="$MAIN/results/outdoor_native_temporal_cpcache_thr000_10sweep_gravity_c1fix"
+RUN_DIR="$MAIN/results/2026-09-12_e4_assoc_velocity_v01/oldcode_smoke"
+mkdir -p "$RUN_DIR/cells"
+exec >"$RUN_DIR/run.${PBS_JOBID%%.*}.log" 2>&1
+echo "== old-code regression  $(date)  host=$(hostname)"
+echo "== code tree : $OLD  (HEAD $(git -C "$OLD" rev-parse --short HEAD), expect $OLD_REF)"
+echo "== velocity flag present in code? $(grep -c association_velocity method_scannet/streaming/nuscenes_native_evaluator.py) (expect 0)"
+
+COMMON=(--nuscenes-config configs/nuscenes_trainval_multisweep.yaml
+        --proposal-source gamma --cp-cache-dir "$CACHE"
+        --no-gpu --collect-track-metrics --scene-limit 3)
+
+for FRAME in ego global; do
+  echo "== [old_$FRAME] replay phase1 --m11-N 3 --retro-emission  $(date)"
+  python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+    --output "$RUN_DIR/cells/old_${FRAME}" --axes phase1 --m11-N 3 --retro-emission \
+    --association-frame "$FRAME" "${COMMON[@]}" || echo "== [old_$FRAME] FAILED"
+done
+echo "== done $(date)"

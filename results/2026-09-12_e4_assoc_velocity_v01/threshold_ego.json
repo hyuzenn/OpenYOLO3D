@@ -1,0 +1,8 @@
+{
+  "tracks": "/home/rintern16/OpenYOLO3D/audit/table1_regen_c1fix_2026-08-29/phase2_arms/cells/gamma_ego/axis_baseline/tracks.json",
+  "n_baseline_boxes": 718786,
+  "target": 253999,
+  "threshold": 0.22387352585792542,
+  "predicted_count": 253999,
+  "rel_err": 0.0
+}

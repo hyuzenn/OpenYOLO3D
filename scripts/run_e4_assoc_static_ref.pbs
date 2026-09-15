@@ -1,0 +1,86 @@
+#!/bin/bash
+#PBS -N e4_assoc_static
+#PBS -q coss_a6gpu
+#PBS -l select=1:ncpus=8:ngpus=0:mem=64gb:Qlist=a6000
+#PBS -l walltime=24:00:00
+#PBS -j oe
+#PBS -o /home/rintern16/OpenYOLO3D/results/pbs_logs/
+#
+# Smoke gate reference for scripts/run_e4_assoc_velocity.pbs: the SAME job with
+# --association-velocity removed (static matcher), run on the same 3 scenes.
+# Differing box/track counts between the two smokes show the flag is not a
+# silent no-op. Its tracks.json also serves as the new-code side of the flagless
+# regression in scripts/run_e4_regress_oldcode.pbs.
+#
+# Env: SMOKE=1 -> 3 scenes into .../smoke.
+set -u
+PROJECT_ROOT=/home/rintern16/OpenYOLO3D
+cd "$PROJECT_ROOT"
+source /home/rintern16/miniconda3/etc/profile.d/conda.sh
+conda activate openyolo3d-dev
+export CUDA_HOME=/tools/cuda/cuda11.7
+export PATH=$CUDA_HOME/bin:${PATH:-}
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+
+SMOKE="${SMOKE:-0}"
+CACHE="$PROJECT_ROOT/results/outdoor_native_temporal_cpcache_thr000_10sweep_gravity_c1fix"
+C1FIX="$PROJECT_ROOT/audit/table1_regen_c1fix_2026-08-29/phase2_arms/cells"
+BASE_TRACKS="$C1FIX/gamma_ego/axis_baseline/tracks.json"
+RUN_DIR="$PROJECT_ROOT/results/2026-09-12_e4_assoc_velocity_v01/staticref"
+[ "$SMOKE" = "1" ] && RUN_DIR="$RUN_DIR/smoke"
+mkdir -p "$RUN_DIR/cells" "$PROJECT_ROOT/results/pbs_logs"
+exec >"$RUN_DIR/run.${PBS_JOBID%%.*}.log" 2>&1
+
+echo "== E4 associator velocity sensitivity  $(date)  host=$(hostname)  SMOKE=$SMOKE"
+echo "== git HEAD : $(git rev-parse HEAD)"
+echo "== cache    : $CACHE ($(ls "$CACHE" | wc -l) files)"
+[ "$(ls "$CACHE" | wc -l)" -eq 6019 ] || { echo "ABORT: cache incomplete"; exit 2; }
+[ -f "$BASE_TRACKS" ] || { echo "ABORT: base tracks missing"; exit 2; }
+
+COMMON=(--nuscenes-config configs/nuscenes_trainval_multisweep.yaml
+        --proposal-source gamma --cp-cache-dir "$CACHE"
+        --no-gpu --collect-track-metrics)
+[ "$SMOKE" = "1" ] && COMMON+=(--scene-limit 3)
+
+for FRAME in ego global; do
+  RETRO="$RUN_DIR/cells/retrostatic_${FRAME}"
+  CTRL="$RUN_DIR/cells/ctrlstatic_${FRAME}"
+
+  # ---- 1. confirmation arm: phase1 N=3, retrospective emission -----------
+  if compgen -G "$RETRO"/axis_*/metrics.json >/dev/null; then
+    echo "== [retrostatic_$FRAME] done, skip"
+  else
+    echo "== [retrostatic_$FRAME] replay phase1 --m11-N 3 --retro-emission  $(date)"
+    python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+      --output "$RETRO" --axes phase1 --m11-N 3 --retro-emission \
+      --association-frame "$FRAME" "${COMMON[@]}" \
+      || { echo "== [retrostatic_$FRAME] REPLAY FAILED"; continue; }
+    python -u scripts/e1_gt_metrics.py --cell "$RETRO" \
+      || echo "== [retrostatic_$FRAME] GT METRICS FAILED"
+  fi
+
+  # ---- 2. detection-budget-matched score-threshold control ---------------
+  TARGET=$(python -c "
+import json,glob
+print(json.load(open(glob.glob('$RETRO/axis_*/metrics.json')[0]))['n_pred_boxes_total'])")
+  echo "== [ctrlstatic_$FRAME] target=$TARGET boxes (from retrostatic_$FRAME)  $(date)"
+  TJ="$RUN_DIR/threshold_${FRAME}.json"
+  python -u scripts/e2_thrmatch_pick.py --tracks "$BASE_TRACKS" \
+      --target "$TARGET" --out "$TJ" || { echo "== [ctrlstatic_$FRAME] PICK FAILED"; continue; }
+  THR=$(python -c "import json;print(json.load(open('$TJ'))['threshold'])")
+
+  if compgen -G "$CTRL"/axis_*/metrics.json >/dev/null; then
+    echo "== [ctrlstatic_$FRAME] done, skip"
+  else
+    echo "== [ctrlstatic_$FRAME] replay baseline @ thr $THR  $(date)"
+    python -u -m method_scannet.streaming.nuscenes_native_evaluator \
+      --output "$CTRL" --axes baseline --association-frame "$FRAME" \
+      --proposal-score-threshold "$THR" "${COMMON[@]}" \
+      || { echo "== [ctrlstatic_$FRAME] REPLAY FAILED"; continue; }
+    python -u scripts/e1_gt_metrics.py --cell "$CTRL" \
+      || echo "== [ctrlstatic_$FRAME] GT METRICS FAILED"
+  fi
+done
+
+echo "== done $(date)"
