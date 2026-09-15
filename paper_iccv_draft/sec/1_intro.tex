@@ -108,8 +108,8 @@ each matched detection score, SimpleTrack~\cite{simpletrack} names
 \emph{output} as a lifecycle decision separate from birth and death, and
 Poly-MOT~\cite{polymot} and Fast-Poly~\cite{fastpoly} pair category-specific
 association with mixed count- and confidence-based termination. We take this
-line as a comparator rather than a competitor: our associator is deliberately
-lightweight, so our absolute tracking scores are not comparable to theirs.
+line as a comparator rather than a competitor: we measure what temporal
+selection changes at a fixed associator, not absolute tracking scores.
 Both rules decide which detections reach the output and both emit less, which
 is why we compare them at matched output and identity budgets.
 
