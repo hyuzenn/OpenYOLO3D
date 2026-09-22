@@ -135,9 +135,9 @@ baseline.
 \noindent\textbf{Outdoor.} The nuScenes~\cite{nuscenes} validation split, all
 $150$ scenes at the $2$\,Hz annotated-frame rate. Detections come from a
 pretrained CenterPoint~\cite{centerpoint} detector whose per-frame output is
-computed once and \emph{frozen}; every arm of every experiment replays the
-same stored detections ($1{,}029{,}380$ boxes over the split; mAP $0.3408$,
-NDS $0.3150$), so any metric difference between arms is attributable to the
+computed once from $10$-sweep LiDAR input and \emph{frozen}; every arm of every
+experiment replays the same stored detections ($718{,}786$ boxes over the
+split; mAP $0.5613$, NDS $0.6480$), so any metric difference between arms is attributable to the
 selection rule, not to detector variance.
 
 \noindent\textbf{Indoor.} The ScanNet200~\cite{scannet200} validation split,
@@ -156,9 +156,9 @@ Two controls bracket the two budgets a temporal module alters
 
 \noindent\textbf{Detection-budget-matched control.} A score threshold is
 applied to the frozen baseline detections and calibrated so that the control
-emits \emph{exactly} as many boxes as the temporal module --- $360{,}309$
-boxes in the sensor frame (threshold $0.1875$) and $754{,}500$ in the world
-frame (threshold $0.1211$), both with zero count error. The match is exact
+emits \emph{exactly} as many boxes as the temporal module --- $257{,}259$
+boxes in the sensor frame (threshold $0.2214$) and $517{,}566$ in the world
+frame (threshold $0.1272$), both with zero count error. The match is exact
 rather than approximate because the count is a step function of the
 threshold whose breakpoints are the observed scores: the matched threshold is
 the $K$-th largest observed score, with ties resolved upward so the count
@@ -168,15 +168,15 @@ detector's own confidence ranking at equal detection volume?
 \noindent\textbf{Identity-budget-matched control.} Per sequence, the control
 keeps the $K$ highest-scoring tracks (ranked by mean detection score), where
 $K$ is the number of identities the temporal module emits in that sequence.
-The track counts match exactly ($64{,}428$ tracks in the sensor frame;
-$108{,}225$ in the world frame). This control answers: does temporal
+The track counts match exactly ($41{,}207$ tracks in the sensor frame;
+$68{,}222$ in the world frame). This control answers: does temporal
 selection beat score-based selection at equal \emph{identity} volume? Five
 additional arms select the same $K$ tracks per sequence \emph{at random}
 (five seeds), scored on association accuracy, separating score-based
 selection from selection per se. One budget cannot
 be matched at a time without unmatching the other: at equal track count the
-control emits fewer boxes than the temporal module ($190{,}708$ vs.\
-$360{,}309$ sensor; $608{,}168$ vs.\ $754{,}500$ world), because score-ranked
+control emits fewer boxes than the temporal module ($138{,}053$ vs.\
+$257{,}259$ sensor; $412{,}203$ vs.\ $517{,}566$ world), because score-ranked
 tracks are shorter than persistence-selected ones. We report this asymmetry
 explicitly and interpret the two controls jointly rather than reading either
 alone.

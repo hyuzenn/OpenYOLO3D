@@ -19,21 +19,21 @@ frames ($1.0$\,s at the $2$\,Hz annotated-frame rate).
 Frame & Arm & Boxes & mAP & NDS & HOTA & AssA & DetA & DetRe & IDF1 & AMOTA \\
 \midrule
 \multirow{3}{*}{Sensor}
- & Baseline (unfiltered)      & 1{,}029{,}380 & 0.3408 & 0.3150 & 0.1372 & 0.1896 & 0.1007 & 0.5904 & 0.0759 & 0.0501 \\
- & Control (threshold)       &   360{,}309 & \textbf{0.3324} & \textbf{0.3110} & \textbf{0.2098} & 0.2044 & \textbf{0.2184} & \textbf{0.5182} & 0.1517 & 0.0547 \\
- & Confirmation ($N{=}3$)     &   360{,}309 & 0.2023 & 0.2518 & 0.1960 & \textbf{0.2535} & 0.1537 & 0.3859 & 0.1531 & \textbf{0.0887} \\
+ & Baseline (unfiltered)      & 718{,}786 & 0.5613 & 0.6480 & 0.1793 & 0.2007 & 0.1620 & 0.6690 & 0.1112 & 0.0858 \\
+ & Control (threshold)       &   257{,}259 & \textbf{0.5504} & \textbf{0.6450} & \textbf{0.2735} & 0.2119 & \textbf{0.3570} & \textbf{0.6160} & 0.2082 & 0.0942 \\
+ & Confirmation ($N{=}3$)     &   257{,}259 & 0.3009 & 0.5229 & 0.2462 & \textbf{0.2744} & 0.2232 & 0.4287 & 0.2054 & \textbf{0.1338} \\
 \midrule
 \multirow{3}{*}{World}
- & Baseline (unfiltered)      & 1{,}029{,}380 & 0.3408 & 0.3150 & 0.2011 & 0.4089 & 0.0995 & 0.5838 & 0.1764 & 0.1580 \\
- & Control (threshold)       &   754{,}500 & \textbf{0.3396} & \textbf{0.3143} & \textbf{0.2307} & 0.4175 & \textbf{0.1282} & \textbf{0.5668} & \textbf{0.2190} & 0.1655 \\
- & Confirmation ($N{=}3$)     &   754{,}500 & 0.2900 & 0.3096 & 0.2263 & \textbf{0.4314} & 0.1196 & 0.5326 & 0.2121 & \textbf{0.2033} \\
+ & Baseline (unfiltered)      & 718{,}786 & 0.5613 & 0.6480 & 0.2837 & 0.5014 & 0.1613 & 0.6663 & 0.2715 & 0.2896 \\
+ & Control (threshold)       &   517{,}566 & \textbf{0.5598} & \textbf{0.6479} & \textbf{0.3305} & 0.5146 & \textbf{0.2133} & \textbf{0.6550} & \textbf{0.3391} & 0.3137 \\
+ & Confirmation ($N{=}3$)     &   517{,}566 & 0.4921 & 0.6200 & 0.3224 & \textbf{0.5293} & 0.1973 & 0.6141 & 0.3288 & \textbf{0.3864} \\
 \bottomrule
 \end{tabular}
 \caption{\textbf{Detection-budget-matched comparison} on nuScenes val
 ($150$ scenes, frozen CenterPoint detections, retrospective emission). The
 control is the same detection set thresholded at a score calibrated to emit
 \emph{exactly} the same number of boxes as the confirmation module
-($0.1875$ sensor, $0.1211$ world; zero count error). At equal detection
+($0.2214$ sensor, $0.1272$ world; zero count error). At equal detection
 budget, confirmation improves association accuracy (AssA) and class-aware
 tracking accuracy (AMOTA) in both frames, and loses detection-oriented
 accuracy (mAP, DetA, DetRe) and aggregate HOTA. Bold marks the better of the
@@ -45,44 +45,47 @@ for reference only and is not budget-matched.}
 
 Table~\ref{tab:detmatch} compares confirmation-based initialization against a
 score threshold calibrated to the identical box count. The comparison is
-therefore free of the volume confound: both arms emit $360{,}309$ boxes in the
-sensor frame and $754{,}500$ in the world frame, drawn from the same frozen
+therefore free of the volume confound: both arms emit $257{,}259$ boxes in the
+sensor frame and $517{,}566$ in the world frame, drawn from the same frozen
 detector output.
 
-\noindent\textbf{Association accuracy improves.} AssA rises from $0.2044$ to
-$0.2535$ in the sensor frame and from $0.4175$ to $0.4314$ in the world frame.
+\noindent\textbf{Association accuracy improves.} AssA rises from $0.2119$ to
+$0.2744$ in the sensor frame and from $0.5146$ to $0.5293$ in the world frame.
 Both differences have scene-bootstrap $95\%$ confidence intervals excluding
-zero ($[{+}0.0370,{+}0.0615]$ and $[{+}0.0086,{+}0.0195]$). Per scene, the
-sensor-frame gain is $+0.0340$ on average --- a mean of per-scene
-differences, a different estimator from the $0.0491$ difference of the
-aggregates above --- and holds in $110$ of $150$ scenes (Wilcoxon
-$p{=}4.6{\times}10^{-13}$, rank-biserial $0.68$).
+zero ($[{+}0.0471,{+}0.0785]$ and $[{+}0.0098,{+}0.0203]$). Per scene, the
+sensor-frame gain is $+0.0460$ on average --- a mean of per-scene
+differences, a different estimator from the $0.0625$ difference of the
+aggregates above --- and holds in $113$ of $150$ scenes (Wilcoxon
+$p{=}2.6{\times}10^{-15}$, rank-biserial $0.74$).
 
 \noindent\textbf{Class-aware tracking accuracy rises.} AMOTA goes from
-$0.0547$ to $0.0887$ (sensor) and from $0.1655$ to $0.2033$ (world), an
-increase of $+0.034$ and $+0.038$ absolute --- the largest relative effect we
-measure. As noted in Sec.~\ref{sec:stats}, AMOTA does not admit the per-scene
+$0.0942$ to $0.1338$ (sensor) and from $0.3137$ to $0.3864$ (world), an
+increase of $+0.040$ and $+0.073$ absolute. As noted in Sec.~\ref{sec:stats}, AMOTA does not admit the per-scene
 resampling used for the other metrics, so this is a point estimate; what we
 rely on is that it moves the same way in both association frames here and
 under both remaining comparisons below.
 
 \noindent\textbf{Detection-oriented metrics fall.} At the same budget, mAP
-drops $0.3324\!\to\!0.2023$ (sensor) and $0.3396\!\to\!0.2900$ (world), DetA
-drops $0.2184\!\to\!0.1537$ ($[{-}0.0700,{-}0.0593]$) and
-$0.1282\!\to\!0.1196$ ($[{-}0.0101,{-}0.0072]$), and detection recall drops
-$0.5182\!\to\!0.3859$ ($[{-}0.1483,{-}0.1170]$) and $0.5668\!\to\!0.5326$
-($[{-}0.0404,{-}0.0286]$); mAP is a dataset-level metric and is reported as a
+drops $0.5504\!\to\!0.3009$ (sensor) and $0.5598\!\to\!0.4921$ (world), DetA
+drops $0.3570\!\to\!0.2232$ ($[{-}0.1408,{-}0.1267]$) and
+$0.2133\!\to\!0.1973$ ($[{-}0.0183,{-}0.0138]$), and detection recall drops
+$0.6160\!\to\!0.4287$ ($[{-}0.2087,{-}0.1665]$) and $0.6550\!\to\!0.6141$
+($[{-}0.0477,{-}0.0350]$); mAP is a dataset-level metric and is reported as a
 point estimate. Because HOTA is the geometric mean of DetA
 and AssA, the DetA loss dominates and aggregate HOTA falls as well
-($[{-}0.0180,{-}0.0103]$ sensor; $[{-}0.0059,{-}0.0027]$ world). The trade-off
+($[{-}0.0323,{-}0.0231]$ sensor; $[{-}0.0100,{-}0.0063]$ world). The trade-off
 is explicit: the module buys association quality with detection quality rather
 than adding it on top.
 
-\noindent\textbf{IDF1 shows no detectable sensor-frame difference.} The
-sensor-frame IDF1 interval spans zero ($[{-}0.0046,{+}0.0064]$; paired
-$p{=}0.45$, $77/150$ scenes), so we report no difference there. In the world
-frame IDF1 is slightly \emph{lower} for the confirmation module
-($[{-}0.0091,{-}0.0047]$).
+\noindent\textbf{IDF1 shows no detectable aggregate sensor-frame difference.}
+The bootstrap interval on the sensor-frame IDF1 difference spans zero
+($[{-}0.0108,{+}0.0037]$), so by the criterion of Sec.~\ref{sec:stats} we
+report no detectable difference in aggregate IDF1. The per-scene paired test
+does not indicate parity, however: it leans against the confirmation module
+($p{=}0.007$; confirmation ahead in $65/150$ scenes). We therefore read
+sensor-frame IDF1 as at best unchanged and possibly slightly lower, and claim
+no gain. In the world frame IDF1 is slightly \emph{lower} for the confirmation
+module ($[{-}0.0135,{-}0.0070]$).
 
 \subsection{Identity-budget-matched comparison}
 \label{sec:idmatch}
@@ -95,57 +98,61 @@ frame IDF1 is slightly \emph{lower} for the confirmation module
 Arm & Boxes & HOTA & AssA & DetA & IDF1 & AMOTA \\
 \midrule
 \multicolumn{7}{l}{\emph{Sensor frame}} \\
-Control (top-$K$)  & 190{,}708 & \textbf{0.2461} & 0.2346 & \textbf{0.2607} & \textbf{0.2081} & 0.0547 \\
-Control (rand.) & --- & --- &.2321--.2460 & --- & --- & --- \\
-Confirmation       & 360{,}309 & 0.1960 & \textbf{0.2535} & 0.1537 & 0.1531 & \textbf{0.0887} \\
+Control (top-$K$)  & 138{,}053 & \textbf{0.2959} & 0.2607 & \textbf{0.3383} & \textbf{0.2542} & 0.1004 \\
+Control (rand.) & --- & --- &.2595--.2765 & --- & --- & --- \\
+Confirmation       & 257{,}259 & 0.2462 & \textbf{0.2744} & 0.2232 & 0.2054 & \textbf{0.1338} \\
 \midrule
 \multicolumn{7}{l}{\emph{World frame}} \\
-Control (top-$K$)  & 608{,}168 & \textbf{0.2538} & 0.4173 & \textbf{0.1553} & \textbf{0.2596} & 0.1587 \\
-Control (rand.) & --- & --- &.3878--.3934 & --- & --- & --- \\
-Confirmation       & 754{,}500 & 0.2263 & \textbf{0.4314} & 0.1196 & 0.2121 & \textbf{0.2033} \\
+Control (top-$K$)  & 412{,}203 & \textbf{0.3630} & 0.5074 & \textbf{0.2610} & \textbf{0.3969} & 0.2911 \\
+Control (rand.) & --- & --- &.4705--.4776 & --- & --- & --- \\
+Confirmation       & 517{,}566 & 0.3224 & \textbf{0.5293} & 0.1973 & 0.3288 & \textbf{0.3864} \\
 \bottomrule
 \end{tabular}
 \caption{\textbf{Identity-budget-matched comparison.} The control keeps, per
 scene, the $K$ highest-scoring tracks, with $K$ set to the number of
-identities the confirmation module emits ($64{,}428$ sensor, $108{,}225$
+identities the confirmation module emits ($41{,}207$ sensor, $68{,}222$
 world; exact match in both frames). The random-$K$ rows (``rand.'') give the
 range over five seeds of the same selection made at random, scored on the
 claim-bearing metric (AssA) only. Matching identities leaves the box budgets
 unequal, in the control's disfavour on volume-sensitive metrics; AssA and
-AMOTA nonetheless favour confirmation, in the same direction and of similar
-magnitude as in Tab.~\ref{tab:detmatch}. The top-$K$ control's sensor-frame
-AMOTA coincides with the threshold control's (Tab.~\ref{tab:detmatch}) at
-this precision; the underlying values differ ($0.054713$ vs.\ $0.054715$),
-verified against the raw outputs.}
+AMOTA nonetheless favour confirmation over the top-$K$ control, in the same
+direction as in Tab.~\ref{tab:detmatch}. In the sensor frame the random-$K$
+range contains the confirmation module's AssA.}
 \label{tab:idmatch}
 \end{table}
 
 Matching the number of emitted identities rather than the number of boxes
 (Tab.~\ref{tab:idmatch}) tests whether the association gain merely reflects
-having fewer identities to confuse. It does not. AssA remains higher for the
-confirmation module in both frames ($0.2346\!\to\!0.2535$ sensor,
-$0.4173\!\to\!0.4314$ world), with intervals excluding zero
-($[{+}0.0129,{+}0.0258]$ and $[{+}0.0101,{+}0.0185]$) and per-scene wins in
-$117/150$ and $111/150$ scenes ($p{=}2.2{\times}10^{-16}$ and
-$4.1{\times}10^{-11}$). Selecting the same number of tracks \emph{at random}
-rather than by score (Sec.~\ref{sec:controls}) reproduces none of it: over
-the five seeded arms AssA reaches at most $0.2460$ (sensor) and $0.3934$
-(world), both below the confirmation module (Tab.~\ref{tab:idmatch}). AMOTA again favours confirmation ($0.0547\!\to\!0.0887$
-sensor, $0.1587\!\to\!0.2033$ world).
+having fewer identities to confuse. Against the score-ranked control it does
+not. AssA remains higher for the
+confirmation module in both frames ($0.2607\!\to\!0.2744$ sensor,
+$0.5074\!\to\!0.5293$ world), with intervals excluding zero
+($[{+}0.0071,{+}0.0216]$ and $[{+}0.0177,{+}0.0267]$) and per-scene wins in
+$107/150$ and $116/150$ scenes ($p{=}3.9{\times}10^{-15}$ and
+$2.9{\times}10^{-16}$). Selecting the same number of tracks \emph{at random}
+rather than by score (Sec.~\ref{sec:controls}) behaves differently in the two
+frames. In the world frame it does not reproduce the result: the five seeded
+arms reach at most $0.4776$, below the confirmation module's $0.5293$. In the
+sensor frame the random arms are \emph{not} separated from the confirmation
+module --- they span $0.2595$--$0.2765$, a range that contains its $0.2744$
+--- so the sensor-frame identity-matched result rests on the score-ranked
+control alone (Tab.~\ref{tab:idmatch}). AMOTA again favours confirmation over
+the top-$K$ control ($0.1004\!\to\!0.1338$ sensor, $0.2911\!\to\!0.3864$
+world).
 
 \noindent\textbf{Budget asymmetry.} The two controls cannot be satisfied
 simultaneously. At equal identity count the control emits fewer boxes than the
-confirmation module ($190{,}708$ vs.\ $360{,}309$ sensor; $608{,}168$ vs.\
-$754{,}500$ world), because score-ranked tracks are shorter than
+confirmation module ($138{,}053$ vs.\ $257{,}259$ sensor; $412{,}203$ vs.\
+$517{,}566$ world), because score-ranked tracks are shorter than
 persistence-selected ones. This works \emph{against} the control on
 volume-sensitive metrics, so the AssA and AMOTA results here are conservative;
 conversely the control's advantage on DetA and HOTA in this table is partly a
 budget artifact and should be read from Tab.~\ref{tab:detmatch}, where boxes
 are matched exactly. IDF1 likewise favours the control here
 (Tab.~\ref{tab:idmatch}), which the control's shorter tracks help; we read it
-together with Tab.~\ref{tab:detmatch}, where it shows no sensor-frame
-difference. The two tables are meant to be read together: the
-association gain survives both matchings, and the detection loss is
+together with Tab.~\ref{tab:detmatch}, where it shows no detectable aggregate
+sensor-frame difference. The two tables are meant to be read together: the
+association gain over the score-based controls survives both matchings, and the detection loss is
 established under the matching that isolates it.
 
 \subsection{Emission policy}
@@ -159,16 +166,16 @@ established under the matching that isolates it.
 Arm & mAP & HOTA & AssA & AMOTA \\
 \midrule
 \multicolumn{5}{l}{\emph{Sensor frame}} \\
-Control (threshold)  & \textbf{0.3213} & \textbf{0.2417} & 0.2105 & 0.0574 \\
-Confirmation, causal & 0.1360 & 0.2056 & \textbf{0.2861} & \textbf{0.0800} \\
+Control (threshold)  & \textbf{0.5287} & \textbf{0.3044} & 0.2147 & 0.0997 \\
+Confirmation, causal & 0.2047 & 0.2484 & \textbf{0.3088} & \textbf{0.1290} \\
 \midrule
 \multicolumn{5}{l}{\emph{World frame}} \\
-Control (threshold)  & \textbf{0.3367} & \textbf{0.2729} & \textbf{0.4315} & 0.1825 \\
-Confirmation, causal & 0.2569 & 0.2456 & 0.4199 & \textbf{0.2089} \\
+Control (threshold)  & \textbf{0.5562} & \textbf{0.3864} & \textbf{0.5308} & 0.3417 \\
+Confirmation, causal & 0.4480 & 0.3451 & 0.5184 & \textbf{0.4050} \\
 \bottomrule
 \end{tabular}
-\caption{\textbf{Causal emission, detection-budget-matched} ($221{,}297$ boxes
-sensor at threshold $0.2519$, $503{,}619$ world at $0.1539$; both arms exact).
+\caption{\textbf{Causal emission, detection-budget-matched} ($168{,}193$ boxes
+sensor at threshold $0.3320$, $361{,}426$ world at $0.1673$; both arms exact).
 Dropping the pre-confirmation prefix instead of emitting it retrospectively
 preserves the AMOTA gain in both frames, but it reverses the world-frame
 association result: AssA is lower than the control, with a confidence interval
@@ -182,23 +189,23 @@ The results above emit a confirmed track's withheld prefix retrospectively,
 which costs $1.0$\,s of latency. Table~\ref{tab:emission} reports the causal
 alternative, in which the prefix is permanently dropped, again against a
 count-matched score threshold. The result splits by association frame. The
-AMOTA gain survives in both frames ($0.0574\!\to\!0.0800$ sensor,
-$0.1825\!\to\!0.2089$ world), and in the sensor frame the association gain is
+AMOTA gain survives in both frames ($0.0997\!\to\!0.1290$ sensor,
+$0.3417\!\to\!0.4050$ world), and in the sensor frame the association gain is
 not merely preserved but larger than under retrospective emission
-($0.2105\!\to\!0.2861$; interval $[{+}0.0577,{+}0.0922]$ against
-$[{+}0.0370,{+}0.0615]$ retrospectively, $110$ of $150$ scenes). In the world
+($0.2147\!\to\!0.3088$; interval $[{+}0.0722,{+}0.1162]$ against
+$[{+}0.0471,{+}0.0785]$ retrospectively, $112$ of $150$ scenes). In the world
 frame, however, causal emission \emph{loses} association accuracy relative to
-the control ($0.4315\!\to\!0.4199$), with a bootstrap interval entirely below
-zero ($[{-}0.0183,{-}0.0047]$; paired $p{=}0.008$, rank-biserial $-0.25$, with
-confirmation ahead in only $53$ of $150$ scenes). The detection cost is larger
-throughout than under retrospective emission (mAP $0.3213\!\to\!0.1360$
+the control ($0.5308\!\to\!0.5184$), with a bootstrap interval entirely below
+zero ($[{-}0.0195,{-}0.0049]$; paired $p{=}0.036$, rank-biserial $-0.20$, with
+confirmation ahead in only $59$ of $150$ scenes). The detection cost is larger
+throughout than under retrospective emission (mAP $0.5287\!\to\!0.2047$
 sensor).
 
 The latency-free policy is therefore not uniformly worse --- it is worse in
 exactly one place, and that place is where association was already easy.
 Ego-motion compensation removes most of the apparent motion between frames, so
-the world-frame control associates well on its own (AssA $0.4315$ against
-$0.2105$ in the sensor frame); there the detections lost with the discarded
+the world-frame control associates well on its own (AssA $0.5308$ against
+$0.2147$ in the sensor frame); there the detections lost with the discarded
 prefix outweigh what confirmation cleans up. Where association is hard, the
 opposite holds. We offer that reading as an interpretation of the pattern
 rather than something we measured directly, but the operational consequence
@@ -217,16 +224,16 @@ only if it associates in sensor coordinates.
 Frame & $N$ & Delay & Boxes & $\Delta$AssA & 95\% CI & $\Delta$AMOTA & $\Delta$DetRe \\
 \midrule
 \multirow{4}{*}{Sensor}
- & 2 & $1$ & 551{,}452 & $+0.0219$ & $[{+}0.0155,{+}0.0286]$ & $+0.0177$ & $-0.0817$ \\
- & 3 & $2$ & 360{,}309 & $+0.0491$ & $[{+}0.0370,{+}0.0615]$ & $+0.0339$ & $-0.1323$ \\
- & 4 & $3$ & 269{,}330 & $+0.0767$ & $[{+}0.0596,{+}0.0936]$ & $+0.0393$ & $-0.1606$ \\
- & 5 & $4$ & 217{,}295 & $+0.1038$ & $[{+}0.0820,{+}0.1249]$ & $+0.0414$ & $-0.1794$ \\
+ & 2 & $1$ & 375{,}982 & $+0.0296$ & $[{+}0.0217,{+}0.0383]$ & $+0.0176$ & $-0.1210$ \\
+ & 3 & $2$ & 257{,}259 & $+0.0625$ & $[{+}0.0471,{+}0.0785]$ & $+0.0396$ & $-0.1873$ \\
+ & 4 & $3$ & 203{,}019 & $+0.0933$ & $[{+}0.0720,{+}0.1149]$ & $+0.0478$ & $-0.2217$ \\
+ & 5 & $4$ & 171{,}395 & $+0.1221$ & $[{+}0.0960,{+}0.1480]$ & $+0.0529$ & $-0.2408$ \\
 \midrule
 \multirow{4}{*}{World}
- & 2 & $1$ & 869{,}354 & $+0.0058$ & $[{+}0.0021,{+}0.0096]$ & $+0.0228$ & $-0.0219$ \\
- & 3 & $2$ & 754{,}500 & $+0.0139$ & $[{+}0.0086,{+}0.0195]$ & $+0.0378$ & $-0.0342$ \\
- & 4 & $3$ & 658{,}099 & $+0.0184$ & $[{+}0.0120,{+}0.0252]$ & $+0.0424$ & $-0.0412$ \\
- & 5 & $4$ & 576{,}711 & $+0.0220$ & $[{+}0.0148,{+}0.0297]$ & $+0.0381$ & $-0.0470$ \\
+ & 2 & $1$ & 594{,}547 & $+0.0103$ & $[{+}0.0068,{+}0.0140]$ & $+0.0614$ & $-0.0278$ \\
+ & 3 & $2$ & 517{,}566 & $+0.0148$ & $[{+}0.0098,{+}0.0203]$ & $+0.0726$ & $-0.0409$ \\
+ & 4 & $3$ & 457{,}121 & $+0.0181$ & $[{+}0.0120,{+}0.0250]$ & $+0.0736$ & $-0.0492$ \\
+ & 5 & $4$ & 409{,}463 & $+0.0199$ & $[{+}0.0130,{+}0.0276]$ & $+0.0682$ & $-0.0556$ \\
 \bottomrule
 \end{tabular}
 \caption{\textbf{Confirmation-window sensitivity.} Each row is confirmation at
@@ -250,11 +257,12 @@ by construction. We use it only as an implementation check.
 The association gain does not depend on the operating point. It is positive at
 every $N$ in both association frames, and all eight intervals exclude zero. It
 also grows monotonically with $N$ --- in the sensor frame close to linearly
-($+0.0219$, $+0.0491$, $+0.0767$, $+0.1038$), in the world frame with visible
-deceleration ($+0.0058$, $+0.0139$, $+0.0184$, $+0.0220$). The class-aware
-metric behaves differently: AMOTA flattens in the sensor frame
-($+0.0393\!\to\!+0.0414$ from $N{=}4$ to $N{=}5$) and in the world frame turns
-over, peaking at $N{=}4$ ($+0.0424$) and falling at $N{=}5$ ($+0.0381$). The
+($+0.0296$, $+0.0625$, $+0.0933$, $+0.1221$), in the world frame with visible
+deceleration ($+0.0103$, $+0.0148$, $+0.0181$, $+0.0199$). The class-aware
+metric behaves differently in the two frames. In the sensor frame AMOTA keeps
+rising through the range ($+0.0478\!\to\!+0.0529$ from $N{=}4$ to $N{=}5$); in
+the world frame it turns over, peaking at $N{=}4$ ($+0.0736$) and falling at
+$N{=}5$ ($+0.0682$). The
 detection cost, meanwhile, rises without turning over at any $N$ we measured,
 and the latency rises linearly by construction.
 
@@ -274,7 +282,7 @@ proposed confirmation mechanism: longer confirmation accumulates more
 evidence, producing progressively stronger identity consistency after exact
 detection-budget matching. The widening gap is driven by the confirmed arm
 rather than by a failing control, whose own AssA also rises as the matched
-budget tightens ($0.1980\!\to\!0.2107$ sensor, $0.4131\!\to\!0.4262$ world,
+budget tightens ($0.2080\!\to\!0.2146$ sensor, $0.5061\!\to\!0.5260$ world,
 from $N{=}2$ to $N{=}5$).
 
 \subsection{Indoor: semantic stability}
@@ -338,8 +346,9 @@ every tracking metric. Compared against a non-temporal rule with the same
 output budget, part of that apparent improvement turns out to be the effect of
 emitting less, and what remains is a sharper claim: association accuracy and
 class-aware tracking accuracy improve, detection-oriented accuracy degrades,
-and identity F1 is unchanged at a matched detection budget but lower at a
-matched identity budget, where the control's shorter tracks favour it. The surviving gain is the one
+and identity F1 shows no detectable aggregate gain at a matched detection
+budget (and is lower in the world frame) and is lower at a matched identity
+budget, where the control's shorter tracks favour it. The surviving gain is the one
 worth having, because it is the one a score threshold cannot buy. The controls
 are what let us say that; they are the evidence standard behind the method's
 claim rather than a separate finding, and the general lesson --- a component
@@ -395,7 +404,8 @@ avoids selection on the test metric. The outdoor sweep of
 Sec.~\ref{sec:nsweep} shows the association gain holds across
 $N\in\{2,3,4,5\}$, so the claim is not specific to $N{=}3$; it also shows
 $N{=}3$ is not the best setting on any single metric, and that the class-aware
-metric turns over inside the range while the class-agnostic one does not. We
+metric turns over inside the range in the world frame (but not the sensor
+frame) while the class-agnostic one does not in either. We
 did not sweep $N$ indoors, and we do not know where either curve ends beyond
 $N{=}5$.
 
