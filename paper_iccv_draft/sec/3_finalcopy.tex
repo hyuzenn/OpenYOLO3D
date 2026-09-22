@@ -63,7 +63,7 @@ $0.0942$ to $0.1338$ (sensor) and from $0.3137$ to $0.3864$ (world), an
 increase of $+0.040$ and $+0.073$ absolute. As noted in Sec.~\ref{sec:stats}, AMOTA does not admit the per-scene
 resampling used for the other metrics, so this is a point estimate; what we
 rely on is that it moves the same way in both association frames here and
-under both remaining comparisons below.
+under causal emission below (Sec.~\ref{sec:emissionabl}).
 
 \noindent\textbf{Detection-oriented metrics fall.} At the same budget, mAP
 drops $0.5504\!\to\!0.3009$ (sensor) and $0.5598\!\to\!0.4921$ (world), DetA
@@ -113,11 +113,11 @@ scene, the $K$ highest-scoring tracks, with $K$ set to the number of
 identities the confirmation module emits ($41{,}207$ sensor, $68{,}222$
 world; exact match in both frames). The random-$K$ rows (``rand.'') give the
 range over five seeds of the same selection made at random, scored on the
-claim-bearing metric (AssA) only. Matching identities leaves the box budgets
-unequal, in the control's disfavour on volume-sensitive metrics; AssA and
-AMOTA nonetheless favour confirmation over the top-$K$ control, in the same
-direction as in Tab.~\ref{tab:detmatch}. In the sensor frame the random-$K$
-range contains the confirmation module's AssA.}
+claim-bearing metric (AssA) only. AMOTA is a pre-registered secondary
+endpoint. Matching identities leaves the box budgets unequal (the control
+emits fewer boxes), which handicaps the control on AMOTA, so its AMOTA column
+is not read as an independent effect of confirmation. In the sensor frame the
+random-$K$ range contains the confirmation module's AssA.}
 \label{tab:idmatch}
 \end{table}
 
@@ -136,17 +136,20 @@ arms reach at most $0.4776$, below the confirmation module's $0.5293$. In the
 sensor frame the random arms are \emph{not} separated from the confirmation
 module --- they span $0.2595$--$0.2765$, a range that contains its $0.2744$
 --- so the sensor-frame identity-matched result rests on the score-ranked
-control alone (Tab.~\ref{tab:idmatch}). AMOTA again favours confirmation over
-the top-$K$ control ($0.1004\!\to\!0.1338$ sensor, $0.2911\!\to\!0.3864$
-world).
+control alone (Tab.~\ref{tab:idmatch}). AMOTA, the pre-registered secondary
+endpoint, is higher for confirmation than for the top-$K$ control
+($0.1004\!\to\!0.1338$ sensor, $0.2911\!\to\!0.3864$ world), but we do not
+read this as an independent effect: the control emits fewer boxes, which
+limits the recall over which AMOTA is integrated, so part of the difference is
+the box-volume imbalance rather than confirmation.
 
 \noindent\textbf{Budget asymmetry.} The two controls cannot be satisfied
 simultaneously. At equal identity count the control emits fewer boxes than the
 confirmation module ($138{,}053$ vs.\ $257{,}259$ sensor; $412{,}203$ vs.\
 $517{,}566$ world), because score-ranked tracks are shorter than
-persistence-selected ones. This works \emph{against} the control on
-volume-sensitive metrics, so the AssA and AMOTA results here are conservative;
-conversely the control's advantage on DetA and HOTA in this table is partly a
+persistence-selected ones. The imbalance cuts both ways: it handicaps the
+control on AMOTA, which is therefore reported but not interpreted here, and
+the control's advantage on DetA and HOTA in this table is partly a
 budget artifact and should be read from Tab.~\ref{tab:detmatch}, where boxes
 are matched exactly. IDF1 likewise favours the control here
 (Tab.~\ref{tab:idmatch}), which the control's shorter tracks help; we read it

@@ -56,8 +56,10 @@ association accuracy (HOTA's AssA component~\cite{hota}) over both matched
 controls in both association frames, with bootstrap confidence intervals
 excluding zero. The class-aware tracking accuracy
 AMOTA~\cite{nuscenes_tracking}, which does not admit the same per-scene
-resampling and is reported as a point estimate, rises consistently in sign
-across both controls and both frames. At the same output budget it
+resampling and is reported as a point estimate and a pre-registered secondary
+endpoint, rises consistently in sign in both frames under detection-budget
+matching; under identity matching we do not read it as an independent effect,
+for a reason given in Sec.~\ref{sec:idmatch}. At the same output budget it
 \emph{reduces} per-frame detection quality, a cost we quantify in
 Sec.~\ref{sec:detmatch}. We present both sides as the finding: the benefit of
 temporal confirmation is identity consistency, and it is bought rather than
@@ -96,8 +98,9 @@ contributes from what merely emitting less contributes. The protocol is not
 specific to confirmation and applies unchanged to any component that alters
 output volume.
 \item \textbf{Cross-domain validation under that protocol.} Outdoors, the
-module improves association accuracy and class-aware tracking accuracy under
-both controls in both association frames, at a detection cost we quantify in
+module improves association accuracy under both controls in both association
+frames, and class-aware tracking accuracy at a matched detection budget in both
+frames, at a detection cost we quantify in
 Sec.~\ref{sec:detmatch} rather than leave implicit. Indoors, the identical module
 reduces class-label switching on an unrelated open-vocabulary
 instance-segmentation pipeline, with segmentation quality unchanged.
