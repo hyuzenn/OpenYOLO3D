@@ -178,8 +178,9 @@ excluded: it reproduces the unfiltered baseline detection-for-detection, so
 every difference is zero by construction). The association gain is positive at
 every $N$ in both frames and all eight intervals exclude zero. It grows
 monotonically with $N$, close to linearly in the sensor frame and with visible
-deceleration in the world frame, while AMOTA flattens in the sensor frame and
-peaks at $N{=}4$ in the world frame, and the detection cost rises without
+deceleration in the world frame. AMOTA differs by frame: it keeps rising
+through $N{=}5$ in the sensor frame but peaks at $N{=}4$ in the world frame.
+The detection cost rises without
 turning over at any $N$ we measured.
 
 No single $N$ is best on every metric, and $N{=}3$ is best on none of them. We
